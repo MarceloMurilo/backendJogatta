@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const pool = require('../db');
 const router = express.Router();
 
+
 // Middleware para verificar o token JWT
 const verifyToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -33,7 +34,8 @@ const verifyToken = (req, res, next) => {
 
 // Rota para registrar um novo usuário com senha criptografada (Register)
 router.post('/register', async (req, res) => {
-  const { nome, email, senha, tt, altura, profile_image = null, user_papel_usuario = 'jogador' } = req.body;
+  const { nome, email, senha, tt, altura, imagem_perfil = null, user_papel_usuario = 'jogador' } = req.body;
+
 
   try {
     // Verificar se o email já está registrado
@@ -56,7 +58,7 @@ router.post('/register', async (req, res) => {
      // Inserir o novo usuário no banco de dados
      const result = await pool.query(
       'INSERT INTO public.usuario (nome, email, senha, tt, altura, imagem_perfil, papel_usuario) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-      [nome, email, hashedPassword, tt, altura, profile_image, user_papel_usuario]
+      [nome, email, hashedPassword, tt, altura, imagem_perfil, user_papel_usuario]
     );
     
     // Gerar o token JWT com `id` e `papel_usuario`
@@ -104,27 +106,29 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Senha inválida.' });
     }
 
-    // Gera token JWT
+    // Gera token JWT (sem imagem_perfil)
     const token = jwt.sign(
       {
         id: usuario.id_usuario,
         nome: usuario.nome,
         email: usuario.email,
-        tt: usuario.tt, // Inclui o TT no payload do token
-        papel_usuario: usuario.papel_usuario, // Inclui o papel do usuário
+        tt: usuario.tt,
+        papel_usuario: usuario.papel_usuario,
       },
       process.env.JWT_SECRET,
       { expiresIn: '1d' }
     );
 
-    // Retorna o token
-    res.status(200).json({ message: 'Login bem-sucedido!', token });
+    // Remover a senha antes de enviar os dados do usuário
+    const { senha: _, ...usuarioSemSenha } = usuario;
+
+    // Retorna o token e os dados do usuário (sem a senha)
+    res.status(200).json({ message: 'Login bem-sucedido!', token, user: usuarioSemSenha });
   } catch (error) {
     console.error('Erro ao realizar login:', error);
     res.status(500).json({ message: 'Erro interno ao realizar login.', error: error.message });
   }
 });
-
 
 
 // Rota protegida para autenticação

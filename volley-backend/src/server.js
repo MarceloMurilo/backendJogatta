@@ -30,10 +30,13 @@ const companyRoutes = require('./routes/companyRoutes');
 const inviteRoutes = require('./routes/invites/inviteRoutes');
 const inviteUserRoutes = require('./routes/invites/inviteUserRoutes');
 
-// Rotas de CEP
+// Import de CEP
 const cepRoutes = require('./routes/cepRoutes/cepRoutes');
 
-// Rotas de amigos e avaliações
+// Import Grupo amigos
+const groupRoutes = require('./routes/groupRoutes');
+
+// Import de amigos e avaliações
 const amigosRoutes = require('./routes/amigosRoutes');
 const avaliacoesRoutes = require('./routes/jogador/AvaliacoesRoutes');
 
@@ -63,6 +66,9 @@ app.use('/api/amigos', authMiddleware, amigosRoutes);
 app.use('/api/jogos', authMiddleware, jogosRoutes);
 app.use('/api/jogador/times', authMiddleware, gameRoutes);
 
+// Rotas amigos grupo
+app.use('/api/groups', groupRoutes);
+
 // Rotas de avaliações
 app.use('/api/avaliacoes', authMiddleware, avaliacoesRoutes);
 
@@ -79,7 +85,7 @@ app.use('/api/convites/usuario', authMiddleware, inviteUserRoutes);
 
 // Rotas de autenticação e usuários
 app.use('/api/auth', authRoutes);
-app.use('/api/usuarios', userRoutes);
+app.use('/api/usuario', userRoutes);
 
 // Rota para consulta de CEP
 app.use('/api/cep', authMiddleware, cepRoutes);

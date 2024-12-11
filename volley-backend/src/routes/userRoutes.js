@@ -1,3 +1,5 @@
+// src/routes/userRoutes.js
+
 const express = require('express');
 const pool = require('../db'); // Importando a conexão com o banco de dados
 const router = express.Router();
@@ -19,11 +21,11 @@ router.get('/test', (req, res) => {
 
 // Rota para cadastrar um novo usuário (Create)
 router.post('/', async (req, res) => {
-  const { nome, email, senha, profile_image, user_role, tt } = req.body; // Incluído campo 'tt'
+  const { nome, email, senha, imagem_perfil, user_role, tt } = req.body; // Incluído campo 'tt'
   try {
     const result = await pool.query(
-      'INSERT INTO public.usuario (nome, email, senha, profile_image, user_role, tt) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-      [nome, email, senha, profile_image, user_role, tt]
+      'INSERT INTO public.usuario (nome, email, senha, imagem_perfil, user_role, tt) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [nome, email, senha, imagem_perfil, user_role, tt]
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -61,11 +63,11 @@ router.get('/:id', async (req, res) => {
 // Rota para atualizar um usuário por ID (Update)
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { nome, email, senha, profile_image, user_role, tt } = req.body; // Incluído campo 'tt'
+  const { nome, email, senha, imagem_perfil, user_role, tt } = req.body; // Incluído campo 'tt'
   try {
     const result = await pool.query(
-      'UPDATE public.usuario SET nome = $1, email = $2, senha = $3, profile_image = $4, user_role = $5, tt = $6 WHERE id_usuario = $7 RETURNING *',
-      [nome, email, senha, profile_image, user_role, tt, id]
+      'UPDATE public.usuario SET nome = $1, email = $2, senha = $3, imagem_perfil = $4, user_role = $5, tt = $6 WHERE id_usuario = $7 RETURNING *',
+      [nome, email, senha, imagem_perfil, user_role, tt, id]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Usuário não encontrado' });
@@ -93,6 +95,34 @@ router.put('/tt/:id', async (req, res) => {
   } catch (error) {
     console.error('Erro ao atualizar o TT do usuário:', error);
     res.status(500).json({ error: 'Erro ao atualizar o TT do usuário', details: error.message });
+  }
+});
+
+// Rota para atualizar apenas a foto de perfil do usuário
+router.put('/:id/foto', async (req, res) => {
+  const { id } = req.params; // ID do usuário a ser atualizado
+  const { imagem_perfil } = req.body; // URL da nova foto de perfil
+
+  try {
+    // Atualiza a foto de perfil no banco de dados
+    const result = await pool.query(
+      'UPDATE public.usuario SET imagem_perfil = $1 WHERE id_usuario = $2 RETURNING *',
+      [imagem_perfil, id]
+    );
+
+    // Verifica se o usuário existe
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+
+    // Retorna o usuário atualizado
+    res.status(200).json(result.rows[0]);
+  } catch (error) {
+    console.error('Erro ao atualizar a foto de perfil:', error);
+    res.status(500).json({
+      error: 'Erro ao atualizar a foto de perfil',
+      details: error.message,
+    });
   }
 });
 

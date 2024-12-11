@@ -57,11 +57,11 @@ router.get('/listar/:organizador_id', async (req, res) => {
 
   try {
     const result = await db.query(
-      `SELECT u.id_usuario AS id, u.nome, u.email, u.tt
-       FROM usuario u
-       JOIN amizades a ON u.id_usuario = a.amigo_id
-       WHERE a.organizador_id = $1`,
-      [organizador_id]
+        `SELECT u.id_usuario AS id, u.nome, u.email, u.tt
+         FROM usuario u
+         JOIN amizades a ON u.id_usuario = a.amigo_id
+         WHERE a.organizador_id = $1`,
+        [organizador_id]
     );
 
     if (result.rows.length === 0) {
@@ -136,5 +136,55 @@ function balancearTimes(jogadores) {
 
   return [time1, time2];
 }
+
+// Atualizar frequência de interação com amigo
+router.post('/frequencia', async (req, res) => {
+  const { organizador_id, amigo_id } = req.body;
+
+  if (!organizador_id || !amigo_id) {
+    return res.status(400).json({ message: 'Organizador e amigo são obrigatórios.' });
+  }
+
+  try {
+    // Incrementar frequência ou adicionar novo registro
+    await db.query(
+      `INSERT INTO amigos_frequentes (organizador_id, amigo_id, frequencia)
+       VALUES ($1, $2, 1)
+       ON CONFLICT (organizador_id, amigo_id) 
+       DO UPDATE SET frequencia = amigos_frequentes.frequencia + 1`,
+      [organizador_id, amigo_id]
+    );
+
+    res.status(200).json({ message: 'Frequência atualizada com sucesso.' });
+  } catch (error) {
+    console.error('Erro ao atualizar frequência:', error);
+    res.status(500).json({ message: 'Erro ao atualizar frequência.' });
+  }
+});
+
+// Listar amigos frequentes
+router.get('/frequentes/:organizador_id', async (req, res) => {
+  const { organizador_id } = req.params;
+
+  try {
+    const result = await db.query(
+      `SELECT u.id_usuario AS id, u.nome, u.email, u.tt, af.frequencia
+       FROM usuario u
+       JOIN amigos_frequentes af ON u.id_usuario = af.amigo_id
+       WHERE af.organizador_id = $1
+       ORDER BY af.frequencia DESC`,
+      [organizador_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Nenhum amigo frequente encontrado.' });
+    }
+
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Erro ao listar amigos frequentes:', error);
+    res.status(500).json({ message: 'Erro ao listar amigos frequentes.' });
+  }
+});
 
 module.exports = router;
