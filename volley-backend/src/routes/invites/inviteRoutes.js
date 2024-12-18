@@ -24,7 +24,7 @@ router.get('/:uuid', async (req, res) => {
 
     console.log("Convite encontrado:", convite[0]);
 
-    // Retornar os dados do convite sem atualizar o banco
+    // Retornar os dados do convite
     return res.status(200).json({
       message: 'Convite encontrado!',
       convite: convite[0],
@@ -35,17 +35,18 @@ router.get('/:uuid', async (req, res) => {
   }
 });
 
-// Rota para criar um novo convite
-router.post('/gerar', async (req, res) => {
+// Rota para criar um novo convite (com autenticação)
+const authMiddleware = require('../../middlewares/authMiddleware');
+router.post('/gerar', authMiddleware, async (req, res) => {
   console.log("=== Rota POST /api/convites/gerar chamada ===");
 
   const { id_jogo } = req.body;
-  const id_usuario = req.user ? req.user.id : null;
+  const id_usuario = req.user.id; // Usuário autenticado que está enviando o convite
 
   console.log("Dados recebidos:", { id_jogo, id_usuario });
 
   try {
-    if (!id_jogo || !id_usuario) {
+    if (!id_jogo) {
       console.log("Erro: Dados insuficientes para criar um convite.");
       return res.status(400).json({ error: 'Dados insuficientes para criar um convite.' });
     }
