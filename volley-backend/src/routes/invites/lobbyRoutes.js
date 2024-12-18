@@ -1,7 +1,9 @@
+// lobbyRoutes.js
+
 const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
-const db = require('../../db'); // Conexão com o banco
+const db = require('../../db');
 
 // 1. Criar Sala de Vôlei
 router.post('/criar-sala', async (req, res) => {
@@ -69,7 +71,6 @@ router.post('/entrar', async (req, res) => {
     const limiteJogadores = limite.rows[0]?.limite_jogadores;
 
     if (numJogadores >= limiteJogadores) {
-      // Adiciona o jogador na fila de espera
       const posicao = await db.query('SELECT COUNT(*) + 1 AS posicao FROM fila_jogos WHERE id_jogo = $1', [id_jogo]);
       await db.query(
         'INSERT INTO fila_jogos (id_jogo, id_usuario, status, posicao_fila, timestamp) VALUES ($1, $2, $3, $4, NOW())',
@@ -78,7 +79,6 @@ router.post('/entrar', async (req, res) => {
       return res.status(200).json({ message: 'Jogador adicionado à lista de espera.' });
     }
 
-    // Adiciona o jogador ao jogo
     await db.query(
       `INSERT INTO participacao_jogos (id_jogo, id_usuario, status)
        VALUES ($1, $2, 'ativo')
@@ -121,7 +121,6 @@ router.post('/sair', async (req, res) => {
   try {
     await db.query('UPDATE participacao_jogos SET status = $1 WHERE id_jogo = $2 AND id_usuario = $3', ['saiu', id_jogo, id_usuario]);
 
-    // Verifica a lista de espera e move o primeiro jogador para a sala
     const fila = await db.query('SELECT id_usuario FROM fila_jogos WHERE id_jogo = $1 ORDER BY posicao_fila ASC LIMIT 1', [id_jogo]);
     if (fila.rowCount > 0) {
       const usuarioFila = fila.rows[0].id_usuario;

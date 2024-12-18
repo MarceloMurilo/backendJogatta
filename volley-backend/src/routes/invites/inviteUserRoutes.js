@@ -1,9 +1,8 @@
-// Importando dependências
+// inviteUserRoutes.js
+
 const express = require('express');
 const router = express.Router();
 const pool = require('../../db'); // Conexão com o banco de dados
-
-// Middleware para autenticação e permissões
 const authMiddleware = require('../../middlewares/authMiddleware');
 
 // Rota para criar um novo convite
@@ -11,17 +10,15 @@ router.post('/', authMiddleware, async (req, res) => {
   console.log("=== Rota POST /api/convites chamada ===");
 
   const { id_jogo, id_usuario_convidado } = req.body;
-  const id_usuario = req.user.id; // Pegando o ID do usuário autenticado
+  const id_usuario = req.user.id;
   console.log("Dados recebidos:", { id_jogo, id_usuario_convidado, id_usuario });
 
   try {
-    // Verificar se todos os dados necessários foram enviados
     if (!id_jogo || !id_usuario_convidado) {
-      console.log("Erro: id_jogo ou id_usuario_convidado faltando.");
+      console.log("Erro: Dados insuficientes para criar um convite.");
       return res.status(400).json({ error: 'Dados insuficientes para criar um convite.' });
     }
 
-    // Inserir o convite no banco de dados, incluindo o id_usuario
     const result = await pool.query(
       `INSERT INTO convites (id_jogo, id_usuario_convidado, id_usuario, status, data_envio)
        VALUES ($1, $2, $3, 'pendente', NOW())
@@ -41,11 +38,10 @@ router.post('/', authMiddleware, async (req, res) => {
 router.get('/meus', authMiddleware, async (req, res) => {
   console.log("=== Rota GET /api/convites/meus chamada ===");
 
-  const userId = req.user.id; // Pega o ID do usuário autenticado através do middleware
+  const userId = req.user.id;
   console.log("ID do usuário autenticado:", userId);
 
   try {
-    // Buscar todos os convites recebidos pelo usuário autenticado
     const result = await pool.query(
       `SELECT * FROM convites WHERE id_usuario_convidado = $1`,
       [userId]
@@ -67,11 +63,10 @@ router.get('/meus', authMiddleware, async (req, res) => {
 router.get('/enviados', authMiddleware, async (req, res) => {
   console.log("=== Rota GET /api/convites/enviados chamada ===");
 
-  const userId = req.user.id; // Pega o ID do usuário autenticado através do middleware
+  const userId = req.user.id;
   console.log("ID do usuário autenticado:", userId);
 
   try {
-    // Buscar todos os convites enviados pelo usuário autenticado
     const result = await pool.query(
       `SELECT * FROM convites WHERE id_usuario = $1`,
       [userId]
