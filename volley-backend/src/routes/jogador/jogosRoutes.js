@@ -21,19 +21,19 @@ router.use((req, res, next) => {
 router.post(
   '/criar',
   authMiddleware, // Verifica o token e autenticação
-  roleMiddleware(['organizador']), // Garante que apenas organizadores possam criar jogos
+  roleMiddleware(['organizador', 'jogador']), // Garante que apenas organizadores possam criar jogos
   async (req, res) => {
-    const { nome_jogo, data_jogo, horario_inicio, horario_fim, id_usuario_criador } = req.body;
+    const { nome_jogo, data_jogo, horario_inicio, horario_fim, id_usuario } = req.body;
 
-    if (!nome_jogo || !data_jogo || !horario_inicio || !horario_fim || !id_usuario_criador) {
+    if (!nome_jogo || !data_jogo || !horario_inicio || !horario_fim || !id_usuario) {
       return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
     }
 
     try {
       const result = await db.query(
-        `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, id_usuario_criador)
+        `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, id_usuario)
          VALUES ($1, $2, $3, $4, $5) RETURNING id_jogo`,
-        [nome_jogo, data_jogo, horario_inicio, horario_fim, id_usuario_criador]
+        [nome_jogo, data_jogo, horario_inicio, horario_fim, id_usuario]
       );
       res.status(201).json({ message: 'Jogo criado com sucesso.', id_jogo: result.rows[0].id_jogo });
     } catch (error) {
@@ -47,7 +47,7 @@ router.post(
 router.post(
   '/convidar',
   authMiddleware, // Verifica o token e autenticação
-  roleMiddleware(['organizador']), // Garante que apenas organizadores possam convidar amigos
+  roleMiddleware(['organizador', 'jogador']), // Garante que apenas organizadores possam convidar amigos
   async (req, res) => {
     const { id_jogo, amigos_ids } = req.body;
 
@@ -112,7 +112,7 @@ router.get(
 router.post(
   '/:id_jogo/habilidades',
   authMiddleware, // Verifica o token e autenticação
-  roleMiddleware(['organizador']), // Garante que apenas organizadores possam salvar habilidades
+  roleMiddleware(['organizador','jogador']), // Garante que apenas organizadores possam salvar habilidades
   async (req, res) => {
     const { id_jogo } = req.params;
     const { habilidades } = req.body;
@@ -145,7 +145,7 @@ router.post(
 router.get(
   '/:id_jogo/equilibrar-times',
   authMiddleware, // Verifica o token e autenticação
-  roleMiddleware(['organizador']), // Garante que apenas organizadores possam equilibrar times
+  roleMiddleware(['organizador','jogador']), // Garante que apenas organizadores possam equilibrar times
   async (req, res) => {
     const { id_jogo } = req.params;
 

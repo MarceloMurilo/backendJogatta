@@ -8,7 +8,7 @@ const authMiddleware = require('../../middlewares/authMiddleware');
 
 // Rota para criar um novo convite
 router.post('/', authMiddleware, async (req, res) => {
-  console.log("=== Rota POST /api/invites chamada ===");
+  console.log("=== Rota POST /api/convites chamada ===");
 
   const { id_jogo, id_usuario_convidado } = req.body;
   const id_usuario = req.user.id; // Pegando o ID do usuário autenticado
@@ -23,7 +23,7 @@ router.post('/', authMiddleware, async (req, res) => {
 
     // Inserir o convite no banco de dados, incluindo o id_usuario
     const result = await pool.query(
-      `INSERT INTO invites (id_jogo, id_usuario_convidado, id_usuario, status, date_sent)
+      `INSERT INTO convites (id_jogo, id_usuario_convidado, id_usuario, status, data_envio)
        VALUES ($1, $2, $3, 'pendente', NOW())
        RETURNING *`,
       [id_jogo, id_usuario_convidado, id_usuario]
@@ -39,7 +39,7 @@ router.post('/', authMiddleware, async (req, res) => {
 
 // Rota para listar convites recebidos pelo usuário autenticado
 router.get('/meus', authMiddleware, async (req, res) => {
-  console.log("=== Rota GET /api/invites/meus chamada ===");
+  console.log("=== Rota GET /api/convites/meus chamada ===");
 
   const userId = req.user.id; // Pega o ID do usuário autenticado através do middleware
   console.log("ID do usuário autenticado:", userId);
@@ -47,7 +47,7 @@ router.get('/meus', authMiddleware, async (req, res) => {
   try {
     // Buscar todos os convites recebidos pelo usuário autenticado
     const result = await pool.query(
-      `SELECT * FROM invites WHERE id_usuario_convidado = $1`,
+      `SELECT * FROM convites WHERE id_usuario_convidado = $1`,
       [userId]
     );
 
@@ -65,7 +65,7 @@ router.get('/meus', authMiddleware, async (req, res) => {
 
 // Rota para listar convites enviados pelo usuário autenticado
 router.get('/enviados', authMiddleware, async (req, res) => {
-  console.log("=== Rota GET /api/invites/enviados chamada ===");
+  console.log("=== Rota GET /api/convites/enviados chamada ===");
 
   const userId = req.user.id; // Pega o ID do usuário autenticado através do middleware
   console.log("ID do usuário autenticado:", userId);
@@ -73,7 +73,7 @@ router.get('/enviados', authMiddleware, async (req, res) => {
   try {
     // Buscar todos os convites enviados pelo usuário autenticado
     const result = await pool.query(
-      `SELECT * FROM invites WHERE id_usuario = $1`,
+      `SELECT * FROM convites WHERE id_usuario = $1`,
       [userId]
     );
 

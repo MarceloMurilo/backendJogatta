@@ -5,9 +5,9 @@ const app = express();
 // Importando middlewares de autenticação e função
 const authMiddleware = require('./middlewares/authMiddleware');
 const roleMiddleware = require('./middlewares/roleMiddleware');
-// Jogo Rapido
-const jogoRapidoRoutes = require('./routes/jogador/jogoRapido');
 
+// Jogo Rápido
+const jogoRapidoRoutes = require('./routes/jogador/jogoRapido');
 
 // Importando rotas para jogadores
 const jogadorRoutes = require('./routes/jogador/jogadorRoutes');
@@ -27,8 +27,8 @@ const userRoutes = require('./routes/userRoutes');
 const companyRoutes = require('./routes/companyRoutes');
 
 // Importando rotas para convites
-const inviteRoutes = require('./routes/invites/inviteRoutes');
-const inviteUserRoutes = require('./routes/invites/inviteUserRoutes');
+const convitesRoutes = require('./routes/invites/inviteRoutes');
+const convitesUserRoutes = require('./routes/invites/inviteUserRoutes');
 
 // Import de CEP
 const cepRoutes = require('./routes/cepRoutes/cepRoutes');
@@ -39,6 +39,9 @@ const groupRoutes = require('./routes/groupRoutes');
 // Import de amigos e avaliações
 const amigosRoutes = require('./routes/amigosRoutes');
 const avaliacoesRoutes = require('./routes/jogador/AvaliacoesRoutes');
+
+// Lobby
+const lobbyRoutes = require('./routes/invites/lobbyRoutes');
 
 // Configurando middlewares globais
 app.use(express.json());
@@ -58,6 +61,8 @@ app.use((req, res, next) => {
 app.use('/api/jogador', authMiddleware, roleMiddleware(['jogador', 'organizador']), jogadorRoutes);
 app.use('/api/jogador/reservas', authMiddleware, reservationRoutes);
 
+// Rotas para lobby
+app.use('/api/lobby', lobbyRoutes);
 
 // Rotas de amigos
 app.use('/api/amigos', authMiddleware, amigosRoutes);
@@ -66,7 +71,7 @@ app.use('/api/amigos', authMiddleware, amigosRoutes);
 app.use('/api/jogos', authMiddleware, jogosRoutes);
 app.use('/api/jogador/times', authMiddleware, gameRoutes);
 
-// Rotas amigos grupo
+// Rotas grupo de amigos
 app.use('/api/groups', groupRoutes);
 
 // Rotas de avaliações
@@ -80,8 +85,8 @@ app.use('/api/owner/reservas', authMiddleware, ownerReservationsRoutes);
 app.use('/api/empresas', authMiddleware, companyRoutes);
 
 // Rotas para convites
-app.use('/api/convites', authMiddleware, inviteRoutes);
-app.use('/api/convites/usuario', authMiddleware, inviteUserRoutes);
+app.use('/api/convites', authMiddleware, convitesRoutes);
+app.use('/api/convites/usuario', authMiddleware, convitesUserRoutes);
 
 // Rotas de autenticação e usuários
 app.use('/api/auth', authRoutes);
