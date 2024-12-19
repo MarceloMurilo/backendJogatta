@@ -21,20 +21,22 @@ router.use((req, res, next) => {
 router.post(
   '/criar',
   authMiddleware, // Verifica o token e autenticação
-  roleMiddleware(['organizador', 'jogador']), // Garante que apenas organizadores possam criar jogos
+  roleMiddleware(['organizador', 'jogador']), // Permite organizador ou jogador criar jogos (ajuste conforme sua lógica)
   async (req, res) => {
-    const { nome_jogo, data_jogo, horario_inicio, horario_fim, id_usuario } = req.body;
+    const { nome_jogo, data_jogo, horario_inicio, horario_fim, id_usuario, limite_jogadores } = req.body;
 
     if (!nome_jogo || !data_jogo || !horario_inicio || !horario_fim || !id_usuario) {
-      return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
+      return res.status(400).json({ message: 'Todos os campos (nome_jogo, data_jogo, horario_inicio, horario_fim, id_usuario) são obrigatórios.' });
     }
 
     try {
+      // Incluindo limite_jogadores diretamente no INSERT, caso tenha sido fornecido
       const result = await db.query(
-        `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, id_usuario)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id_jogo`,
-        [nome_jogo, data_jogo, horario_inicio, horario_fim, id_usuario]
+        `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, id_usuario, limite_jogadores)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id_jogo`,
+        [nome_jogo, data_jogo, horario_inicio, horario_fim, id_usuario, limite_jogadores || 0]
       );
+
       res.status(201).json({ message: 'Jogo criado com sucesso.', id_jogo: result.rows[0].id_jogo });
     } catch (error) {
       console.error('Erro ao criar jogo:', error);
@@ -46,8 +48,8 @@ router.post(
 // Rota para convidar amigos para um jogo
 router.post(
   '/convidar',
-  authMiddleware, // Verifica o token e autenticação
-  roleMiddleware(['organizador', 'jogador']), // Garante que apenas organizadores possam convidar amigos
+  authMiddleware,
+  roleMiddleware(['organizador', 'jogador']),
   async (req, res) => {
     const { id_jogo, amigos_ids } = req.body;
 
@@ -74,8 +76,8 @@ router.post(
 // Rota para buscar habilidades dos jogadores de um jogo
 router.get(
   '/:id_jogo/habilidades',
-  authMiddleware, // Verifica o token e autenticação
-  roleMiddleware(['jogador', 'organizador']), // Garante que o papel seja permitido
+  authMiddleware,
+  roleMiddleware(['jogador', 'organizador']),
   async (req, res) => {
     const { id_jogo } = req.params;
 
@@ -111,8 +113,8 @@ router.get(
 // Rota para salvar habilidades dos jogadores de um jogo
 router.post(
   '/:id_jogo/habilidades',
-  authMiddleware, // Verifica o token e autenticação
-  roleMiddleware(['organizador','jogador']), // Garante que apenas organizadores possam salvar habilidades
+  authMiddleware,
+  roleMiddleware(['organizador','jogador']),
   async (req, res) => {
     const { id_jogo } = req.params;
     const { habilidades } = req.body;
@@ -144,8 +146,8 @@ router.post(
 // Rota para equilibrar times
 router.get(
   '/:id_jogo/equilibrar-times',
-  authMiddleware, // Verifica o token e autenticação
-  roleMiddleware(['organizador','jogador']), // Garante que apenas organizadores possam equilibrar times
+  authMiddleware,
+  roleMiddleware(['organizador','jogador']),
   async (req, res) => {
     const { id_jogo } = req.params;
 
