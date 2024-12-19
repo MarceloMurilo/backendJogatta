@@ -34,7 +34,7 @@ router.post('/gerar', async (req, res) => {
   }
 
   const convite_uuid = uuidv4();
-  const idNumerico = Math.floor(100000 + Math.random() * 900000);
+  const idNumerico = Math.floor(100000 + Math.random() * 900000); // Definição correta dentro da rota
 
   try {
     await db.query(
@@ -49,6 +49,7 @@ router.post('/gerar', async (req, res) => {
     res.status(500).json({ error: 'Erro ao gerar o convite.' });
   }
 });
+
 // 3. Entrar na Sala
 router.post('/entrar', async (req, res) => {
   const { convite_uuid, id_usuario } = req.body;
@@ -64,37 +65,27 @@ router.post('/entrar', async (req, res) => {
     const id_jogo = convite.rows[0].id_jogo;
 
     const { rowCount: numJogadores } = await db.query(
-      'SELECT 1 FROM participacao_jogos WHERE id_jogo = $1 AND confirmado = $2',
-      [id_jogo, true]
+      'SELECT 1 FROM participacao_jogos WHERE id_jogo = $1 AND status = $2',
+      [id_jogo, 'ativo']
     );
 
     const limite = await db.query('SELECT limite_jogadores FROM jogos WHERE id_jogo = $1', [id_jogo]);
     const limiteJogadores = limite.rows[0]?.limite_jogadores;
 
     if (numJogadores >= limiteJogadores) {
-      const filaExistente = await db.query(
-        'SELECT 1 FROM fila_jogos WHERE id_jogo = $1 AND id_usuario = $2',
-        [id_jogo, id_usuario]
-      );
-
-      if (filaExistente.rowCount > 0) {
-        return res.status(400).json({ error: 'Usuário já está na fila para este jogo.' });
-      }
-
       const posicao = await db.query('SELECT COUNT(*) + 1 AS posicao FROM fila_jogos WHERE id_jogo = $1', [id_jogo]);
       await db.query(
         'INSERT INTO fila_jogos (id_jogo, id_usuario, status, posicao_fila, timestamp) VALUES ($1, $2, $3, $4, NOW())',
         [id_jogo, id_usuario, 'na_espera', posicao.rows[0].posicao]
       );
-
       return res.status(200).json({ message: 'Jogador adicionado à lista de espera.' });
     }
 
     await db.query(
-      `INSERT INTO participacao_jogos (id_jogo, id_usuario, confirmado)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (id_jogo, id_usuario) DO UPDATE SET confirmado = $3`,
-      [id_jogo, id_usuario, true]
+      `INSERT INTO participacao_jogos (id_jogo, id_usuario, status)
+       VALUES ($1, $2, 'ativo')
+       ON CONFLICT (id_jogo, id_usuario) DO UPDATE SET status = 'ativo'`,
+      [id_jogo, id_usuario]
     );
 
     res.status(200).send('Jogador entrou na sala.');
@@ -109,7 +100,7 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
   const { id_jogo } = req.params;
   try {
     const jogadores = await db.query(
-      `SELECT u.nome, p.confirmado, p.pago
+      `SELECT u.nome, p.status
        FROM participacao_jogos p
        JOIN usuario u ON p.id_usuario = u.id_usuario
        WHERE p.id_jogo = $1`,
@@ -131,8 +122,8 @@ router.post('/confirmar-presenca', async (req, res) => {
 
   try {
     await db.query(
-      'UPDATE participacao_jogos SET confirmado = $1 WHERE id_jogo = $2 AND id_usuario = $3',
-      [true, id_jogo, id_usuario]
+      'UPDATE participacao_jogos SET status = $1 WHERE id_jogo = $2 AND id_usuario = $3',
+      ['confirmado', id_jogo, id_usuario]
     );
     res.status(200).json({ message: 'Presença confirmada com sucesso.' });
   } catch (error) {
@@ -150,8 +141,8 @@ router.post('/confirmar-pagamento', async (req, res) => {
 
   try {
     await db.query(
-      'UPDATE participacao_jogos SET pago = $1 WHERE id_jogo = $2 AND id_usuario = $3',
-      [true, id_jogo, id_usuario]
+      'UPDATE participacao_jogos SET pagamento = $1 WHERE id_jogo = $2 AND id_usuario = $3',
+      ['pago', id_jogo, id_usuario]
     );
     res.status(200).json({ message: 'Pagamento confirmado com sucesso.' });
   } catch (error) {
@@ -168,16 +159,16 @@ router.post('/sair', async (req, res) => {
   }
 
   try {
-    await db.query('DELETE FROM participacao_jogos WHERE id_jogo = $1 AND id_usuario = $2', [id_jogo, id_usuario]);
+    await db.query('UPDATE participacao_jogos SET status = $1 WHERE id_jogo = $2 AND id_usuario = $3', ['saiu', id_jogo, id_usuario]);
 
     const fila = await db.query('SELECT id_usuario FROM fila_jogos WHERE id_jogo = $1 ORDER BY posicao_fila ASC LIMIT 1', [id_jogo]);
     if (fila.rowCount > 0) {
       const usuarioFila = fila.rows[0].id_usuario;
       await db.query(
-        `INSERT INTO participacao_jogos (id_jogo, id_usuario, confirmado)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (id_jogo, id_usuario) DO UPDATE SET confirmado = $3`,
-        [id_jogo, usuarioFila, true]
+        `INSERT INTO participacao_jogos (id_jogo, id_usuario, status)
+         VALUES ($1, $2, 'ativo')
+         ON CONFLICT (id_jogo, id_usuario) DO UPDATE SET status = 'ativo'`,
+        [id_jogo, usuarioFila]
       );
       await db.query('DELETE FROM fila_jogos WHERE id_jogo = $1 AND id_usuario = $2', [id_jogo, usuarioFila]);
     }
