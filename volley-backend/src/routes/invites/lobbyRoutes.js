@@ -78,17 +78,17 @@ router.post('/entrar', async (req, res) => {
         'SELECT 1 FROM fila_jogos WHERE id_jogo = $1 AND id_usuario = $2',
         [id_jogo, id_usuario]
       );
+      
       if (filaExistente.rowCount > 0) {
         return res.status(400).json({ error: 'Usuário já está na fila para este jogo.' });
       }
 
+      // Insere o usuário na fila
       const posicao = await db.query('SELECT COUNT(*) + 1 AS posicao FROM fila_jogos WHERE id_jogo = $1', [id_jogo]);
       await db.query(
         'INSERT INTO fila_jogos (id_jogo, id_usuario, status, posicao_fila, timestamp) VALUES ($1, $2, $3, $4, NOW())',
         [id_jogo, id_usuario, 'na_espera', posicao.rows[0].posicao]
       );
-      return res.status(200).json({ message: 'Jogador adicionado à lista de espera.' });
-    }
 
     await db.query(
       `INSERT INTO participacao_jogos (id_jogo, id_usuario, confirmado)
