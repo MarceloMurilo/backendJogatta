@@ -82,8 +82,8 @@ router.post('/entrar', async (req, res) => {
     }
 
     await db.query(
-      `INSERT INTO participacao_jogos (id_jogo, id_usuario, status)
-       VALUES ($1, $2, 'ativo')
+      `INSERT INTO participacao_jogos (id_jogo, id_usuario, status, confirmado, pago)
+       VALUES ($1, $2, 'ativo', FALSE, FALSE)
        ON CONFLICT (id_jogo, id_usuario) DO UPDATE SET status = 'ativo'`,
       [id_jogo, id_usuario]
     );
@@ -100,7 +100,7 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
   const { id_jogo } = req.params;
   try {
     const jogadores = await db.query(
-      `SELECT u.nome, p.status
+      `SELECT p.id_usuario, u.nome, p.status, p.confirmado, p.pago
        FROM participacao_jogos p
        JOIN usuario u ON p.id_usuario = u.id_usuario
        WHERE p.id_jogo = $1`,
@@ -122,8 +122,8 @@ router.post('/confirmar-presenca', async (req, res) => {
 
   try {
     await db.query(
-      'UPDATE participacao_jogos SET status = $1 WHERE id_jogo = $2 AND id_usuario = $3',
-      ['confirmado', id_jogo, id_usuario]
+      'UPDATE participacao_jogos SET confirmado = TRUE WHERE id_jogo = $1 AND id_usuario = $2',
+      [id_jogo, id_usuario]
     );
     res.status(200).json({ message: 'Presença confirmada com sucesso.' });
   } catch (error) {
@@ -141,8 +141,8 @@ router.post('/confirmar-pagamento', async (req, res) => {
 
   try {
     await db.query(
-      'UPDATE participacao_jogos SET pagamento = $1 WHERE id_jogo = $2 AND id_usuario = $3',
-      ['pago', id_jogo, id_usuario]
+      'UPDATE participacao_jogos SET pago = TRUE WHERE id_jogo = $1 AND id_usuario = $2',
+      [id_jogo, id_usuario]
     );
     res.status(200).json({ message: 'Pagamento confirmado com sucesso.' });
   } catch (error) {
@@ -165,8 +165,8 @@ router.post('/sair', async (req, res) => {
     if (fila.rowCount > 0) {
       const usuarioFila = fila.rows[0].id_usuario;
       await db.query(
-        `INSERT INTO participacao_jogos (id_jogo, id_usuario, status)
-         VALUES ($1, $2, 'ativo')
+        `INSERT INTO participacao_jogos (id_jogo, id_usuario, status, confirmado, pago)
+         VALUES ($1, $2, 'ativo', FALSE, FALSE)
          ON CONFLICT (id_jogo, id_usuario) DO UPDATE SET status = 'ativo'`,
         [id_jogo, usuarioFila]
       );
