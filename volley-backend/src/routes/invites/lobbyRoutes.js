@@ -128,23 +128,35 @@ router.post('/entrar', async (req, res) => {
 // 4. Listar Jogadores
 router.get('/:id_jogo/jogadores', async (req, res) => {
   const { id_jogo } = req.params;
-
-  console.log('=== Listando jogadores para o jogo ===');
-  console.log('ID do Jogo:', id_jogo);
+  const id_usuario_logado = req.user.id; // Adicionei o ID do usuário logado vindo do middleware de autenticação
 
   try {
+    // Verificar se o usuário logado é o organizador
+    const organizadorQuery = await db.query(
+      'SELECT id_usuario FROM jogos WHERE id_jogo = $1',
+      [id_jogo]
+    );
+
+    if (organizadorQuery.rowCount === 0) {
+      return res.status(404).json({ error: 'Jogo não encontrado.' });
+    }
+
+    const id_organizador = organizadorQuery.rows[0].id_usuario;
+    const isOrganizer = id_usuario_logado === id_organizador;
+
+    // Listar jogadores
     const jogadores = await db.query(
-      `SELECT p.id_usuario, u.nome, p.status, p.confirmado, p.pago
+      `SELECT u.nome, p.status, p.confirmado, p.pago
        FROM participacao_jogos p
        JOIN usuario u ON p.id_usuario = u.id_usuario
        WHERE p.id_jogo = $1`,
       [id_jogo]
     );
 
-    console.log('=== Jogadores encontrados ===');
-    console.log(jogadores.rows);
-
-    res.status(200).json(jogadores.rows);
+    res.status(200).json({
+      jogadores: jogadores.rows,
+      isOrganizer, // Retorna se o usuário é o organizador
+    });
   } catch (error) {
     console.error('Erro ao listar jogadores:', error.message);
     res.status(500).json({ error: 'Erro ao listar jogadores.' });

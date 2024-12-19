@@ -21,28 +21,20 @@ router.use((req, res, next) => {
 router.post(
   '/criar',
   authMiddleware, // Verifica o token e autenticação
-  roleMiddleware(['organizador', 'jogador']), // Garante que apenas organizadores ou jogadores possam criar jogos
+  roleMiddleware(['organizador', 'jogador']), // Garante que apenas organizadores possam criar jogos
   async (req, res) => {
-    const { nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario } = req.body;
+    const { nome_jogo, data_jogo, horario_inicio, horario_fim, id_usuario } = req.body;
 
-    console.log('=== Dados recebidos para criar o jogo ===');
-    console.log({ nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario });
-
-    if (!nome_jogo || !data_jogo || !horario_inicio || !horario_fim || !limite_jogadores || !id_usuario) {
-      console.error('Erro: Campos obrigatórios ausentes.');
+    if (!nome_jogo || !data_jogo || !horario_inicio || !horario_fim || !id_usuario) {
       return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
     }
 
     try {
       const result = await db.query(
-        `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id_jogo`,
-        [nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario]
+        `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, id_usuario)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id_jogo`,
+        [nome_jogo, data_jogo, horario_inicio, horario_fim, id_usuario]
       );
-
-      console.log('=== Jogo criado com sucesso ===');
-      console.log('ID do Jogo:', result.rows[0].id_jogo);
-
       res.status(201).json({ message: 'Jogo criado com sucesso.', id_jogo: result.rows[0].id_jogo });
     } catch (error) {
       console.error('Erro ao criar jogo:', error);
