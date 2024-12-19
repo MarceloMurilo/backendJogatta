@@ -15,8 +15,8 @@ router.post('/criar-sala', async (req, res) => {
 
   try {
     await db.query(
-      'UPDATE jogos SET status = $1 WHERE id_jogo = $2',
-      ['aberto', id_jogo]
+      'UPDATE jogos SET status = $1, limite_jogadores = $2 WHERE id_jogo = $3',
+      ['aberto', limite_jogadores, id_jogo]
     );
 
     res.status(201).json({ message: 'Sala criada com sucesso.', id_jogo, limite_jogadores });
@@ -36,7 +36,7 @@ router.post('/gerar', async (req, res) => {
   const convite_uuid = uuidv4();
   try {
     await db.query(
-      `INSERT INTO convites (id_jogo, id_usuario, convite_uuid, status, date_sent)
+      `INSERT INTO convites (id_jogo, id_usuario, convite_uuid, status, data_envio)
        VALUES ($1, $2, $3, $4, NOW())`,
       [id_jogo, id_usuario, convite_uuid, 'pendente']
     );
@@ -111,7 +111,45 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
   }
 });
 
-// 5. Sair da Sala
+// 5. Confirmar Presença
+router.post('/confirmar-presenca', async (req, res) => {
+  const { id_jogo, id_usuario } = req.body;
+  if (!id_jogo || !id_usuario) {
+    return res.status(400).json({ error: 'id_jogo e id_usuario são obrigatórios.' });
+  }
+
+  try {
+    await db.query(
+      'UPDATE participacao_jogos SET status = $1 WHERE id_jogo = $2 AND id_usuario = $3',
+      ['confirmado', id_jogo, id_usuario]
+    );
+    res.status(200).json({ message: 'Presença confirmada com sucesso.' });
+  } catch (error) {
+    console.error('Erro ao confirmar presença:', error.message);
+    res.status(500).json({ error: 'Erro ao confirmar presença.' });
+  }
+});
+
+// 6. Confirmar Pagamento
+router.post('/confirmar-pagamento', async (req, res) => {
+  const { id_jogo, id_usuario } = req.body;
+  if (!id_jogo || !id_usuario) {
+    return res.status(400).json({ error: 'id_jogo e id_usuario são obrigatórios.' });
+  }
+
+  try {
+    await db.query(
+      'UPDATE participacao_jogos SET pagamento = $1 WHERE id_jogo = $2 AND id_usuario = $3',
+      ['pago', id_jogo, id_usuario]
+    );
+    res.status(200).json({ message: 'Pagamento confirmado com sucesso.' });
+  } catch (error) {
+    console.error('Erro ao confirmar pagamento:', error.message);
+    res.status(500).json({ error: 'Erro ao confirmar pagamento.' });
+  }
+});
+
+// 7. Sair da Sala
 router.post('/sair', async (req, res) => {
   const { id_jogo, id_usuario } = req.body;
   if (!id_jogo || !id_usuario) {
