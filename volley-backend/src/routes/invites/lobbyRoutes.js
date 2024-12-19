@@ -5,8 +5,6 @@ const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const db = require('../../db');
 
-
-
 // 1. Criar Sala de Vôlei
 router.post('/criar-sala', async (req, res) => {
   const { id_jogo, id_usuario, limite_jogadores } = req.body;
@@ -29,7 +27,6 @@ router.post('/criar-sala', async (req, res) => {
 });
 
 // 2. Gerar Link de Convite
-const idNumerico = Math.floor(100000 + Math.random() * 900000);
 router.post('/gerar', async (req, res) => {
   const { id_jogo, id_usuario } = req.body;
   if (!id_jogo || !id_usuario) {
@@ -37,7 +34,8 @@ router.post('/gerar', async (req, res) => {
   }
 
   const convite_uuid = uuidv4();
-  const idNumerico = Math.floor(100000 + Math.random() * 900000); // Mover a geração para dentro da rota
+  const idNumerico = Math.floor(100000 + Math.random() * 900000); // Definição correta dentro da rota
+
   try {
     await db.query(
       `INSERT INTO convites (id_jogo, id_usuario, convite_uuid, status, data_envio, id_numerico)
@@ -45,7 +43,7 @@ router.post('/gerar', async (req, res) => {
       [id_jogo, id_usuario, convite_uuid, 'pendente', idNumerico]
     );
     const link = `https://jogatta.com/invite/${convite_uuid}`;
-    res.status(201).json({ convite: link });
+    res.status(201).json({ convite: { link, id_numerico: idNumerico } });
   } catch (error) {
     console.error('Erro ao gerar o convite:', error.message);
     res.status(500).json({ error: 'Erro ao gerar o convite.' });
