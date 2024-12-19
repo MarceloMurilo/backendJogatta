@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const app = express();
 
-// Importando middlewares de autenticação e função
 const authMiddleware = require('./middlewares/authMiddleware');
 const roleMiddleware = require('./middlewares/roleMiddleware');
 
@@ -47,7 +46,7 @@ const lobbyRoutes = require('./routes/invites/lobbyRoutes');
 app.use(express.json());
 app.use(cors());
 
-// Middleware de logging para todas as requisições
+// Middleware de logging
 app.use((req, res, next) => {
   console.log(`\n=== Nova requisição recebida ===`);
   console.log(`Método: ${req.method}`);
@@ -61,8 +60,8 @@ app.use((req, res, next) => {
 app.use('/api/jogador', authMiddleware, roleMiddleware(['jogador', 'organizador']), jogadorRoutes);
 app.use('/api/jogador/reservas', authMiddleware, reservationRoutes);
 
-// Rotas para lobby
-app.use('/api/lobby', lobbyRoutes);
+// Rotas para lobby (AQUI FOI ADICIONADO authMiddleware)
+app.use('/api/lobby', authMiddleware, lobbyRoutes);
 
 // Rotas de amigos
 app.use('/api/amigos', authMiddleware, amigosRoutes);
@@ -95,19 +94,17 @@ app.use('/api/usuario', userRoutes);
 // Rota para consulta de CEP
 app.use('/api/cep', authMiddleware, cepRoutes);
 
-// Rota de teste para o servidor
+// Rota de teste
 app.get('/api/test', (req, res) => {
   res.json({ message: 'Rota de teste funcionando!' });
 });
 
-// Listando rotas registradas para depuração
 app._router.stack.forEach(function (r) {
   if (r.route && r.route.path) {
     console.log(`Rota registrada: ${r.route.path} [${Object.keys(r.route.methods)}]`);
   }
 });
 
-// Porta do servidor
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
