@@ -2,11 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../../db'); // Conexão com o banco de dados
 const authMiddleware = require('../../middlewares/authMiddleware');
-
-// Função para gerar um número aleatório de 6 dígitos
-const gerarIdNumerico = () => {
-  return Math.floor(100000 + Math.random() * 900000); // Gera um número entre 100000 e 999999
-};
+const { v4: uuidv4 } = require('uuid');
 
 // Rota para buscar um convite pelo UUID ou ID numérico
 router.get('/:identificador', async (req, res) => {
@@ -65,39 +61,28 @@ router.post('/gerar', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Dados insuficientes para criar um convite.' });
     }
 
-    // Loop para gerar um ID numérico único
-    let id_numerico;
-    let idUnico = false;
-
-    while (!idUnico) {
-      id_numerico = gerarIdNumerico();
-      const { rowCount } = await pool.query(
-        `SELECT * FROM convites WHERE id_numerico = $1`,
-        [id_numerico]
-      );
-      if (rowCount === 0) idUnico = true; // ID numérico é único
-    }
-
-    // Inserir o convite no banco de dados
+    const convite_uuid = uuidv4();
     const { rows: novoConvite } = await pool.query(
-      `INSERT INTO convites (id_jogo, id_usuario, status, data_envio, id_numerico)
-       VALUES ($1, $2, 'pendente', NOW(), $3)
+      `INSERT INTO convites (id_jogo, id_usuario, status, data_envio, id_numerico, convite_uuid)
+       VALUES ($1, $2, 'pendente', NOW(), floor(random() * 900000) + 100000, $3)
        RETURNING convite_uuid, id_numerico`,
-      [id_jogo, id_usuario, id_numerico]
+      [id_jogo, id_usuario, convite_uuid]
     );
 
-    const convite_uuid = novoConvite[0].convite_uuid;
-    const linkConvite = `jogatta://convite/${novoConvite[0].id_numerico}`;
+    const id_numerico = novoConvite[0].id_numerico;
+    const linkConvite = `jogatta://convite/${convite_uuid}`;
 
-    console.log("Novo convite criado:", { link: linkConvite, id_numerico });
+    console.log("Novo convite criado:", { link: linkConvite, id_numerico, convite_uuid });
 
     return res.status(201).json({
       message: "Convite criado com sucesso!",
       convite: {
         link: linkConvite,
         id_numerico,
+        convite_uuid
       },
     });
+
   } catch (error) {
     console.error("Erro ao criar convite:", error.message || error);
     return res.status(500).json({ error: 'Erro interno ao criar convite.', details: error.message });
