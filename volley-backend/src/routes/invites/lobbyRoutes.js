@@ -58,13 +58,28 @@ router.post('/entrar', async (req, res) => {
   }
 
   try {
-    // Seleciona o convite usando convite_uuid ou id_numerico
-    const conviteQuery = `
+    let query = `
       SELECT id_jogo
       FROM convites
-      WHERE (convite_uuid = $1 OR id_numerico = $2) AND status = $3
+      WHERE status = $1
     `;
-    const convite = await db.query(conviteQuery, [convite_uuid, id_numerico, 'pendente']);
+    let params = ['pendente'];
+
+    // Verifica se convite_uuid é fornecido e é válido como UUID
+    if (convite_uuid) {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(convite_uuid)) {
+        return res.status(400).json({ error: 'convite_uuid inválido.' });
+      }
+      query += ` AND convite_uuid = $2`;
+      params.push(convite_uuid);
+    } else if (id_numerico) {
+      // Caso id_numerico seja fornecido
+      query += ` AND id_numerico = $2`;
+      params.push(id_numerico);
+    }
+
+    const convite = await db.query(query, params);
 
     if (convite.rowCount === 0) {
       return res.status(404).json({ error: 'Convite inválido ou expirado.' });
@@ -72,18 +87,16 @@ router.post('/entrar', async (req, res) => {
 
     const id_jogo = convite.rows[0].id_jogo;
 
-    // Verifica o número de jogadores ativos no jogo
+    // Lógica de inserção ou atualização do jogador
     const { rowCount: numJogadores } = await db.query(
       'SELECT 1 FROM participacao_jogos WHERE id_jogo = $1 AND status = $2',
       [id_jogo, 'ativo']
     );
 
-    // Obtém o limite de jogadores do jogo
     const limite = await db.query('SELECT limite_jogadores FROM jogos WHERE id_jogo = $1', [id_jogo]);
     const limiteJogadores = limite.rows[0]?.limite_jogadores;
 
     if (numJogadores >= limiteJogadores) {
-      // Adiciona o jogador à fila de espera
       const posicao = await db.query('SELECT COUNT(*) + 1 AS posicao FROM fila_jogos WHERE id_jogo = $1', [id_jogo]);
       await db.query(
         'INSERT INTO fila_jogos (id_jogo, id_usuario, status, posicao_fila, timestamp) VALUES ($1, $2, $3, $4, NOW())',
@@ -92,7 +105,6 @@ router.post('/entrar', async (req, res) => {
       return res.status(200).json({ message: 'Jogador adicionado à lista de espera.' });
     }
 
-    // Insere ou atualiza a participação do jogador no jogo
     await db.query(
       `INSERT INTO participacao_jogos (id_jogo, id_usuario, status, confirmado, pago)
        VALUES ($1, $2, 'ativo', FALSE, FALSE)
@@ -106,7 +118,6 @@ router.post('/entrar', async (req, res) => {
     res.status(500).json({ error: 'Erro ao entrar na sala.' });
   }
 });
-
 // 4. Listar Jogadores
 router.get('/:id_jogo/jogadores', async (req, res) => {
   const { id_jogo } = req.params;
