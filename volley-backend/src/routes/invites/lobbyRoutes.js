@@ -12,10 +12,12 @@ router.post('/criar-sala', async (req, res) => {
   }
 
   try {
+    console.log('Atualizando sala:', { id_jogo, id_usuario, limite_jogadores });
     await db.query(
       'UPDATE jogos SET status = $1, limite_jogadores = $2 WHERE id_jogo = $3',
       ['aberto', limite_jogadores, id_jogo]
     );
+    console.log('Sala criada com sucesso:', { id_jogo, limite_jogadores });
     res.status(201).json({ message: 'Sala criada com sucesso.', id_jogo, limite_jogadores });
   } catch (error) {
     console.error('Erro ao criar sala:', error.message);
@@ -35,12 +37,14 @@ router.post('/gerar', async (req, res) => {
   const idNumerico = Math.floor(100000 + Math.random() * 900000);
 
   try {
+    console.log('Gerando convite:', { id_jogo, id_usuario, convite_uuid, idNumerico });
     await db.query(
       `INSERT INTO convites (id_jogo, id_usuario, convite_uuid, status, data_envio, id_numerico)
        VALUES ($1, $2, $3, $4, NOW(), $5)`,
       [id_jogo, id_usuario, convite_uuid, 'pendente', idNumerico]
     );
 
+    console.log('Convite gerado com sucesso:', { idNumerico, convite_uuid });
     res.status(201).json({ convite: { link: `https://jogatta.com/invite/${convite_uuid}`, id_numerico: idNumerico } });
   } catch (error) {
     console.error('Erro ao gerar o convite:', error.message);
@@ -67,6 +71,7 @@ router.post('/entrar', async (req, res) => {
     const convite = await db.query(conviteQuery, [convite_uuid, id_numerico, 'pendente']);
 
     if (convite.rowCount === 0) {
+      console.log('Convite inválido ou expirado:', { convite_uuid, id_numerico });
       return res.status(404).json({ error: 'Convite inválido ou expirado.' });
     }
 
@@ -95,12 +100,16 @@ router.post('/entrar', async (req, res) => {
     }
 
     console.log('Inserindo jogador na sala:', { id_jogo, id_usuario });
-    await db.query(
-      `INSERT INTO participacao_jogos (id_jogo, id_usuario, status, confirmado, pago)
-       VALUES ($1, $2, 'ativo', FALSE, FALSE)
-       ON CONFLICT (id_jogo, id_usuario) DO UPDATE SET status = 'ativo'`,
-      [id_jogo, id_usuario]
-    );
+    const insertQuery = `
+      INSERT INTO participacao_jogos (id_jogo, id_usuario, status, confirmado, pago)
+      VALUES ($1, $2, 'ativo', FALSE, FALSE)
+      ON CONFLICT (id_jogo, id_usuario) DO UPDATE SET status = 'ativo'
+    `;
+    console.log('Query de inserção:', insertQuery);
+    console.log('Parâmetros:', [id_jogo, id_usuario]);
+
+    const result = await db.query(insertQuery, [id_jogo, id_usuario]);
+    console.log('Resultado da inserção:', result);
 
     res.status(200).send('Jogador entrou na sala.');
   } catch (error) {
@@ -108,6 +117,7 @@ router.post('/entrar', async (req, res) => {
     res.status(500).json({ error: 'Erro ao entrar na sala.' });
   }
 });
+
 // Listar Jogadores
 router.get('/:id_jogo/jogadores', async (req, res) => {
   const { id_jogo } = req.params;
