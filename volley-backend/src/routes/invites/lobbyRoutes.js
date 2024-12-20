@@ -53,7 +53,9 @@ router.post('/gerar', async (req, res) => {
 });
 
 // Entrar na Sala (já existente)
+
 router.post('/entrar', async (req, res) => {
+  console.log('Payload recebido do celular:', req.body); // Adicionado aqui
   const { convite_uuid, id_numerico, id_usuario } = req.body;
 
   if ((!convite_uuid && !id_numerico) || !id_usuario) {
