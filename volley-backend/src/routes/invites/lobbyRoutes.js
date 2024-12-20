@@ -57,6 +57,8 @@ router.post('/entrar', async (req, res) => {
   }
 
   try {
+    console.log('Verificando convite com UUID ou ID:', { convite_uuid, id_numerico });
+
     const conviteQuery = `
       SELECT id_jogo
       FROM convites
@@ -69,6 +71,7 @@ router.post('/entrar', async (req, res) => {
     }
 
     const id_jogo = convite.rows[0].id_jogo;
+    console.log('Convite válido para o jogo:', id_jogo);
 
     const { rowCount: numJogadores } = await db.query(
       'SELECT 1 FROM participacao_jogos WHERE id_jogo = $1 AND status = $2',
@@ -78,15 +81,20 @@ router.post('/entrar', async (req, res) => {
     const limite = await db.query('SELECT limite_jogadores FROM jogos WHERE id_jogo = $1', [id_jogo]);
     const limiteJogadores = limite.rows[0]?.limite_jogadores;
 
+    console.log(`Número de jogadores ativos: ${numJogadores}, Limite: ${limiteJogadores}`);
+
     if (numJogadores >= limiteJogadores) {
       const posicao = await db.query('SELECT COUNT(*) + 1 AS posicao FROM fila_jogos WHERE id_jogo = $1', [id_jogo]);
+      console.log('Jogador será colocado na fila. Posição:', posicao.rows[0]?.posicao);
+
       await db.query(
         'INSERT INTO fila_jogos (id_jogo, id_usuario, status, posicao_fila, timestamp) VALUES ($1, $2, $3, $4, NOW())',
-        [id_jogo, id_usuario, 'na_espera', posicao.rows[0].posicao]
+        [id_jogo, id_usuario, 'na_espera', posicao.rows[0]?.posicao]
       );
       return res.status(200).json({ message: 'Jogador adicionado à lista de espera.' });
     }
 
+    console.log('Inserindo jogador na sala:', { id_jogo, id_usuario });
     await db.query(
       `INSERT INTO participacao_jogos (id_jogo, id_usuario, status, confirmado, pago)
        VALUES ($1, $2, 'ativo', FALSE, FALSE)
@@ -100,25 +108,29 @@ router.post('/entrar', async (req, res) => {
     res.status(500).json({ error: 'Erro ao entrar na sala.' });
   }
 });
-
 // Listar Jogadores
 router.get('/:id_jogo/jogadores', async (req, res) => {
   const { id_jogo } = req.params;
   const id_usuario_logado = req.user ? req.user.id : null; // caso não tenha auth
 
   try {
+    console.log('Listando jogadores para o jogo:', id_jogo);
+
     const organizadorQuery = await db.query(
       'SELECT id_usuario, limite_jogadores FROM jogos WHERE id_jogo = $1',
       [id_jogo]
     );
 
     if (organizadorQuery.rowCount === 0) {
+      console.log('Jogo não encontrado:', id_jogo);
       return res.status(404).json({ error: 'Jogo não encontrado.' });
     }
 
     const id_organizador = organizadorQuery.rows[0].id_usuario;
     const limite_jogadores = organizadorQuery.rows[0].limite_jogadores;
     const isOrganizer = parseInt(id_usuario_logado, 10) === parseInt(id_organizador, 10);
+
+    console.log('Organizador do jogo:', id_organizador, 'Limite de jogadores:', limite_jogadores);
 
     const jogadores = await db.query(
       `SELECT u.id_usuario, u.nome, p.status, p.confirmado, p.pago
@@ -127,6 +139,8 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
        WHERE p.id_jogo = $1`,
       [id_jogo]
     );
+
+    console.log('Jogadores encontrados:', jogadores.rows);
 
     res.status(200).json({
       jogadores: jogadores.rows,
