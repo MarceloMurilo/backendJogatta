@@ -2,7 +2,7 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../../db'); // Conexão com o banco de dados
+const db = require('../db'); // Conexão com o banco de dados
 
 // Middleware para log de requisições
 router.use((req, res, next) => {
