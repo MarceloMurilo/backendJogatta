@@ -26,6 +26,7 @@ const groupRoutes = require('./routes/groupRoutes');
 const amigosRoutes = require('./routes/amigosRoutes');
 const avaliacoesRoutes = require('./routes/jogador/AvaliacoesRoutes');
 const lobbyRoutes = require('./routes/invites/lobbyRoutes');
+const chatRoutes = require('./routes/chatRoutes');
 
 // Configurando middlewares globais
 app.use(express.json());
@@ -40,7 +41,9 @@ app.use((req, res, next) => {
   console.log('==============================\n');
   next();
 });
+// Chat do live
 
+app.use('/api/chat', authMiddleware, chatRoutes);
 // Configuração de rotas para jogadores
 app.use('/api/jogador', authMiddleware, roleMiddleware(['jogador', 'organizador']), jogadorRoutes);
 app.use('/api/jogador/reservas', authMiddleware, reservationRoutes);
