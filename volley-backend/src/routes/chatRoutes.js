@@ -1,5 +1,3 @@
-// routes/chatRoutes.js
-
 const express = require('express');
 const router = express.Router();
 const db = require('../db'); // Conexão com o banco de dados
@@ -33,11 +31,8 @@ router.get('/:id_jogo', async (req, res) => {
       [id_jogo]
     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Nenhuma mensagem encontrada para este jogo.' });
-    }
-
-    res.status(200).json(result.rows);
+    // Retorna uma lista vazia se não houver mensagens
+    res.status(200).json(result.rows.length > 0 ? result.rows : []);
   } catch (error) {
     console.error('Erro ao buscar mensagens do chat:', error);
     res.status(500).json({ message: 'Erro interno ao buscar mensagens.', error });
