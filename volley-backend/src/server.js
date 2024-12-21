@@ -1,45 +1,30 @@
 const express = require('express');
 const cors = require('cors');
+const cron = require('node-cron');
+const db = require('./db');
+
 const app = express();
 
+// Importando middlewares
 const authMiddleware = require('./middlewares/authMiddleware');
 const roleMiddleware = require('./middlewares/roleMiddleware');
 
-// Jogo Rápido
-const jogoRapidoRoutes = require('./routes/jogador/jogoRapido');
-
-// Importando rotas para jogadores
+// Importando rotas
 const jogadorRoutes = require('./routes/jogador/jogadorRoutes');
 const reservationRoutes = require('./routes/jogador/reservationRoutes');
 const gameRoutes = require('./routes/jogador/gameRoutes');
 const jogosRoutes = require('./routes/jogador/jogosRoutes');
-
-// Importando rotas para donos de quadras
 const courtManagementRoutes = require('./routes/owner/courtManagementRoutes');
 const ownerReservationsRoutes = require('./routes/owner/ownerReservationsRoutes');
-
-// Importando autenticação e usuário
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
-
-// Importando rotas para empresas
 const companyRoutes = require('./routes/companyRoutes');
-
-// Importando rotas para convites
 const convitesRoutes = require('./routes/invites/inviteRoutes');
 const convitesUserRoutes = require('./routes/invites/inviteUserRoutes');
-
-// Import de CEP
 const cepRoutes = require('./routes/cepRoutes/cepRoutes');
-
-// Import Grupo amigos
 const groupRoutes = require('./routes/groupRoutes');
-
-// Import de amigos e avaliações
 const amigosRoutes = require('./routes/amigosRoutes');
 const avaliacoesRoutes = require('./routes/jogador/AvaliacoesRoutes');
-
-// Lobby
 const lobbyRoutes = require('./routes/invites/lobbyRoutes');
 
 // Configurando middlewares globais
@@ -59,26 +44,16 @@ app.use((req, res, next) => {
 // Configuração de rotas para jogadores
 app.use('/api/jogador', authMiddleware, roleMiddleware(['jogador', 'organizador']), jogadorRoutes);
 app.use('/api/jogador/reservas', authMiddleware, reservationRoutes);
-
-// Rotas para lobby (AQUI FOI ADICIONADO authMiddleware)
-app.use('/api/lobby', authMiddleware, lobbyRoutes);
-
-// Rotas de amigos
-app.use('/api/amigos', authMiddleware, amigosRoutes);
-
-// Rotas de equilíbrio de times e jogos
-app.use('/api/jogos', authMiddleware, jogosRoutes);
 app.use('/api/jogador/times', authMiddleware, gameRoutes);
-
-// Rotas grupo de amigos
-app.use('/api/groups', groupRoutes);
-
-// Rotas de avaliações
-app.use('/api/avaliacoes', authMiddleware, avaliacoesRoutes);
+app.use('/api/jogos', authMiddleware, jogosRoutes);
 
 // Rotas para donos de quadras
 app.use('/api/owner/quadras', authMiddleware, roleMiddleware(['owner']), courtManagementRoutes);
 app.use('/api/owner/reservas', authMiddleware, ownerReservationsRoutes);
+
+// Rotas de autenticação e usuários
+app.use('/api/auth', authRoutes);
+app.use('/api/usuario', userRoutes);
 
 // Rotas para empresas
 app.use('/api/empresas', authMiddleware, companyRoutes);
@@ -87,9 +62,17 @@ app.use('/api/empresas', authMiddleware, companyRoutes);
 app.use('/api/convites', authMiddleware, convitesRoutes);
 app.use('/api/convites/usuario', authMiddleware, convitesUserRoutes);
 
-// Rotas de autenticação e usuários
-app.use('/api/auth', authRoutes);
-app.use('/api/usuario', userRoutes);
+// Rotas de avaliações
+app.use('/api/avaliacoes', authMiddleware, avaliacoesRoutes);
+
+// Rotas de amigos
+app.use('/api/amigos', authMiddleware, amigosRoutes);
+
+// Rotas grupo de amigos
+app.use('/api/groups', groupRoutes);
+
+// Rotas de lobby
+app.use('/api/lobby', authMiddleware, lobbyRoutes);
 
 // Rota para consulta de CEP
 app.use('/api/cep', authMiddleware, cepRoutes);
@@ -99,6 +82,27 @@ app.get('/api/test', (req, res) => {
   res.json({ message: 'Rota de teste funcionando!' });
 });
 
+// Agendamento para encerrar jogos automaticamente
+cron.schedule('*/5 * * * *', async () => {
+  console.log('Verificando jogos que precisam ser encerrados...');
+  try {
+    const agora = new Date();
+
+    // Atualiza status de jogos cujo horário fim já passou
+    const result = await db.query(
+      `UPDATE jogos SET status = 'encerrada'
+       WHERE horario_fim < NOW() AND status = 'ativa'`
+    );
+
+    if (result.rowCount > 0) {
+      console.log(`${result.rowCount} jogos encerrados automaticamente.`);
+    }
+  } catch (error) {
+    console.error('Erro ao encerrar jogos automaticamente:', error);
+  }
+});
+
+// Exibindo rotas registradas
 app._router.stack.forEach(function (r) {
   if (r.route && r.route.path) {
     console.log(`Rota registrada: ${r.route.path} [${Object.keys(r.route.methods)}]`);

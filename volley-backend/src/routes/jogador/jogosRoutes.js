@@ -1,4 +1,4 @@
-// routes/jogos/jogosRoutes.js
+// routes/jogador/jogosRoutes.js
 
 const express = require('express');
 const router = express.Router();
@@ -20,21 +20,29 @@ router.use((req, res, next) => {
 // Rota para criar um jogo
 router.post(
   '/criar',
-  authMiddleware, // Verifica o token e autenticação
-  roleMiddleware(['organizador', 'jogador']), // Permite organizador ou jogador criar jogos (ajuste conforme sua lógica)
+  authMiddleware,
+  roleMiddleware(['organizador', 'jogador']),
   async (req, res) => {
-    const { nome_jogo, data_jogo, horario_inicio, horario_fim, id_usuario, limite_jogadores } = req.body;
+    const { nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario } = req.body;
 
-    if (!nome_jogo || !data_jogo || !horario_inicio || !horario_fim || !id_usuario) {
-      return res.status(400).json({ message: 'Todos os campos (nome_jogo, data_jogo, horario_inicio, horario_fim, id_usuario) são obrigatórios.' });
+    if (!nome_jogo || !data_jogo || !horario_inicio || !horario_fim || !limite_jogadores || !id_usuario) {
+      return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
+    }
+
+    // Valida a duração do jogo
+    const duracao = new Date(horario_fim) - new Date(horario_inicio);
+    if (duracao > 12 * 60 * 60 * 1000) {
+      return res.status(400).json({ message: 'A duração máxima do jogo é 12 horas.' });
+    }
+    if (duracao <= 0) {
+      return res.status(400).json({ message: 'O horário de término deve ser após o horário de início.' });
     }
 
     try {
-      // Incluindo limite_jogadores diretamente no INSERT, caso tenha sido fornecido
       const result = await db.query(
-        `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, id_usuario, limite_jogadores)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id_jogo`,
-        [nome_jogo, data_jogo, horario_inicio, horario_fim, id_usuario, limite_jogadores || 0]
+        `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, status)
+         VALUES ($1, $2, $3, $4, $5, $6, 'ativa') RETURNING id_jogo`,
+        [nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario]
       );
 
       res.status(201).json({ message: 'Jogo criado com sucesso.', id_jogo: result.rows[0].id_jogo });
@@ -114,7 +122,7 @@ router.get(
 router.post(
   '/:id_jogo/habilidades',
   authMiddleware,
-  roleMiddleware(['organizador','jogador']),
+  roleMiddleware(['organizador', 'jogador']),
   async (req, res) => {
     const { id_jogo } = req.params;
     const { habilidades } = req.body;
@@ -147,7 +155,7 @@ router.post(
 router.get(
   '/:id_jogo/equilibrar-times',
   authMiddleware,
-  roleMiddleware(['organizador','jogador']),
+  roleMiddleware(['organizador', 'jogador']),
   async (req, res) => {
     const { id_jogo } = req.params;
 
@@ -173,12 +181,10 @@ router.get(
       }
 
       const jogadores = result.rows;
-      const times = [[], []]; // Ajuste o número de times conforme necessário
+      const times = [[], []];
 
-      // Ordena os jogadores com base na pontuação total
       jogadores.sort((a, b) => (b.passe + b.ataque + b.levantamento) - (a.passe + a.ataque + a.levantamento));
 
-      // Distribui os jogadores alternadamente para equilibrar os times
       jogadores.forEach((jogador, index) => {
         const teamIndex = index % times.length;
         times[teamIndex].push(jogador);
