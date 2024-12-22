@@ -146,7 +146,7 @@ router.post('/entrar', async (req, res) => {
     const { id_jogo, status_jogo } = conviteQuery.rows[0];
 
     // Verifica se a sala está aberta
-    if (status_jogo !== 'aberto') {
+    if (status_jogo !== 'aberto' && status_jogo !== 'ativa') {
       await client.query('ROLLBACK');
       return res
         .status(403)
