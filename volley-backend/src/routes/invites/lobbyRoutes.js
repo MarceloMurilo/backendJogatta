@@ -146,7 +146,7 @@ router.post('/entrar', async (req, res) => {
     const { id_jogo, status_jogo } = conviteQuery.rows[0];
 
     // Verifica se a sala está aberta
-    if (status_jogo !== 'aberto' && status_jogo !== 'ativa') {
+    if (status_jogo !== 'aberto') {
       await client.query('ROLLBACK');
       return res
         .status(403)
@@ -225,7 +225,7 @@ router.post('/entrar', async (req, res) => {
    -----------------------------------------------------------------------------
    - Retorna dois arrays: "ativos" (participacao_jogos com status = 'ativo')
      e "espera" (fila_jogos com status = 'na_espera').
-   - Retorna isOrganizer e limite_jogadores.
+   - Retorna isOrganizer, limite_jogadores e status da sala.
 ============================================================================= */
 router.get('/:id_jogo/jogadores', async (req, res) => {
   try {
@@ -234,7 +234,7 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
 
     // Verifica se o jogo existe
     const jogoQuery = await db.query(
-      `SELECT id_usuario, limite_jogadores
+      `SELECT id_usuario, limite_jogadores, status
          FROM jogos
         WHERE id_jogo = $1
         LIMIT 1`,
@@ -245,7 +245,7 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
       return res.status(404).json({ error: 'Jogo não encontrado.' });
     }
 
-    const { id_usuario: id_organizador, limite_jogadores } = jogoQuery.rows[0];
+    const { id_usuario: id_organizador, limite_jogadores, status } = jogoQuery.rows[0];
     const isOrganizer =
       parseInt(id_usuario_logado, 10) === parseInt(id_organizador, 10);
 
@@ -278,6 +278,7 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
       espera,
       isOrganizer,
       limite_jogadores,
+      status, // Inclui o status da sala
     });
   } catch (error) {
     console.error('Erro ao listar jogadores:', error.message);
@@ -550,63 +551,81 @@ router.post('/remover', async (req, res) => {
 });
 
 /* =============================================================================
-   9. FECHAR SALA
+   9. TOGGLE STATUS SALA
    -----------------------------------------------------------------------------
-   - Organizador fecha a sala: status = 'fechado'.
-   - Expira todos os convites pendentes (status = 'expirado').
+   - Alterna o status de 'aberto' -> 'fechado' ou 'fechado' -> 'aberto'
+   - Mantém o mesmo id_jogo e uuid
+   - (Opcional) Expira convites pendentes ao fechar
 ============================================================================= */
-router.post('/fechar-sala', async (req, res) => {
+router.post('/toggle-status', async (req, res) => {
   try {
     const { id_jogo, id_usuario_organizador } = req.body;
 
     if (!id_jogo || !id_usuario_organizador) {
-      return res
-        .status(400)
-        .json({ error: 'id_jogo e id_usuario_organizador são obrigatórios.' });
+      return res.status(400).json({
+        error: 'id_jogo e id_usuario_organizador são obrigatórios.'
+      });
     }
 
-    // Verifica se quem fecha é o organizador
+    // Verifica se a sala existe e obtém o organizador
     const jogoQuery = await db.query(
-      'SELECT id_usuario FROM jogos WHERE id_jogo = $1',
-      [id_jogo]
-    );
-    if (jogoQuery.rowCount === 0) {
-      return res.status(404).json({ error: 'Jogo não encontrado.' });
-    }
-
-    const id_organizador = parseInt(jogoQuery.rows[0].id_usuario, 10);
-    if (id_organizador !== parseInt(id_usuario_organizador, 10)) {
-      return res
-        .status(403)
-        .json({ error: 'Somente o organizador pode fechar a sala.' });
-    }
-
-    // Fecha a sala
-    const updateSala = await db.query(
-      `UPDATE jogos
-          SET status = 'fechado'
-        WHERE id_jogo = $1`,
-      [id_jogo]
-    );
-
-    if (updateSala.rowCount === 0) {
-      return res.status(500).json({ error: 'Erro ao fechar a sala.' });
-    }
-
-    // Expira convites pendentes
-    await db.query(
-      `UPDATE convites
-          SET status = 'expirado'
+      `SELECT id_usuario, status
+         FROM jogos
         WHERE id_jogo = $1
-          AND status = 'pendente'`,
+        LIMIT 1`,
       [id_jogo]
     );
 
-    return res.status(200).json({ message: 'Sala fechada e convites expirados.' });
+    if (jogoQuery.rowCount === 0) {
+      return res.status(404).json({ error: 'Sala não encontrada.' });
+    }
+
+    const { id_usuario: id_organizador, status } = jogoQuery.rows[0];
+    if (parseInt(id_organizador, 10) !== parseInt(id_usuario_organizador, 10)) {
+      return res.status(403).json({ error: 'Somente o organizador pode alterar o status.' });
+    }
+
+    // Determina novo status
+    const novoStatus = (status === 'aberto') ? 'fechado' : 'aberto';
+
+    // Atualiza o status no banco
+    await db.query(
+      `UPDATE jogos
+          SET status = $1
+        WHERE id_jogo = $2`,
+      [novoStatus, id_jogo]
+    );
+
+    // (Opcional) Se quiser expirar convites pendentes ao fechar, faça:
+    if (novoStatus === 'fechado') {
+      await db.query(
+        `UPDATE convites
+            SET status = 'expirado'
+          WHERE id_jogo = $1
+            AND status = 'pendente'`,
+        [id_jogo]
+      );
+    }
+
+    return res.status(200).json({
+      message: `Status da sala atualizado para '${novoStatus}'.`,
+      status: novoStatus
+    });
   } catch (error) {
-    console.error('Erro ao fechar sala:', error.message);
-    return res.status(500).json({ error: 'Erro ao fechar sala.' });
+    console.error('Erro ao alterar status da sala:', error.message);
+    return res.status(500).json({ error: 'Erro ao alterar status da sala.' });
   }
 });
+
+// REMOVA OU COMENTE O ENDPOINT ABAIXO SE NÃO FOR MAIS NECESSÁRIO
+// /* =============================================================================
+//    10. FECHAR SALA
+//    -----------------------------------------------------------------------------
+//    - Organizador fecha a sala: status = 'fechado'.
+//    - Expira todos os convites pendentes (status = 'expirado').
+// ============================================================================= */
+// router.post('/fechar-sala', async (req, res) => {
+//   // Código antigo do fechar-sala
+// });
 
 module.exports = router;
