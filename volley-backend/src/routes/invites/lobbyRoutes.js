@@ -1,4 +1,6 @@
-// src/routes/lobbyRoutes.js
+/**
+ * src/routes/lobbyRoutes.js
+ */
 
 const express = require('express');
 const router = express.Router();
@@ -6,24 +8,29 @@ const { v4: uuidv4 } = require('uuid');
 const db = require('../../db');
 const authMiddleware = require('../../middlewares/authMiddleware');
 
-// Middleware de autenticação (se estiver usando)
 router.use(authMiddleware);
 
-/* 
-  1. Criar Sala 
-  -------------------------------------------------------------------------------------
-  - Atualiza o status do jogo para "aberto".
-  - Define o limite de jogadores.
-*/
+/* =============================================================================
+   1. CRIAR SALA
+   -----------------------------------------------------------------------------
+   - Atualiza o status do jogo para "aberto".
+   - Define o limite de jogadores.
+============================================================================= */
 router.post('/criar-sala', async (req, res) => {
   try {
     const { id_jogo, id_usuario, limite_jogadores } = req.body;
+
+    // Validações
     if (!id_jogo || !id_usuario || !limite_jogadores || limite_jogadores <= 0) {
       return res.status(400).json({ error: 'Parâmetros obrigatórios inválidos.' });
     }
 
+    // Atualiza o jogo para aberto e define o limite de jogadores
     await db.query(
-      'UPDATE jogos SET status = $1, limite_jogadores = $2 WHERE id_jogo = $3',
+      `UPDATE jogos
+          SET status = $1,
+              limite_jogadores = $2
+        WHERE id_jogo = $3`,
       ['aberto', limite_jogadores, id_jogo]
     );
 
@@ -38,26 +45,29 @@ router.post('/criar-sala', async (req, res) => {
   }
 });
 
-/* 
-  2. Gerar Link de Convite 
-  -------------------------------------------------------------------------------------
-  - Gera um convite único (UUID + id_numérico) e insere na tabela "convites".
-  - Garante a unicidade de id_numerico.
-*/
+/* =============================================================================
+   2. GERAR LINK DE CONVITE
+   -----------------------------------------------------------------------------
+   - Gera um UUID (convite_uuid) e um ID numérico exclusivo (id_numerico).
+   - Cria o registro na tabela "convites" com status "pendente".
+============================================================================= */
 router.post('/gerar', async (req, res) => {
   try {
     const { id_jogo, id_usuario } = req.body;
+
     if (!id_jogo || !id_usuario) {
-      return res.status(400).json({ error: 'id_jogo e id_usuario são obrigatórios.' });
+      return res
+        .status(400)
+        .json({ error: 'id_jogo e id_usuario são obrigatórios.' });
     }
 
     const convite_uuid = uuidv4();
     let idNumerico;
     let isUnique = false;
 
-    // Garante que idNumerico seja único
+    // Gera um número de 6 dígitos e checa se não está duplicado
     while (!isUnique) {
-      idNumerico = Math.floor(100000 + Math.random() * 900000); // Gera um número de 6 dígitos
+      idNumerico = Math.floor(100000 + Math.random() * 900000);
       const existing = await db.query(
         'SELECT 1 FROM convites WHERE id_numerico = $1',
         [idNumerico]
@@ -67,6 +77,7 @@ router.post('/gerar', async (req, res) => {
       }
     }
 
+    // Insere o convite como "pendente"
     await db.query(
       `INSERT INTO convites (id_jogo, id_usuario, convite_uuid, status, data_envio, id_numerico)
        VALUES ($1, $2, $3, $4, NOW(), $5)`,
@@ -76,9 +87,9 @@ router.post('/gerar', async (req, res) => {
     return res.status(201).json({
       convite: {
         link: `https://jogatta.com/invite/${convite_uuid}`,
-        id_numerico: idNumerico
+        id_numerico: idNumerico,
       },
-      message: 'Convite criado com sucesso!'
+      message: 'Convite criado com sucesso!',
     });
   } catch (error) {
     console.error('Erro ao gerar convite:', error.message);
@@ -86,107 +97,110 @@ router.post('/gerar', async (req, res) => {
   }
 });
 
-/* 
-  3. Entrar na Sala 
-  -------------------------------------------------------------------------------------
-  - Verifica convite (UUID ou id_numerico).
-  - Se a sala estiver lotada, jogador vai para "fila_jogos".
-  - Senão, jogador entra como "ativo".
-  - Convite fica "usado" após a entrada.
-  - Utiliza transação para garantir consistência.
-*/
+/* =============================================================================
+   3. ENTRAR NA SALA
+   -----------------------------------------------------------------------------
+   - Verifica se a sala está aberta.
+   - Verifica se o convite existe e está com status "pendente".
+   - Se a sala estiver lotada, jogador vai para a fila_jogos (status "na_espera").
+   - Senão, jogador entra na sala como "ativo" em participacao_jogos.
+   - *Não* marca mais o convite como "usado"; ele permanece "pendente".
+============================================================================= */
 router.post('/entrar', async (req, res) => {
   const client = await db.getClient();
+
   try {
     const { convite_uuid, id_numerico, id_usuario } = req.body;
 
     if ((!convite_uuid && !id_numerico) || !id_usuario) {
-      return res.status(400).json({ error: 'É necessário convite_uuid ou id_numerico + id_usuario.' });
+      return res
+        .status(400)
+        .json({ error: 'É necessário convite_uuid ou id_numerico + id_usuario.' });
     }
 
     await client.query('BEGIN');
 
-    // Verifica convite
-    const convite = await client.query(
-      `SELECT id_jogo
-       FROM convites
-       WHERE (convite_uuid = $1 OR id_numerico = $2) AND status = $3`,
+    // Verifica se o convite existe e está pendente
+    const conviteQuery = await client.query(
+      `SELECT c.id_jogo, j.status AS status_jogo
+         FROM convites c
+         JOIN jogos j ON c.id_jogo = j.id_jogo
+        WHERE (c.convite_uuid = $1 OR c.id_numerico = $2)
+          AND c.status = $3
+        LIMIT 1`,
       [convite_uuid, id_numerico, 'pendente']
     );
 
-    if (convite.rowCount === 0) {
+    if (conviteQuery.rowCount === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Convite inválido ou expirado.' });
     }
 
-    const id_jogo = convite.rows[0].id_jogo;
+    const { id_jogo, status_jogo } = conviteQuery.rows[0];
 
-    // Verifica quantos jogadores "ativos" existem
-    const { rowCount: numJogadoresAtivos } = await client.query(
-      'SELECT 1 FROM participacao_jogos WHERE id_jogo = $1 AND status = $2',
+    // Verifica se a sala está aberta
+    if (status_jogo !== 'aberto') {
+      await client.query('ROLLBACK');
+      return res
+        .status(403)
+        .json({ error: 'A sala está fechada. Não é possível entrar.' });
+    }
+
+    // Verifica quantos jogadores "ativos" já estão
+    const ativosCountQuery = await client.query(
+      'SELECT COUNT(*) AS total_ativos FROM participacao_jogos WHERE id_jogo = $1 AND status = $2',
       [id_jogo, 'ativo']
     );
+    const numJogadoresAtivos = parseInt(ativosCountQuery.rows[0].total_ativos, 10) || 0;
 
-    const jogo = await client.query('SELECT limite_jogadores FROM jogos WHERE id_jogo = $1', [id_jogo]);
-    const limiteJogadores = jogo.rows[0]?.limite_jogadores || 0;
+    // Obtém o limite de jogadores
+    const jogoQuery = await client.query(
+      'SELECT limite_jogadores FROM jogos WHERE id_jogo = $1',
+      [id_jogo]
+    );
+    const limiteJogadores = jogoQuery.rows[0]?.limite_jogadores || 0;
 
+    // Se já estiver lotado, insere na fila
     if (numJogadoresAtivos >= limiteJogadores) {
-      // Sala lotada, jogador vai para a fila
-
       // Verifica se o jogador já está na fila
-      const usuarioJaNaFila = await client.query(
+      const usuarioFilaQuery = await client.query(
         'SELECT 1 FROM fila_jogos WHERE id_jogo = $1 AND id_usuario = $2',
         [id_jogo, id_usuario]
       );
 
-      if (usuarioJaNaFila.rowCount > 0) {
+      if (usuarioFilaQuery.rowCount > 0) {
         await client.query('ROLLBACK');
-        return res.status(200).json({ message: 'Jogador já está na lista de espera.' });
+        return res
+          .status(200)
+          .json({ message: 'Jogador já está na lista de espera.' });
       }
 
-      // Calcula a próxima posição de fila de forma segura dentro da transação
-      const posicaoResult = await client.query(
+      // Calcula a próxima posição na fila
+      const posicaoQuery = await client.query(
         'SELECT COUNT(*) + 1 AS posicao FROM fila_jogos WHERE id_jogo = $1',
         [id_jogo]
       );
-      const posicao = posicaoResult.rows[0].posicao;
+      const posicao = parseInt(posicaoQuery.rows[0].posicao, 10);
 
-      // Insere na fila
+      // Insere na fila com status "na_espera"
       await client.query(
         `INSERT INTO fila_jogos (id_jogo, id_usuario, status, posicao_fila, timestamp)
          VALUES ($1, $2, $3, $4, NOW())`,
         [id_jogo, id_usuario, 'na_espera', posicao]
       );
 
-      // Atualiza o convite para "usado"
-      // await client.query(
-      //   `UPDATE convites
-      //    SET status = $1
-      //    WHERE id_jogo = $2
-      //      AND (convite_uuid = $3 OR id_numerico = $4)`,
-      //   ['usado', id_jogo, convite_uuid, id_numerico]
-      // );
-
       await client.query('COMMIT');
       return res.status(200).json({ message: 'Jogador adicionado à lista de espera.' });
     }
 
-    // Se não estiver lotado, insere como "ativo"
+    // Caso contrário, insere/atualiza como "ativo" em participacao_jogos
     await client.query(
       `INSERT INTO participacao_jogos (id_jogo, id_usuario, status, confirmado, pago)
        VALUES ($1, $2, 'ativo', FALSE, FALSE)
-       ON CONFLICT (id_jogo, id_usuario) DO UPDATE SET status = 'ativo'`,
+       ON CONFLICT (id_jogo, id_usuario)
+       DO UPDATE SET status = 'ativo'`,
       [id_jogo, id_usuario]
     );
-
-    // Atualiza o convite para "usado"
-    // await client.query(
-    //   `UPDATE convites
-    //    SET status = $1
-    //    WHERE id_jogo = $2
-    //      AND (convite_uuid = $3 OR id_numerico = $4)`,
-    //   ['usado', id_jogo, convite_uuid, id_numerico]
-    // );
 
     await client.query('COMMIT');
     return res.status(200).json({ message: 'Jogador entrou na sala.' });
@@ -199,20 +213,24 @@ router.post('/entrar', async (req, res) => {
   }
 });
 
-/* 
-  4. Listar Jogadores
-  -------------------------------------------------------------------------------------
-  - Retorna separadamente: "ativos" e "espera".
-  - isOrganizer para indicar se o usuário logado é o dono.
-*/
+/* =============================================================================
+   4. LISTAR JOGADORES
+   -----------------------------------------------------------------------------
+   - Retorna dois arrays: "ativos" (participacao_jogos com status = 'ativo')
+     e "espera" (fila_jogos com status = 'na_espera').
+   - Retorna isOrganizer e limite_jogadores.
+============================================================================= */
 router.get('/:id_jogo/jogadores', async (req, res) => {
   try {
     const { id_jogo } = req.params;
     const id_usuario_logado = req.user ? req.user.id : null;
 
-    // 1. Verifica se o jogo existe e obtém o organizador/limite
+    // Verifica se o jogo existe
     const jogoQuery = await db.query(
-      'SELECT id_usuario, limite_jogadores FROM jogos WHERE id_jogo = $1',
+      `SELECT id_usuario, limite_jogadores
+         FROM jogos
+        WHERE id_jogo = $1
+        LIMIT 1`,
       [id_jogo]
     );
 
@@ -221,21 +239,32 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
     }
 
     const { id_usuario: id_organizador, limite_jogadores } = jogoQuery.rows[0];
-    const isOrganizer = parseInt(id_usuario_logado, 10) === parseInt(id_organizador, 10);
+    const isOrganizer =
+      parseInt(id_usuario_logado, 10) === parseInt(id_organizador, 10);
 
-    // 2. Consulta os jogadores no participacao_jogos
-    const participacoes = await db.query(
+    // Busca os jogadores que estão em participacao_jogos como status "ativo"
+    const ativosQuery = await db.query(
       `SELECT u.id_usuario, u.nome, p.status, p.confirmado, p.pago
          FROM participacao_jogos p
          JOIN usuario u ON p.id_usuario = u.id_usuario
         WHERE p.id_jogo = $1
-        ORDER BY p.status DESC, p.confirmado DESC, p.pago DESC, u.nome ASC`,
+          AND p.status = 'ativo'
+        ORDER BY u.nome ASC`,
       [id_jogo]
     );
+    const ativos = ativosQuery.rows;
 
-    // 3. Separa por status
-    const ativos = participacoes.rows.filter((j) => j.status === 'ativo');
-    const espera = participacoes.rows.filter((j) => j.status === 'na_espera');
+    // Busca os jogadores que estão na fila (fila_jogos) com status "na_espera"
+    const esperaQuery = await db.query(
+      `SELECT u.id_usuario, u.nome, f.status, f.posicao_fila
+         FROM fila_jogos f
+         JOIN usuario u ON f.id_usuario = u.id_usuario
+        WHERE f.id_jogo = $1
+          AND f.status = 'na_espera'
+        ORDER BY f.posicao_fila ASC, u.nome ASC`,
+      [id_jogo]
+    );
+    const espera = esperaQuery.rows;
 
     return res.status(200).json({
       ativos,
@@ -249,22 +278,29 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
   }
 });
 
-/* 
-  5. Confirmar Presença
-  -------------------------------------------------------------------------------------
-  - Define "confirmado" como TRUE no participacao_jogos.
-*/
+/* =============================================================================
+   5. CONFIRMAR PRESENÇA
+   -----------------------------------------------------------------------------
+   - Define "confirmado" como TRUE em participacao_jogos.
+============================================================================= */
 router.post('/confirmar-presenca', async (req, res) => {
   try {
     const { id_jogo, id_usuario } = req.body;
+
     if (!id_jogo || !id_usuario) {
-      return res.status(400).json({ error: 'id_jogo e id_usuario são obrigatórios.' });
+      return res
+        .status(400)
+        .json({ error: 'id_jogo e id_usuario são obrigatórios.' });
     }
 
     await db.query(
-      'UPDATE participacao_jogos SET confirmado = TRUE WHERE id_jogo = $1 AND id_usuario = $2',
+      `UPDATE participacao_jogos
+          SET confirmado = TRUE
+        WHERE id_jogo = $1
+          AND id_usuario = $2`,
       [id_jogo, id_usuario]
     );
+
     return res.status(200).json({ message: 'Presença confirmada com sucesso.' });
   } catch (error) {
     console.error('Erro ao confirmar presença:', error.message);
@@ -272,22 +308,29 @@ router.post('/confirmar-presenca', async (req, res) => {
   }
 });
 
-/* 
-  6. Confirmar Pagamento
-  -------------------------------------------------------------------------------------
-  - Define "pago" como TRUE no participacao_jogos.
-*/
+/* =============================================================================
+   6. CONFIRMAR PAGAMENTO
+   -----------------------------------------------------------------------------
+   - Define "pago" como TRUE em participacao_jogos.
+============================================================================= */
 router.post('/confirmar-pagamento', async (req, res) => {
   try {
     const { id_jogo, id_usuario } = req.body;
+
     if (!id_jogo || !id_usuario) {
-      return res.status(400).json({ error: 'id_jogo e id_usuario são obrigatórios.' });
+      return res
+        .status(400)
+        .json({ error: 'id_jogo e id_usuario são obrigatórios.' });
     }
 
     await db.query(
-      'UPDATE participacao_jogos SET pago = TRUE WHERE id_jogo = $1 AND id_usuario = $2',
+      `UPDATE participacao_jogos
+          SET pago = TRUE
+        WHERE id_jogo = $1
+          AND id_usuario = $2`,
       [id_jogo, id_usuario]
     );
+
     return res.status(200).json({ message: 'Pagamento confirmado com sucesso.' });
   } catch (error) {
     console.error('Erro ao confirmar pagamento:', error.message);
@@ -295,69 +338,90 @@ router.post('/confirmar-pagamento', async (req, res) => {
   }
 });
 
-/* 
-  7. Sair da Sala
-  -------------------------------------------------------------------------------------
-  - Atualiza status do jogador para 'saiu'.
-  - Move próximo jogador da fila para 'ativo', se houver.
-  - Utiliza transação para garantir consistência.
-*/
+/* =============================================================================
+   7. SAIR DA SALA
+   -----------------------------------------------------------------------------
+   - Muda o status do jogador para "saiu" em participacao_jogos.
+   - Caso haja alguém na fila, promove para "ativo" (se houver vaga).
+============================================================================= */
 router.post('/sair', async (req, res) => {
   const client = await db.getClient();
+
   try {
     const { id_jogo, id_usuario } = req.body;
+
     if (!id_jogo || !id_usuario) {
-      return res.status(400).json({ error: 'id_jogo e id_usuario são obrigatórios.' });
+      return res
+        .status(400)
+        .json({ error: 'id_jogo e id_usuario são obrigatórios.' });
     }
 
     await client.query('BEGIN');
 
-    // Atualiza status do jogador para 'saiu'
+    // Atualiza status para "saiu"
     await client.query(
-      'UPDATE participacao_jogos SET status = $1 WHERE id_jogo = $2 AND id_usuario = $3',
-      ['saiu', id_jogo, id_usuario]
+      `UPDATE participacao_jogos
+          SET status = 'saiu'
+        WHERE id_jogo = $1
+          AND id_usuario = $2`,
+      [id_jogo, id_usuario]
     );
 
-    // Verifica se há alguém na fila
-    const fila = await client.query(
-      'SELECT id_usuario FROM fila_jogos WHERE id_jogo = $1 ORDER BY posicao_fila ASC LIMIT 1',
+    // Verifica se há fila
+    const filaQuery = await client.query(
+      `SELECT id_usuario
+         FROM fila_jogos
+        WHERE id_jogo = $1
+          AND status = 'na_espera'
+        ORDER BY posicao_fila ASC
+        LIMIT 1`,
       [id_jogo]
     );
 
-    if (fila.rowCount > 0) {
-      const usuarioFila = fila.rows[0].id_usuario;
+    if (filaQuery.rowCount > 0) {
+      const proximoDaFila = filaQuery.rows[0].id_usuario;
 
-      // Verifica novamente o limite antes de promover
-      const { rowCount: numJogadoresAtivos } = await client.query(
-        'SELECT 1 FROM participacao_jogos WHERE id_jogo = $1 AND status = $2',
-        [id_jogo, 'ativo']
+      // Verifica o número de ativos
+      const ativosCountQuery = await client.query(
+        `SELECT COUNT(*) AS total_ativos
+           FROM participacao_jogos
+          WHERE id_jogo = $1
+            AND status = 'ativo'`,
+        [id_jogo]
       );
+      const numJogadoresAtivos = parseInt(ativosCountQuery.rows[0].total_ativos, 10) || 0;
 
-      const jogo = await client.query('SELECT limite_jogadores FROM jogos WHERE id_jogo = $1', [id_jogo]);
-      const limiteJogadores = jogo.rows[0]?.limite_jogadores || 0;
+      // Obtém o limite
+      const jogoQuery = await client.query(
+        'SELECT limite_jogadores FROM jogos WHERE id_jogo = $1',
+        [id_jogo]
+      );
+      const limiteJogadores = jogoQuery.rows[0]?.limite_jogadores || 0;
 
+      // Se tiver vaga, promove o próximo da fila
       if (numJogadoresAtivos < limiteJogadores) {
-        // Promove o jogador da fila para ativo
         await client.query(
           `INSERT INTO participacao_jogos (id_jogo, id_usuario, status, confirmado, pago)
            VALUES ($1, $2, 'ativo', FALSE, FALSE)
-           ON CONFLICT (id_jogo, id_usuario) DO UPDATE SET status = 'ativo'`,
-          [id_jogo, usuarioFila]
+           ON CONFLICT (id_jogo, id_usuario)
+           DO UPDATE SET status = 'ativo'`,
+          [id_jogo, proximoDaFila]
         );
 
         // Remove da fila
         await client.query(
-          'DELETE FROM fila_jogos WHERE id_jogo = $1 AND id_usuario = $2',
-          [id_jogo, usuarioFila]
+          `DELETE FROM fila_jogos
+            WHERE id_jogo = $1
+              AND id_usuario = $2`,
+          [id_jogo, proximoDaFila]
         );
-
-        // Opcional: Notificar o jogador promovido (depende da implementação de notificação)
-        // Por exemplo, enviar um evento via WebSocket ou similar
       }
     }
 
     await client.query('COMMIT');
-    return res.status(200).json({ message: 'Usuário saiu e, se havia fila, o próximo entrou.' });
+    return res
+      .status(200)
+      .json({ message: 'Usuário saiu. Se havia fila, o próximo foi promovido.' });
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Erro ao sair da sala:', error.message);
@@ -367,81 +431,103 @@ router.post('/sair', async (req, res) => {
   }
 });
 
-/* 
-  8. Remover Usuário (Somente Organizador)
-  -------------------------------------------------------------------------------------
-  - Organizador pode remover um usuário, definindo status = 'removido'.
-  - Promove o próximo da fila, se houver espaço disponível.
-  - Utiliza transação para garantir consistência.
-*/
+/* =============================================================================
+   8. REMOVER USUÁRIO (SOMENTE ORGANIZADOR)
+   -----------------------------------------------------------------------------
+   - Organizador pode remover um usuário (status = 'removido').
+   - Promove o próximo da fila, se houver espaço.
+============================================================================= */
 router.post('/remover', async (req, res) => {
   const client = await db.getClient();
+
   try {
     const { id_jogo, id_usuario_remover, id_usuario_organizador } = req.body;
+
     if (!id_jogo || !id_usuario_remover || !id_usuario_organizador) {
-      return res
-        .status(400)
-        .json({ error: 'id_jogo, id_usuario_remover e id_usuario_organizador são obrigatórios.' });
+      return res.status(400).json({
+        error: 'id_jogo, id_usuario_remover e id_usuario_organizador são obrigatórios.',
+      });
     }
 
     await client.query('BEGIN');
 
     // Verifica se quem remove é o organizador
-    const organizador = await client.query(
+    const organizadorQuery = await client.query(
       'SELECT id_usuario FROM jogos WHERE id_jogo = $1',
       [id_jogo]
     );
 
-    if (organizador.rowCount === 0) {
+    if (organizadorQuery.rowCount === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Jogo não encontrado.' });
     }
 
-    if (parseInt(organizador.rows[0].id_usuario, 10) !== parseInt(id_usuario_organizador, 10)) {
+    const id_organizador = parseInt(organizadorQuery.rows[0].id_usuario, 10);
+
+    if (id_organizador !== parseInt(id_usuario_organizador, 10)) {
       await client.query('ROLLBACK');
-      return res.status(403).json({ error: 'Somente o organizador pode remover usuários.' });
+      return res
+        .status(403)
+        .json({ error: 'Somente o organizador pode remover usuários.' });
     }
 
-    // Atualiza status do usuário para 'removido'
+    // Seta status como "removido"
     await client.query(
-      'UPDATE participacao_jogos SET status = $1 WHERE id_jogo = $2 AND id_usuario = $3',
-      ['removido', id_jogo, id_usuario_remover]
+      `UPDATE participacao_jogos
+          SET status = 'removido'
+        WHERE id_jogo = $1
+          AND id_usuario = $2`,
+      [id_jogo, id_usuario_remover]
     );
 
-    // Promove o próximo da fila, se houver espaço
-    const fila = await client.query(
-      'SELECT id_usuario FROM fila_jogos WHERE id_jogo = $1 ORDER BY posicao_fila ASC LIMIT 1',
+    // Verifica fila
+    const filaQuery = await client.query(
+      `SELECT id_usuario
+         FROM fila_jogos
+        WHERE id_jogo = $1
+          AND status = 'na_espera'
+        ORDER BY posicao_fila ASC
+        LIMIT 1`,
       [id_jogo]
     );
 
-    if (fila.rowCount > 0) {
-      const usuarioFila = fila.rows[0].id_usuario;
+    if (filaQuery.rowCount > 0) {
+      const proximoDaFila = filaQuery.rows[0].id_usuario;
 
-      // Verifica o número atual de ativos
-      const { rowCount: numJogadoresAtivos } = await client.query(
-        'SELECT 1 FROM participacao_jogos WHERE id_jogo = $1 AND status = $2',
-        [id_jogo, 'ativo']
+      // Contagem de ativos
+      const ativosCountQuery = await client.query(
+        `SELECT COUNT(*) AS total_ativos
+           FROM participacao_jogos
+          WHERE id_jogo = $1
+            AND status = 'ativo'`,
+        [id_jogo]
       );
+      const numJogadoresAtivos = parseInt(ativosCountQuery.rows[0].total_ativos, 10) || 0;
 
-      const jogo = await client.query('SELECT limite_jogadores FROM jogos WHERE id_jogo = $1', [id_jogo]);
-      const limiteJogadores = jogo.rows[0]?.limite_jogadores || 0;
+      // Limite
+      const jogoQuery = await client.query(
+        'SELECT limite_jogadores FROM jogos WHERE id_jogo = $1',
+        [id_jogo]
+      );
+      const limiteJogadores = jogoQuery.rows[0]?.limite_jogadores || 0;
 
+      // Promove se houver espaço
       if (numJogadoresAtivos < limiteJogadores) {
-        // Promove o jogador da fila para ativo
         await client.query(
           `INSERT INTO participacao_jogos (id_jogo, id_usuario, status, confirmado, pago)
            VALUES ($1, $2, 'ativo', FALSE, FALSE)
-           ON CONFLICT (id_jogo, id_usuario) DO UPDATE SET status = 'ativo'`,
-          [id_jogo, usuarioFila]
+           ON CONFLICT (id_jogo, id_usuario)
+           DO UPDATE SET status = 'ativo'`,
+          [id_jogo, proximoDaFila]
         );
 
         // Remove da fila
         await client.query(
-          'DELETE FROM fila_jogos WHERE id_jogo = $1 AND id_usuario = $2',
-          [id_jogo, usuarioFila]
+          `DELETE FROM fila_jogos
+            WHERE id_jogo = $1
+              AND id_usuario = $2`,
+          [id_jogo, proximoDaFila]
         );
-
-        // Opcional: Notificar o jogador promovido (depende da implementação de notificação)
       }
     }
 
@@ -453,6 +539,62 @@ router.post('/remover', async (req, res) => {
     return res.status(500).json({ error: 'Erro ao remover usuário.' });
   } finally {
     client.release();
+  }
+});
+
+/* =============================================================================
+   9. FECHAR SALA
+   -----------------------------------------------------------------------------
+   - Organizador fecha a sala: status = 'fechado'.
+   - Expira todos os convites pendentes (status = 'expirado').
+============================================================================= */
+router.post('/fechar-sala', async (req, res) => {
+  try {
+    const { id_jogo, id_usuario_organizador } = req.body;
+
+    if (!id_jogo || !id_usuario_organizador) {
+      return res
+        .status(400)
+        .json({ error: 'id_jogo e id_usuario_organizador são obrigatórios.' });
+    }
+
+    // Verifica se quem fecha é o organizador
+    const jogoQuery = await db.query(
+      'SELECT id_usuario FROM jogos WHERE id_jogo = $1',
+      [id_jogo]
+    );
+    if (jogoQuery.rowCount === 0) {
+      return res.status(404).json({ error: 'Jogo não encontrado.' });
+    }
+
+    const id_organizador = parseInt(jogoQuery.rows[0].id_usuario, 10);
+    if (id_organizador !== parseInt(id_usuario_organizador, 10)) {
+      return res
+        .status(403)
+        .json({ error: 'Somente o organizador pode fechar a sala.' });
+    }
+
+    // Fecha a sala
+    await db.query(
+      `UPDATE jogos
+          SET status = 'fechado'
+        WHERE id_jogo = $1`,
+      [id_jogo]
+    );
+
+    // Expira convites pendentes
+    await db.query(
+      `UPDATE convites
+          SET status = 'expirado'
+        WHERE id_jogo = $1
+          AND status = 'pendente'`,
+      [id_jogo]
+    );
+
+    return res.status(200).json({ message: 'Sala fechada e convites expirados.' });
+  } catch (error) {
+    console.error('Erro ao fechar sala:', error.message);
+    return res.status(500).json({ error: 'Erro ao fechar sala.' });
   }
 });
 
