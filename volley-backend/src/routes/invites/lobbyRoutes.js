@@ -180,13 +180,13 @@ router.post('/entrar', async (req, res) => {
     );
 
     // Atualiza o convite para "usado"
-    await client.query(
-      `UPDATE convites
-       SET status = $1
-       WHERE id_jogo = $2
-         AND (convite_uuid = $3 OR id_numerico = $4)`,
-      ['usado', id_jogo, convite_uuid, id_numerico]
-    );
+    // await client.query(
+    //   `UPDATE convites
+    //    SET status = $1
+    //    WHERE id_jogo = $2
+    //      AND (convite_uuid = $3 OR id_numerico = $4)`,
+    //   ['usado', id_jogo, convite_uuid, id_numerico]
+    // );
 
     await client.query('COMMIT');
     return res.status(200).json({ message: 'Jogador entrou na sala.' });
