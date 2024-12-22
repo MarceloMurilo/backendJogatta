@@ -1,9 +1,15 @@
+// src/routes/lobbyRoutes.js
+
 const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const db = require('../../db');
+const authMiddleware = require('../../middlewares/authMiddleware'); // Assegure-se que o caminho está correto
 
-// Criar sala de vôlei (já existente)
+// Middleware de autenticação
+router.use(authMiddleware);
+
+// **1. Criar Sala de Vôlei**
 router.post('/criar-sala', async (req, res) => {
   const { id_jogo, id_usuario, limite_jogadores } = req.body;
 
@@ -25,7 +31,7 @@ router.post('/criar-sala', async (req, res) => {
   }
 });
 
-// Gerar Link de Convite (já existente)
+// **2. Gerar Link de Convite**
 router.post('/gerar', async (req, res) => {
   const { id_jogo, id_usuario } = req.body;
 
@@ -52,10 +58,9 @@ router.post('/gerar', async (req, res) => {
   }
 });
 
-// Entrar na Sala (já existente)
-
+// **3. Entrar na Sala**
 router.post('/entrar', async (req, res) => {
-  console.log('Payload recebido do celular:', req.body); // Adicionado aqui
+  console.log('Payload recebido do celular:', req.body);
   const { convite_uuid, id_numerico, id_usuario } = req.body;
 
   if ((!convite_uuid && !id_numerico) || !id_usuario) {
@@ -113,6 +118,12 @@ router.post('/entrar', async (req, res) => {
     const result = await db.query(insertQuery, [id_jogo, id_usuario]);
     console.log('Resultado da inserção:', result);
 
+    // Marcar convite como usado para evitar reutilização
+    await db.query(
+      'UPDATE convites SET status = $1 WHERE id_jogo = $2 AND (convite_uuid = $3 OR id_numerico = $4)',
+      ['usado', id_jogo, convite_uuid, id_numerico]
+    );
+
     res.status(200).send('Jogador entrou na sala.');
   } catch (error) {
     console.error('Erro ao entrar na sala:', error.message);
@@ -120,14 +131,15 @@ router.post('/entrar', async (req, res) => {
   }
 });
 
-// Listar Jogadores
+// **4. Listar Jogadores (Refatorado)**
 router.get('/:id_jogo/jogadores', async (req, res) => {
   const { id_jogo } = req.params;
-  const id_usuario_logado = req.user ? req.user.id : null; // caso não tenha auth
+  const id_usuario_logado = req.user ? req.user.id : null; // Certifique-se de que o middleware de autenticação está anexando o usuário
 
   try {
     console.log('Listando jogadores para o jogo:', id_jogo);
 
+    // Obter informações do jogo para determinar o organizador e o limite de jogadores
     const organizadorQuery = await db.query(
       'SELECT id_usuario, limite_jogadores FROM jogos WHERE id_jogo = $1',
       [id_jogo]
@@ -138,12 +150,12 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
       return res.status(404).json({ error: 'Jogo não encontrado.' });
     }
 
-    const id_organizador = organizadorQuery.rows[0].id_usuario;
-    const limite_jogadores = organizadorQuery.rows[0].limite_jogadores;
+    const { id_usuario: id_organizador, limite_jogadores } = organizadorQuery.rows[0];
     const isOrganizer = parseInt(id_usuario_logado, 10) === parseInt(id_organizador, 10);
 
     console.log('Organizador do jogo:', id_organizador, 'Limite de jogadores:', limite_jogadores);
 
+    // Consultar jogadores participando do jogo
     const jogadores = await db.query(
       `SELECT u.id_usuario, u.nome, p.status, p.confirmado, p.pago
        FROM participacao_jogos p
@@ -154,8 +166,13 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
 
     console.log('Jogadores encontrados:', jogadores.rows);
 
+    // Separar jogadores em ativos e na espera com base no status
+    const ativos = jogadores.rows.filter(j => j.status === 'ativo');
+    const espera = jogadores.rows.filter(j => j.status === 'na_espera');
+
     res.status(200).json({
-      jogadores: jogadores.rows,
+      ativos,
+      espera,
       isOrganizer,
       limite_jogadores
     });
@@ -165,7 +182,7 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
   }
 });
 
-// Confirmar Presença (já existente)
+// **5. Confirmar Presença**
 router.post('/confirmar-presenca', async (req, res) => {
   const { id_jogo, id_usuario } = req.body;
   if (!id_jogo || !id_usuario) {
@@ -184,7 +201,7 @@ router.post('/confirmar-presenca', async (req, res) => {
   }
 });
 
-// Confirmar Pagamento (já existente)
+// **6. Confirmar Pagamento**
 router.post('/confirmar-pagamento', async (req, res) => {
   const { id_jogo, id_usuario } = req.body;
   if (!id_jogo || !id_usuario) {
@@ -203,7 +220,7 @@ router.post('/confirmar-pagamento', async (req, res) => {
   }
 });
 
-// Sair da Sala (já existente)
+// **7. Sair da Sala**
 router.post('/sair', async (req, res) => {
   const { id_jogo, id_usuario } = req.body;
   if (!id_jogo || !id_usuario) {
@@ -229,6 +246,42 @@ router.post('/sair', async (req, res) => {
   } catch (error) {
     console.error('Erro ao sair da sala:', error.message);
     res.status(500).json({ error: 'Erro ao sair da sala.' });
+  }
+});
+
+// **8. Remover Usuário (Organizador)**
+router.post('/remover', async (req, res) => {
+  const { id_jogo, id_usuario_remover, id_usuario_organizador } = req.body;
+  if (!id_jogo || !id_usuario_remover || !id_usuario_organizador) {
+    return res.status(400).json({ error: 'id_jogo, id_usuario_remover e id_usuario_organizador são obrigatórios.' });
+  }
+
+  try {
+    // Verificar se o usuário que está tentando remover é o organizador
+    const organizadorQuery = await db.query(
+      'SELECT id_usuario FROM jogos WHERE id_jogo = $1',
+      [id_jogo]
+    );
+
+    if (organizadorQuery.rowCount === 0) {
+      return res.status(404).json({ error: 'Jogo não encontrado.' });
+    }
+
+    const { id_usuario: id_organizador } = organizadorQuery.rows[0];
+    if (parseInt(id_usuario_organizador, 10) !== parseInt(id_organizador, 10)) {
+      return res.status(403).json({ error: 'Somente o organizador pode remover usuários.' });
+    }
+
+    // Atualizar o status do jogador para 'removido'
+    await db.query(
+      'UPDATE participacao_jogos SET status = $1 WHERE id_jogo = $2 AND id_usuario = $3',
+      ['removido', id_jogo, id_usuario_remover]
+    );
+
+    res.status(200).json({ message: 'Usuário removido do lobby.' });
+  } catch (error) {
+    console.error('Erro ao remover usuário:', error.message);
+    res.status(500).json({ error: 'Erro ao remover usuário.' });
   }
 });
 
