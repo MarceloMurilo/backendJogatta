@@ -135,20 +135,20 @@ router.post('/entrar', async (req, res) => {
     );
 
     // Marca o convite como "usado"
-//     await db.query(
-//       `UPDATE convites
-//        SET status = $1
-//        WHERE id_jogo = $2
-//          AND (convite_uuid = $3 OR id_numerico = $4)`,
-//       ['usado', id_jogo, convite_uuid, id_numerico]
-//     );
+    // await db.query(
+    //   `UPDATE convites
+    //    SET status = $1
+    //    WHERE id_jogo = $2
+    //      AND (convite_uuid = $3 OR id_numerico = $4)`,
+    //   ['usado', id_jogo, convite_uuid, id_numerico]
+    // );
 
-//     return res.status(200).json({ message: 'Jogador entrou na sala.' });
-//   } catch (error) {
-//     console.error('Erro ao entrar na sala:', error.message);
-//     return res.status(500).json({ error: 'Erro ao entrar na sala.' });
-//   }
-// });
+    return res.status(200).json({ message: 'Jogador entrou na sala.' });
+  } catch (error) {
+    console.error('Erro ao entrar na sala:', error.message);
+    return res.status(500).json({ error: 'Erro ao entrar na sala.' });
+  }
+});
 
 /* 
   4. Listar Jogadores
