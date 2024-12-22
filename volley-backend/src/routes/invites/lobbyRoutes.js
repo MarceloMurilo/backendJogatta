@@ -13,7 +13,7 @@ router.use(authMiddleware);
 /* =============================================================================
    1. CRIAR SALA
    -----------------------------------------------------------------------------
-   - Atualiza o status do jogo para "aberto".
+   - Insere uma nova sala ou atualiza uma existente para "aberto".
    - Define o limite de jogadores.
 ============================================================================= */
 router.post('/criar-sala', async (req, res) => {
@@ -25,17 +25,24 @@ router.post('/criar-sala', async (req, res) => {
       return res.status(400).json({ error: 'Parâmetros obrigatórios inválidos.' });
     }
 
-    // Atualiza o jogo para aberto e define o limite de jogadores
-    await db.query(
-      `UPDATE jogos
-          SET status = $1,
-              limite_jogadores = $2
-        WHERE id_jogo = $3`,
-      ['aberto', limite_jogadores, id_jogo]
+    // Insere ou atualiza a sala com status 'aberto'
+    const result = await db.query(
+      `INSERT INTO jogos (id_jogo, id_usuario, status, limite_jogadores)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (id_jogo)
+       DO UPDATE SET
+         status = EXCLUDED.status,
+         limite_jogadores = EXCLUDED.limite_jogadores`,
+      [id_jogo, id_usuario, 'aberto', limite_jogadores]
     );
 
+    // Verifica se a operação foi bem-sucedida
+    if (result.rowCount === 0) {
+      return res.status(500).json({ error: 'Erro ao criar ou atualizar a sala.' });
+    }
+
     return res.status(201).json({
-      message: 'Sala criada com sucesso.',
+      message: 'Sala criada ou atualizada com sucesso.',
       id_jogo,
       limite_jogadores,
     });
@@ -575,12 +582,16 @@ router.post('/fechar-sala', async (req, res) => {
     }
 
     // Fecha a sala
-    await db.query(
+    const updateSala = await db.query(
       `UPDATE jogos
           SET status = 'fechado'
         WHERE id_jogo = $1`,
       [id_jogo]
     );
+
+    if (updateSala.rowCount === 0) {
+      return res.status(500).json({ error: 'Erro ao fechar a sala.' });
+    }
 
     // Expira convites pendentes
     await db.query(
