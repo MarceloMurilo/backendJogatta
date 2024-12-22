@@ -112,6 +112,22 @@ router.post('/entrar', async (req, res) => {
 
     if (numJogadoresAtivos >= limiteJogadores) {
       // Sala lotada, jogador vai para a fila
+
+      // ----------------------------------------------------------
+      // ALTERAÇÃO PARA EVITAR DUPLICATE KEY
+      // Antes de inserir, verifica se o jogador já está na fila:
+      // ----------------------------------------------------------
+      const usuarioJaNaFila = await db.query(
+        'SELECT 1 FROM fila_jogos WHERE id_jogo = $1 AND id_usuario = $2',
+        [id_jogo, id_usuario]
+      );
+
+      if (usuarioJaNaFila.rowCount > 0) {
+        // Já estava na fila, então não insere de novo
+        return res.status(200).json({ message: 'Jogador já está na lista de espera.' });
+      }
+
+      // Se não estiver, insere normalmente
       const posicao = await db.query(
         'SELECT COUNT(*) + 1 AS posicao FROM fila_jogos WHERE id_jogo = $1',
         [id_jogo]
@@ -134,7 +150,7 @@ router.post('/entrar', async (req, res) => {
       [id_jogo, id_usuario]
     );
 
-    // Marca o convite como "usado"
+    // Marca o convite como "usado" (se desejar)
     // await db.query(
     //   `UPDATE convites
     //    SET status = $1
