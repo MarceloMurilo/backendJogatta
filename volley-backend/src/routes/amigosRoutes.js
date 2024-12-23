@@ -57,11 +57,11 @@ router.get('/listar/:organizador_id', async (req, res) => {
 
   try {
     const result = await db.query(
-        `SELECT u.id_usuario AS id, u.nome, u.email, u.tt, u.imagem_perfil
-         FROM usuario u
-         JOIN amizades a ON u.id_usuario = a.amigo_id
-         WHERE a.organizador_id = $1`,
-        [organizador_id]
+      `SELECT u.id_usuario AS id, u.nome, u.email, u.tt, u.imagem_perfil
+       FROM usuario u
+       JOIN amizades a ON u.id_usuario = a.amigo_id
+       WHERE a.organizador_id = $1`,
+      [organizador_id]
     );
 
     if (result.rows.length === 0) {
@@ -77,6 +77,38 @@ router.get('/listar/:organizador_id', async (req, res) => {
   }
 });
 
+// Buscar amigos com sugestões (nome ou ID)
+router.get('/buscar', async (req, res) => {
+  const { organizador_id, termo } = req.query;
+
+  if (!organizador_id || !termo) {
+    return res.status(400).json({ message: 'Organizador e termo de busca são obrigatórios.' });
+  }
+
+  try {
+    const result = await db.query(
+      `
+      SELECT u.id_usuario AS id, u.nome, u.email, u.tt, u.imagem_perfil
+      FROM usuario u
+      WHERE (LOWER(u.nome) LIKE LOWER($1) OR LOWER(u.tt) LIKE LOWER($1))
+      AND u.id_usuario NOT IN (
+        SELECT amigo_id FROM amizades WHERE organizador_id = $2
+      )
+      LIMIT 10
+      `,
+      [`%${termo}%`, organizador_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Nenhum amigo encontrado.' });
+    }
+
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Erro ao buscar amigos:', error);
+    res.status(500).json({ message: 'Erro ao buscar amigos.' });
+  }
+});
 
 // Equilibrar times com amigos selecionados
 router.post('/equilibrar-amigos-selecionados', async (req, res) => {
@@ -147,7 +179,6 @@ router.post('/frequencia', async (req, res) => {
   }
 
   try {
-    // Incrementar frequência ou adicionar novo registro
     await db.query(
       `INSERT INTO amigos_frequentes (organizador_id, amigo_id, frequencia)
        VALUES ($1, $2, 1)
