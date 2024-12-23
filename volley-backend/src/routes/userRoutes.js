@@ -1,8 +1,10 @@
+// routes/userRoutes.js
+
 const express = require('express');
 const pool = require('../db'); // Importando a conexão com o banco de dados
 const router = express.Router();
 
-// Middleware para logar todas as requisições
+// Middleware para logar todas as requisições (já presente no server.js, pode remover duplicata)
 router.use((req, res, next) => {
   console.log(`\n=== Nova requisição recebida ===`);
   console.log(`Método: ${req.method}`);
@@ -49,8 +51,10 @@ router.get('/:id', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM public.usuario WHERE id_usuario = $1', [id]);
     if (result.rows.length === 0) {
+      console.log(`Usuário com ID ${id} não encontrado.`);
       return res.status(404).json({ error: 'Usuário não encontrado' });
     }
+    console.log(`Usuário encontrado: `, result.rows[0]);
     res.status(200).json(result.rows[0]);
   } catch (error) {
     console.error('Erro ao buscar o usuário:', error);
