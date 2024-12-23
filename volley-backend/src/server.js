@@ -1,9 +1,9 @@
+// server.js
+
 const express = require('express');
 const cors = require('cors');
 const cron = require('node-cron');
 const db = require('./db');
-
-const app = express();
 
 // Importando middlewares
 const authMiddleware = require('./middlewares/authMiddleware');
@@ -28,11 +28,13 @@ const avaliacoesRoutes = require('./routes/jogador/AvaliacoesRoutes');
 const lobbyRoutes = require('./routes/invites/lobbyRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 
+const app = express();
+
 // Configurando middlewares globais
 app.use(express.json());
 app.use(cors());
 
-// Middleware de logging
+// Middleware de logging (já presente no userRoutes.js, pode remover duplicatas)
 app.use((req, res, next) => {
   console.log(`\n=== Nova requisição recebida ===`);
   console.log(`Método: ${req.method}`);
@@ -41,9 +43,11 @@ app.use((req, res, next) => {
   console.log('==============================\n');
   next();
 });
-// Chat do live
 
+// Rotas
+// Chat do live
 app.use('/api/chat', authMiddleware, chatRoutes);
+
 // Configuração de rotas para jogadores
 app.use('/api/jogador', authMiddleware, roleMiddleware(['jogador', 'organizador']), jogadorRoutes);
 app.use('/api/jogador/reservas', authMiddleware, reservationRoutes);
@@ -56,7 +60,9 @@ app.use('/api/owner/reservas', authMiddleware, ownerReservationsRoutes);
 
 // Rotas de autenticação e usuários
 app.use('/api/auth', authRoutes);
-app.use('/api/usuario', userRoutes);
+
+// **Corrigido para montar userRoutes em '/api/usuarios' (plural)**
+app.use('/api/usuarios', userRoutes);
 
 // Rotas para empresas
 app.use('/api/empresas', authMiddleware, companyRoutes);
