@@ -57,7 +57,7 @@ router.get('/listar/:organizador_id', async (req, res) => {
 
   try {
     const result = await db.query(
-        `SELECT u.id_usuario AS id, u.nome, u.email, u.tt
+        `SELECT u.id_usuario AS id, u.nome, u.email, u.tt, u.imagem_perfil
          FROM usuario u
          JOIN amizades a ON u.id_usuario = a.amigo_id
          WHERE a.organizador_id = $1`,
@@ -76,6 +76,7 @@ router.get('/listar/:organizador_id', async (req, res) => {
     return res.status(500).json({ message: 'Erro ao listar amigos.', error });
   }
 });
+
 
 // Equilibrar times com amigos selecionados
 router.post('/equilibrar-amigos-selecionados', async (req, res) => {
