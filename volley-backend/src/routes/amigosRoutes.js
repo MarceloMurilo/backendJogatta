@@ -93,15 +93,19 @@ router.get('/listar/:organizador_id', async (req, res) => {
   try {
     const { organizador_id } = req.params;
     const {
-      page = 1,       // Página atual (default = 1)
-      limit = 10,     // Registros por página (default = 10)
-      searchTerm = '' // Termo de busca (opcional)
+      page = 1,
+      limit = 10,
+      searchTerm = '',
     } = req.query;
 
-    // Cálculo do OFFSET
     const offset = (page - 1) * limit;
 
-    // 1) Consulta para saber o total de registros
+    // Verifica se o organizador_id é válido
+    if (!organizador_id) {
+      return res.status(400).json({ message: 'ID do organizador é obrigatório.' });
+    }
+
+    // 1) Consulta total de registros
     const totalSql = `
       SELECT COUNT(*) AS total
       FROM usuario u
@@ -109,14 +113,19 @@ router.get('/listar/:organizador_id', async (req, res) => {
       WHERE a.organizador_id = $1
         AND (
           LOWER(u.nome) LIKE LOWER($2)
-          OR LOWER(u.tt)   LIKE LOWER($2)
+          OR LOWER(u.tt) LIKE LOWER($2)
           OR $2 = ''
         )
     `;
     const totalResult = await db.query(totalSql, [organizador_id, `%${searchTerm}%`]);
+
+    if (!totalResult.rows || totalResult.rows.length === 0) {
+      return res.status(200).json({ data: [], total: 0, hasMore: false });
+    }
+
     const total = parseInt(totalResult.rows[0].total, 10);
 
-    // 2) Consulta principal com paginação
+    // 2) Consulta de dados com paginação
     const dataSql = `
       SELECT u.id_usuario AS id,
              u.nome,
@@ -128,7 +137,7 @@ router.get('/listar/:organizador_id', async (req, res) => {
       WHERE a.organizador_id = $1
         AND (
           LOWER(u.nome) LIKE LOWER($2)
-          OR LOWER(u.tt)   LIKE LOWER($2)
+          OR LOWER(u.tt) LIKE LOWER($2)
           OR $2 = ''
         )
       ORDER BY u.nome
@@ -137,18 +146,17 @@ router.get('/listar/:organizador_id', async (req, res) => {
     const dataValues = [organizador_id, `%${searchTerm}%`, limit, offset];
     const dataResult = await db.query(dataSql, dataValues);
 
-    // 3) Verifica se ainda há mais páginas
     const hasMore = offset + dataResult.rows.length < total;
 
-    // Retorna um objeto com data, total e hasMore
+    // 3) Retorno da resposta
     return res.status(200).json({
-      data: dataResult.rows,
+      data: dataResult.rows || [],
       total,
       hasMore,
     });
   } catch (error) {
-    console.error('Erro ao listar amigos:', error);
-    return res.status(500).json({ message: 'Erro ao listar amigos.', error });
+    console.error('Erro ao listar amigos:', error.message);
+    return res.status(500).json({ message: 'Erro ao listar amigos.', error: error.message });
   }
 });
 
