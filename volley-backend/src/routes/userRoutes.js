@@ -1,5 +1,3 @@
-// src/routes/userRoutes.js
-
 const express = require('express');
 const pool = require('../db'); // Importando a conexão com o banco de dados
 const router = express.Router();
@@ -145,32 +143,8 @@ router.delete('/:id', async (req, res) => {
       [id]
     );
 
-    // Deletar transações relacionadas às reservas do usuário
-    await client.query(
-      'DELETE FROM public.transactions WHERE id_reserva IN (SELECT id_reserva FROM public.court_reservations WHERE id_usuario = $1)',
-      [id]
-    );
-
     // Deletar reservas de quadra feitas pelo usuário
     await client.query('DELETE FROM public.court_reservations WHERE id_usuario = $1', [id]);
-
-    // Deletar participações em jogos criados pelo usuário
-    await client.query(
-      'DELETE FROM public.game_participation WHERE id_jogo IN (SELECT id_jogo FROM public.jogos WHERE id_usuario_criador = $1)',
-      [id]
-    );
-
-    // Deletar jogos criados pelo usuário
-    await client.query('DELETE FROM public.jogos WHERE id_usuario_criador = $1', [id]);
-
-    // Deletar registros relacionados em usuario_insignias
-    await client.query('DELETE FROM public.usuario_insignias WHERE id_usuario = $1', [id]);
-
-    // Deletar registros relacionados em usuario_funcao
-    await client.query('DELETE FROM public.usuario_funcao WHERE id_usuario = $1', [id]);
-
-    // Deletar transações feitas pelo usuário (se houver)
-    await client.query('DELETE FROM public.transactions WHERE id_usuario = $1', [id]);
 
     // Deletar o usuário
     const result = await client.query('DELETE FROM public.usuario WHERE id_usuario = $1 RETURNING *', [id]);
