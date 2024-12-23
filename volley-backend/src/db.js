@@ -1,3 +1,5 @@
+// db.js
+
 const { Pool } = require('pg');
 require('dotenv').config(); // Certifique-se de que o arquivo .env esteja carregado corretamente
 
