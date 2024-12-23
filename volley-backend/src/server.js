@@ -95,16 +95,16 @@ app.get('/api/test', (req, res) => {
 cron.schedule('*/5 * * * *', async () => {
   console.log('Verificando jogos que precisam ser encerrados...');
   try {
-    const agora = new Date();
-
-    // Atualiza status de jogos cujo horário fim já passou
     const result = await db.query(
-      `UPDATE jogos SET status = 'encerrada'
-       WHERE horario_fim < NOW() AND status = 'ativa'`
+      `UPDATE jogos 
+       SET status = 'encerrada'
+       WHERE horario_fim < NOW()::timestamp AND status = 'ativa'`
     );
 
     if (result.rowCount > 0) {
       console.log(`${result.rowCount} jogos encerrados automaticamente.`);
+    } else {
+      console.log('Nenhum jogo para encerrar.');
     }
   } catch (error) {
     console.error('Erro ao encerrar jogos automaticamente:', error);
