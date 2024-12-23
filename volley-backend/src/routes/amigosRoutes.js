@@ -98,12 +98,12 @@ router.get('/listar/:organizador_id', async (req, res) => {
       searchTerm = '',
     } = req.query;
 
-    const offset = (page - 1) * limit;
-
     // Verifica se o organizador_id é válido
     if (!organizador_id) {
       return res.status(400).json({ message: 'ID do organizador é obrigatório.' });
     }
+
+    const offset = (page - 1) * limit;
 
     // Consulta de dados com paginação
     const dataSql = `
@@ -126,8 +126,29 @@ router.get('/listar/:organizador_id', async (req, res) => {
     const dataValues = [organizador_id, `%${searchTerm}%`, limit, offset];
     const dataResult = await db.query(dataSql, dataValues);
 
-    // Retorno direto da lista de amigos
-    return res.status(200).json(dataResult.rows || []);
+    // Query separada para saber o total (contagem)
+    const countSql = `
+      SELECT COUNT(*) AS total
+      FROM usuario u
+      JOIN amizades a ON u.id_usuario = a.amigo_id
+      WHERE a.organizador_id = $1
+        AND (
+          LOWER(u.nome) LIKE LOWER($2)
+          OR LOWER(u.tt) LIKE LOWER($2)
+          OR $2 = ''
+        )
+    `;
+    const countResult = await db.query(countSql, [organizador_id, `%${searchTerm}%`]);
+    const total = parseInt(countResult.rows[0]?.total ?? 0, 10);
+
+    // Verifica se tem mais páginas disponíveis
+    const hasMore = offset + dataResult.rows.length < total;
+
+    // Retorna a lista e o hasMore
+    return res.status(200).json({
+      data: dataResult.rows || [],
+      hasMore,
+    });
   } catch (error) {
     console.error('Erro ao listar amigos:', error.message);
     return res.status(500).json({ message: 'Erro ao listar amigos.', error: error.message });
