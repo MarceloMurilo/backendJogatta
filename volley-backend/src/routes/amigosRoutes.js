@@ -26,34 +26,32 @@ router.post('/adicionar', async (req, res) => {
   }
 
   try {
-    // Buscar o id_usuario do amigo com base no tt (username)
+    // Verificar se o amigo realmente existe no banco
     const amigoResult = await db.query(
-      'SELECT id_usuario FROM public.usuario WHERE tt = $1',
+      'SELECT id_usuario FROM public.usuario WHERE id_usuario = $1',
       [amigo_id]
     );
 
     if (amigoResult.rows.length === 0) {
-      return res.status(404).json({ message: 'Amigo não encontrado pelo TT fornecido.' });
+      return res.status(404).json({ message: 'Amigo não encontrado pelo ID fornecido.' });
     }
 
-    const amigoUsuarioId = amigoResult.rows[0].id_usuario;
-    console.log(`Adicionando amigo ID ${amigoUsuarioId} ao organizador ${organizador_id}`);
+    console.log(`Adicionando amigo ID ${amigo_id} ao organizador ${organizador_id}`);
 
     // Inserir na tabela amizades (ignora caso já exista)
     await db.query(
       `INSERT INTO amizades (organizador_id, amigo_id) VALUES ($1, $2)
        ON CONFLICT (organizador_id, amigo_id) DO NOTHING`,
-      [organizador_id, amigoUsuarioId]
+      [organizador_id, amigo_id]
     );
 
-    console.log(`Amigo ${amigoUsuarioId} adicionado com sucesso ao organizador ${organizador_id}`);
+    console.log(`Amigo ${amigo_id} adicionado com sucesso ao organizador ${organizador_id}`);
     return res.status(201).json({ message: 'Amigo adicionado com sucesso.' });
   } catch (error) {
     console.error('Erro ao adicionar amigo:', error);
     return res.status(500).json({ message: 'Erro ao adicionar amigo.', error });
   }
 });
-
 // Listar amigos
 router.get('/listar/:organizador_id', async (req, res) => {
   const { organizador_id } = req.params;
