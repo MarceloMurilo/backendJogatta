@@ -1,8 +1,11 @@
+/**
+ * Arquivo: routes/amigos.js
+ */
 const express = require('express');
 const router = express.Router();
 const db = require('../db'); // Conexão com o banco de dados
 
-// Middleware para logging
+// Middleware para logging (opcional)
 router.use((req, res, next) => {
   console.log(`\n=== Nova requisição recebida ===`);
   console.log(`Método: ${req.method}`);
@@ -23,7 +26,7 @@ router.post('/adicionar', async (req, res) => {
   }
 
   try {
-    // Buscar o id_usuario do amigo com base no tt
+    // Buscar o id_usuario do amigo com base no tt (username)
     const amigoResult = await db.query(
       'SELECT id_usuario FROM public.usuario WHERE tt = $1',
       [amigo_id]
@@ -77,11 +80,15 @@ router.get('/listar/:organizador_id', async (req, res) => {
   }
 });
 
-// Buscar amigos com sugestões (nome ou ID)
+/**
+ * IMPORTANTE:
+ * Ajustado aqui para receber "query" em vez de "termo".
+ * Assim, no frontend, você pode passar { params: { query: '...' } }.
+ */
 router.get('/buscar', async (req, res) => {
-  const { organizador_id, termo } = req.query;
+  const { organizador_id, query } = req.query;
 
-  if (!organizador_id || !termo) {
+  if (!organizador_id || !query) {
     return res.status(400).json({ message: 'Organizador e termo de busca são obrigatórios.' });
   }
 
@@ -91,12 +98,12 @@ router.get('/buscar', async (req, res) => {
       SELECT u.id_usuario AS id, u.nome, u.email, u.tt, u.imagem_perfil
       FROM usuario u
       WHERE (LOWER(u.nome) LIKE LOWER($1) OR LOWER(u.tt) LIKE LOWER($1))
-      AND u.id_usuario NOT IN (
-        SELECT amigo_id FROM amizades WHERE organizador_id = $2
-      )
+        AND u.id_usuario NOT IN (
+          SELECT amigo_id FROM amizades WHERE organizador_id = $2
+        )
       LIMIT 10
       `,
-      [`%${termo}%`, organizador_id]
+      [`%${query}%`, organizador_id]
     );
 
     if (result.rows.length === 0) {
@@ -150,6 +157,7 @@ router.post('/equilibrar-amigos-selecionados', async (req, res) => {
 
 // Função para balancear os times
 function balancearTimes(jogadores) {
+  // Ordena os jogadores pela soma das notas (passe, ataque, levantamento)
   jogadores.sort((a, b) => {
     const totalA = (a.passe || 0) + (a.ataque || 0) + (a.levantamento || 0);
     const totalB = (b.passe || 0) + (b.ataque || 0) + (b.levantamento || 0);
