@@ -52,6 +52,35 @@ router.post('/adicionar', async (req, res) => {
     return res.status(500).json({ message: 'Erro ao adicionar amigo.', error });
   }
 });
+
+// Remover um amigo
+router.post('/remover', async (req, res) => {
+  const { organizador_id, amigo_id } = req.body;
+
+  if (!organizador_id || !amigo_id) {
+    console.error('Erro: Organizador ou Amigo não fornecido.', req.body);
+    return res.status(400).json({ message: 'Organizador e Amigo são obrigatórios.' });
+  }
+
+  try {
+    const result = await db.query(
+      `DELETE FROM amizades 
+       WHERE organizador_id = $1 AND amigo_id = $2`,
+      [organizador_id, amigo_id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'Amizade não encontrada.' });
+    }
+
+    console.log(`Amigo ${amigo_id} removido com sucesso do organizador ${organizador_id}`);
+    return res.status(200).json({ message: 'Amigo removido com sucesso.' });
+  } catch (error) {
+    console.error('Erro ao remover amigo:', error);
+    return res.status(500).json({ message: 'Erro ao remover amigo.', error });
+  }
+});
+
 // Listar amigos
 router.get('/listar/:organizador_id', async (req, res) => {
   const { organizador_id } = req.params;
