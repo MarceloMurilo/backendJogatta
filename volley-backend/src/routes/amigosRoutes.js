@@ -39,7 +39,7 @@ router.post('/adicionar', async (req, res) => {
     const amigoUsuarioId = amigoResult.rows[0].id_usuario;
     console.log(`Adicionando amigo ID ${amigoUsuarioId} ao organizador ${organizador_id}`);
 
-    // Inserir na tabela amizades
+    // Inserir na tabela amizades (ignora caso já exista)
     await db.query(
       `INSERT INTO amizades (organizador_id, amigo_id) VALUES ($1, $2)
        ON CONFLICT (organizador_id, amigo_id) DO NOTHING`,
@@ -67,9 +67,10 @@ router.get('/listar/:organizador_id', async (req, res) => {
       [organizador_id]
     );
 
+    // Em vez de 404, retorne array vazio caso não encontre nada:
     if (result.rows.length === 0) {
       console.warn(`Nenhum amigo encontrado para o organizador: ${organizador_id}`);
-      return res.status(404).json({ message: 'Nenhum amigo encontrado.' });
+      return res.status(200).json([]);
     }
 
     console.log(`Amigos encontrados para o organizador ${organizador_id}:`, result.rows);
@@ -81,9 +82,8 @@ router.get('/listar/:organizador_id', async (req, res) => {
 });
 
 /**
- * IMPORTANTE:
- * Ajustado aqui para receber "query" em vez de "termo".
- * Assim, no frontend, você pode passar { params: { query: '...' } }.
+ * Buscar usuários pelo nome/tt. Mesmo se já forem amigos, mostrará.
+ * Adicionamos "isfriend" (boolean) se esse usuário já for amigo do organizador.
  */
 router.get('/buscar', async (req, res) => {
   const { organizador_id, query } = req.query;
@@ -93,27 +93,39 @@ router.get('/buscar', async (req, res) => {
   }
 
   try {
-    const result = await db.query(
-      `
-      SELECT u.id_usuario AS id, u.nome, u.email, u.tt, u.imagem_perfil
+    const sql = `
+      SELECT 
+        u.id_usuario AS id,
+        u.nome,
+        u.email,
+        u.tt,
+        u.imagem_perfil,
+        CASE 
+          WHEN a.amigo_id IS NOT NULL THEN true
+          ELSE false
+        END AS isfriend
       FROM usuario u
+      -- Left join para verificar se o usuário é amigo
+      LEFT JOIN amizades a 
+        ON a.amigo_id = u.id_usuario
+       AND a.organizador_id = $2
       WHERE (LOWER(u.nome) LIKE LOWER($1) OR LOWER(u.tt) LIKE LOWER($1))
-        AND u.id_usuario NOT IN (
-          SELECT amigo_id FROM amizades WHERE organizador_id = $2
-        )
+      ORDER BY u.nome
       LIMIT 10
-      `,
-      [`%${query}%`, organizador_id]
-    );
+    `;
 
+    const values = [`%${query}%`, organizador_id];
+    const result = await db.query(sql, values);
+
+    // Em vez de 404, retorne array vazio quando não achar nada
     if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Nenhum amigo encontrado.' });
+      return res.status(200).json([]);
     }
 
-    res.status(200).json(result.rows);
+    return res.status(200).json(result.rows);
   } catch (error) {
     console.error('Erro ao buscar amigos:', error);
-    res.status(500).json({ message: 'Erro ao buscar amigos.' });
+    return res.status(500).json({ message: 'Erro ao buscar amigos.' });
   }
 });
 
@@ -155,9 +167,8 @@ router.post('/equilibrar-amigos-selecionados', async (req, res) => {
   }
 });
 
-// Função para balancear os times
+// Função para balancear os times (exemplo)
 function balancearTimes(jogadores) {
-  // Ordena os jogadores pela soma das notas (passe, ataque, levantamento)
   jogadores.sort((a, b) => {
     const totalA = (a.passe || 0) + (a.ataque || 0) + (a.levantamento || 0);
     const totalB = (b.passe || 0) + (b.ataque || 0) + (b.levantamento || 0);
@@ -217,7 +228,7 @@ router.get('/frequentes/:organizador_id', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Nenhum amigo frequente encontrado.' });
+      return res.status(200).json([]);
     }
 
     res.status(200).json(result.rows);
