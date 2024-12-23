@@ -16,7 +16,9 @@ router.use((req, res, next) => {
   next();
 });
 
+// ==================================================================
 // Adicionar um amigo
+// ==================================================================
 router.post('/adicionar', async (req, res) => {
   const { organizador_id, amigo_id } = req.body;
 
@@ -30,7 +32,6 @@ router.post('/adicionar', async (req, res) => {
       'SELECT id_usuario FROM public.usuario WHERE id_usuario = $1',
       [amigo_id]
     );
-
     if (amigoResult.rows.length === 0) {
       return res.status(404).json({ message: 'Amigo não encontrado pelo ID fornecido.' });
     }
@@ -56,7 +57,9 @@ router.post('/adicionar', async (req, res) => {
   }
 });
 
+// ==================================================================
 // Remover um amigo
+// ==================================================================
 router.post('/remover', async (req, res) => {
   const { organizador_id, amigo_id } = req.body;
 
@@ -83,44 +86,83 @@ router.post('/remover', async (req, res) => {
   }
 });
 
-// Listar amigos
+// ==================================================================
+// Listar amigos com paginação e busca
+// ==================================================================
 router.get('/listar/:organizador_id', async (req, res) => {
-  const { organizador_id } = req.params;
-
   try {
-    const result = await db.query(
-      `SELECT u.id_usuario AS id,
-              u.nome,
-              u.email,
-              u.tt,
-              u.imagem_perfil
-       FROM usuario u
-       JOIN amizades a ON u.id_usuario = a.amigo_id
-       WHERE a.organizador_id = $1`,
-      [organizador_id]
-    );
+    const { organizador_id } = req.params;
+    const {
+      page = 1,       // Página atual (default = 1)
+      limit = 10,     // Registros por página (default = 10)
+      searchTerm = '' // Termo de busca (opcional)
+    } = req.query;
 
-    // Se não achar amigos, retorna array vazio
-    if (result.rows.length === 0) {
-      return res.status(200).json([]);
-    }
+    // Cálculo do OFFSET
+    const offset = (page - 1) * limit;
 
-    return res.status(200).json(result.rows);
+    // 1) Consulta para saber o total de registros
+    const totalSql = `
+      SELECT COUNT(*) AS total
+      FROM usuario u
+      JOIN amizades a ON u.id_usuario = a.amigo_id
+      WHERE a.organizador_id = $1
+        AND (
+          LOWER(u.nome) LIKE LOWER($2)
+          OR LOWER(u.tt)   LIKE LOWER($2)
+          OR $2 = ''
+        )
+    `;
+    const totalResult = await db.query(totalSql, [organizador_id, `%${searchTerm}%`]);
+    const total = parseInt(totalResult.rows[0].total, 10);
+
+    // 2) Consulta principal com paginação
+    const dataSql = `
+      SELECT u.id_usuario AS id,
+             u.nome,
+             u.email,
+             u.tt,
+             u.imagem_perfil
+      FROM usuario u
+      JOIN amizades a ON u.id_usuario = a.amigo_id
+      WHERE a.organizador_id = $1
+        AND (
+          LOWER(u.nome) LIKE LOWER($2)
+          OR LOWER(u.tt)   LIKE LOWER($2)
+          OR $2 = ''
+        )
+      ORDER BY u.nome
+      LIMIT $3 OFFSET $4
+    `;
+    const dataValues = [organizador_id, `%${searchTerm}%`, limit, offset];
+    const dataResult = await db.query(dataSql, dataValues);
+
+    // 3) Verifica se ainda há mais páginas
+    const hasMore = offset + dataResult.rows.length < total;
+
+    // Retorna um objeto com data, total e hasMore
+    return res.status(200).json({
+      data: dataResult.rows,
+      total,
+      hasMore,
+    });
   } catch (error) {
     console.error('Erro ao listar amigos:', error);
     return res.status(500).json({ message: 'Erro ao listar amigos.', error });
   }
 });
 
-/**
- * Buscar usuários pelo nome/tt. Mesmo se já forem amigos, mostrará.
- * Adicionamos "isfriend" (boolean) se esse usuário já for amigo do organizador.
- */
+// ==================================================================
+// Buscar usuários pelo nome/tt
+// Mesmo se já forem amigos, mostrará. Adicionamos "isfriend" (boolean).
+// ==================================================================
 router.get('/buscar', async (req, res) => {
   const { organizador_id, query } = req.query;
 
   if (!organizador_id || !query) {
-    return res.status(400).json({ message: 'Organizador e termo de busca são obrigatórios.' });
+    return res
+      .status(400)
+      .json({ message: 'Organizador e termo de busca são obrigatórios.' });
   }
 
   try {
@@ -149,11 +191,6 @@ router.get('/buscar', async (req, res) => {
     const values = [`%${query}%`, organizador_id];
     const result = await db.query(sql, values);
 
-    // Se não encontrar usuários, retorna array vazio
-    if (result.rows.length === 0) {
-      return res.status(200).json([]);
-    }
-
     return res.status(200).json(result.rows);
   } catch (error) {
     console.error('Erro ao buscar amigos:', error);
@@ -161,7 +198,10 @@ router.get('/buscar', async (req, res) => {
   }
 });
 
+// ==================================================================
 // Equilibrar times com amigos selecionados
+// (Exemplo simples, pode adaptar)
+// ==================================================================
 router.post('/equilibrar-amigos-selecionados', async (req, res) => {
   const { amigosSelecionados } = req.body;
 
@@ -219,7 +259,9 @@ function balancearTimes(jogadores) {
   return [time1, time2];
 }
 
+// ==================================================================
 // Atualizar frequência de interação com amigo
+// ==================================================================
 router.post('/frequencia', async (req, res) => {
   const { organizador_id, amigo_id } = req.body;
 
@@ -235,7 +277,6 @@ router.post('/frequencia', async (req, res) => {
        DO UPDATE SET frequencia = amigos_frequentes.frequencia + 1`,
       [organizador_id, amigo_id]
     );
-
     return res.status(200).json({ message: 'Frequência atualizada com sucesso.' });
   } catch (error) {
     console.error('Erro ao atualizar frequência:', error);
@@ -243,7 +284,9 @@ router.post('/frequencia', async (req, res) => {
   }
 });
 
+// ==================================================================
 // Listar amigos frequentes
+// ==================================================================
 router.get('/frequentes/:organizador_id', async (req, res) => {
   const { organizador_id } = req.params;
 
