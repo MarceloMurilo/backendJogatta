@@ -60,6 +60,9 @@ app.use('/api/groups', groupRoutes);
 app.use('/api/lobby', authMiddleware, lobbyRoutes);
 app.use('/api/cep', authMiddleware, cepRoutes);
 
+// Incluindo endpoints de balanceamento diretamente de gameRoutes
+app.use('/api/times', authMiddleware, gameRoutes);
+
 app.get('/api/test', (req, res) => {
   res.json({ message: 'Rota de teste funcionando!' });
 });
@@ -68,7 +71,6 @@ app.get('/api/test', (req, res) => {
 cron.schedule('*/5 * * * *', async () => {
   console.log('Verificando jogos que precisam ser encerrados...');
   try {
-    // Alteração aqui: uso de (data_jogo + horario_fim) < NOW() 
     const result = await db.query(
       `UPDATE jogos 
        SET status = 'encerrada'
