@@ -1,3 +1,7 @@
+/**
+ * src/routes/gameRoutes.js
+ */
+
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
@@ -21,7 +25,9 @@ const calcularVariancia = (valores) => {
 // Função de custo com pesos customizáveis
 const calcularCusto = (times, pesoPontuacao = 1, pesoAltura = 1) => {
   const pontuacoes = times.map(t => t.totalScore);
-  const alturasMedias = times.map(t => t.jogadores.length > 0 ? t.totalAltura / t.jogadores.length : 0);
+  const alturasMedias = times.map(t =>
+    t.jogadores.length > 0 ? t.totalAltura / t.jogadores.length : 0
+  );
 
   const varPontuacao = calcularVariancia(pontuacoes);
   const varAltura = calcularVariancia(alturasMedias);
@@ -29,7 +35,7 @@ const calcularCusto = (times, pesoPontuacao = 1, pesoAltura = 1) => {
   return (pesoPontuacao * varPontuacao) + (pesoAltura * varAltura);
 };
 
-// Função para calcular a distância euclidiana entre dois jogadores
+// Função para calcular a distância euclidiana entre dois jogadores (opcional para rotação)
 const calcularDistancia = (jogador1, jogador2) => {
   const alturaDiff = jogador1.altura - jogador2.altura;
   const passeDiff = jogador1.passe - jogador2.passe;
@@ -81,6 +87,107 @@ const gerarSugerirRotacoes = (times, reservas, topN = 2) => {
   return rotacoes;
 };
 
+/* ===================================================================
+   NOVOS ENDPOINTS ADICIONADOS (para controlar o status do organizador)
+   -------------------------------------------------------------------
+   1) /iniciar-balanceamento
+   2) /finalizar-balanceamento
+=================================================================== */
+
+/**
+ * POST /api/jogador/iniciar-balanceamento
+ * Marca o status do jogo como 'equilibrando'
+ */
+router.post('/iniciar-balanceamento', async (req, res) => {
+  try {
+    const { id_jogo, id_usuario_organizador } = req.body;
+    if (!id_jogo || !id_usuario_organizador) {
+      return res.status(400).json({ error: 'id_jogo e id_usuario_organizador são obrigatórios.' });
+    }
+
+    // Verifica se o jogo existe e se o solicitante é o organizador
+    const jogoQuery = await db.query(
+      `SELECT id_usuario, status FROM jogos WHERE id_jogo = $1 LIMIT 1`,
+      [id_jogo]
+    );
+    if (jogoQuery.rowCount === 0) {
+      return res.status(404).json({ error: 'Jogo não encontrado.' });
+    }
+    const { id_usuario: id_organizador, status } = jogoQuery.rows[0];
+    if (parseInt(id_organizador, 10) !== parseInt(id_usuario_organizador, 10)) {
+      return res.status(403).json({ error: 'Somente o organizador pode iniciar o balanceamento.' });
+    }
+
+    // Atualiza para 'equilibrando'
+    await db.query(
+      `UPDATE jogos SET status = 'equilibrando' WHERE id_jogo = $1`,
+      [id_jogo]
+    );
+
+    return res.status(200).json({
+      message: 'Organizador iniciou o balanceamento.',
+      status: 'equilibrando'
+    });
+  } catch (error) {
+    console.error('Erro ao iniciar balanceamento:', error);
+    return res.status(500).json({ error: 'Erro ao iniciar balanceamento.' });
+  }
+});
+
+/**
+ * POST /api/jogador/finalizar-balanceamento
+ * Marca o status do jogo como 'concluido'
+ * Retorna times gerados (ou armazenados) para exibir ao usuário
+ */
+router.post('/finalizar-balanceamento', async (req, res) => {
+  try {
+    const { id_jogo, id_usuario_organizador, times } = req.body;
+    if (!id_jogo || !id_usuario_organizador || !times) {
+      return res.status(400).json({
+        error: 'id_jogo, id_usuario_organizador e times são obrigatórios.'
+      });
+    }
+
+    // Verifica se o jogo existe e se o solicitante é o organizador
+    const jogoQuery = await db.query(
+      `SELECT id_usuario FROM jogos WHERE id_jogo = $1 LIMIT 1`,
+      [id_jogo]
+    );
+    if (jogoQuery.rowCount === 0) {
+      return res.status(404).json({ error: 'Jogo não encontrado.' });
+    }
+    const { id_usuario: id_organizador } = jogoQuery.rows[0];
+    if (parseInt(id_organizador, 10) !== parseInt(id_usuario_organizador, 10)) {
+      return res.status(403).json({ error: 'Somente o organizador pode finalizar o balanceamento.' });
+    }
+
+    // Atualiza para 'concluido'
+    await db.query(
+      `UPDATE jogos SET status = 'concluido' WHERE id_jogo = $1`,
+      [id_jogo]
+    );
+
+    // Se quiser salvar os times no banco, faça aqui:
+    // Exemplo: inserir em "times_jogos" ou algo assim
+    // ...
+    // Por enquanto, apenas retornamos os times passados no body
+
+    return res.status(200).json({
+      message: 'Balanceamento finalizado.',
+      status: 'concluido',
+      times
+    });
+  } catch (error) {
+    console.error('Erro ao finalizar balanceamento:', error);
+    return res.status(500).json({ error: 'Erro ao finalizar balanceamento.' });
+  }
+});
+
+/* ===================================================================
+   ROTA ORIGINAL DE EQUILIBRAR TIMES
+   - Você pode chamar /iniciar-balanceamento antes de rodar esta rota
+     e /finalizar-balanceamento após gerar os times.
+=================================================================== */
 router.post('/equilibrar-times', async (req, res) => {
   console.log('==== Requisição recebida em /equilibrar-times ====');
   console.log('Payload recebido:', JSON.stringify(req.body, null, 2));
@@ -142,7 +249,7 @@ router.post('/equilibrar-times', async (req, res) => {
     // Embaralhar a lista de jogadores para introduzir aleatoriedade
     jogadoresComPontuacao = embaralharJogadores(jogadoresComPontuacao);
 
-    // Ordenar jogadores por total de habilidades (desc) para melhor balanceamento
+    // Ordenar jogadores por total de habilidades (desc)
     jogadoresComPontuacao.sort((a, b) => b.total - a.total);
 
     const numero_times = Math.floor(jogadoresComPontuacao.length / tamanho_time);
@@ -166,7 +273,7 @@ router.post('/equilibrar-times', async (req, res) => {
     console.log(`Total de levantadores: ${levantadores.length}`);
     console.log(`Total de não-levantadores: ${naoLevantadores.length}`);
 
-    // Se não houver levantadores suficientes para cada time, criar substitutos
+    // Se não houver levantadores suficientes, tenta criar substitutos
     if (levantadores.length < numero_times) {
       naoLevantadores.sort((a, b) => b.levantamento - a.levantamento);
       const needed = numero_times - levantadores.length;
@@ -181,14 +288,14 @@ router.post('/equilibrar-times', async (req, res) => {
       }
     }
 
-    // Criar estrutura dos times
+    // Cria estrutura dos times
     const times = Array.from({ length: numero_times }, () => ({
       jogadores: [],
       totalScore: 0,
       totalAltura: 0,
     }));
 
-    // Distribuir um levantador em cada time primeiro
+    // Distribui 1 levantador em cada time
     levantadores.sort((a, b) => b.total - a.total);
     for (let i = 0; i < numero_times; i++) {
       const lev = levantadores[i];
@@ -202,8 +309,6 @@ router.post('/equilibrar-times', async (req, res) => {
 
     let filtrados = reservas.slice();
     filtrados.sort((a, b) => b.total - a.total);
-
-    // Embaralhar os filtrados para garantir inclusão
     filtrados = embaralharJogadores(filtrados);
 
     const pesoPontuacao = 1; // Ajuste se necessário
@@ -243,22 +348,18 @@ router.post('/equilibrar-times', async (req, res) => {
       }
     });
 
-    // Recalcular quem ficou de fora como reservas finais
+    // Recalcular quem ficou de fora como reservas
     const jogadoresAlocadosFinal = times.flatMap(time => time.jogadores.map(j => j.id));
     let reservasFinal = jogadoresComPontuacao.filter(j => !jogadoresAlocadosFinal.includes(j.id));
-
-    // Embaralhar as reservas finais para garantir inclusão
     reservasFinal = embaralharJogadores(reservasFinal);
 
-    console.log('Distribuindo jogadores restantes nos times...');
     console.log('Times equilibrados:', JSON.stringify(times, null, 2));
     console.log('Jogadores em reserva:', JSON.stringify(reservasFinal, null, 2));
 
     const rotacoes = gerarSugerirRotacoes(times, reservasFinal, 2);
-
     console.log('Sugestões de Rotação:', JSON.stringify(rotacoes, null, 2));
 
-    // Verificação final do tamanho dos times
+    // Checagem final
     for (let i = 0; i < numero_times; i++) {
       if (times[i].jogadores.length !== tamanho_time) {
         return res.status(500).json({
