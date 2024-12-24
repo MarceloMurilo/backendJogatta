@@ -42,7 +42,7 @@ router.post(
       const result = await db.query(
         `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, status)
          VALUES ($1, $2, $3, $4, $5, $6, 'ativa') RETURNING id_jogo`,
-        [nome_jogo, data_jogo, horario_inicio, horario_fim,'ativa', limite_jogadores, id_usuario]
+        [nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario]
       );
 
       res.status(201).json({ message: 'Jogo criado com sucesso.', id_jogo: result.rows[0].id_jogo });
