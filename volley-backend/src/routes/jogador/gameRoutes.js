@@ -1,7 +1,3 @@
-/**
- * src/routes/gameRoutes.js
- */
-
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
@@ -167,11 +163,8 @@ router.post('/finalizar-balanceamento', async (req, res) => {
       [id_jogo]
     );
 
-    // Se quiser salvar os times no banco, faça aqui:
-    // Exemplo: inserir em "times_jogos" ou algo assim
-    // ...
-    // Por enquanto, apenas retornamos os times passados no body
-
+    // Caso queira salvar 'times' no banco, inserir aqui.
+    // Por enquanto apenas retornamos.
     return res.status(200).json({
       message: 'Balanceamento finalizado.',
       status: 'concluido',
@@ -185,8 +178,6 @@ router.post('/finalizar-balanceamento', async (req, res) => {
 
 /* ===================================================================
    ROTA ORIGINAL DE EQUILIBRAR TIMES
-   - Você pode chamar /iniciar-balanceamento antes de rodar esta rota
-     e /finalizar-balanceamento após gerar os times.
 =================================================================== */
 router.post('/equilibrar-times', async (req, res) => {
   console.log('==== Requisição recebida em /equilibrar-times ====');
@@ -273,7 +264,7 @@ router.post('/equilibrar-times', async (req, res) => {
     console.log(`Total de levantadores: ${levantadores.length}`);
     console.log(`Total de não-levantadores: ${naoLevantadores.length}`);
 
-    // Se não houver levantadores suficientes, tenta criar substitutos
+    // Se não houver levantadores suficientes, cria substitutos
     if (levantadores.length < numero_times) {
       naoLevantadores.sort((a, b) => b.levantamento - a.levantamento);
       const needed = numero_times - levantadores.length;
@@ -369,14 +360,100 @@ router.post('/equilibrar-times', async (req, res) => {
       }
     }
 
-    return res.json({ 
-      times, 
-      reservas: reservasFinal, 
-      rotacoes 
+    return res.json({
+      times,
+      reservas: reservasFinal,
+      rotacoes
     });
   } catch (error) {
     console.error('Erro ao equilibrar times:', error);
     return res.status(500).json({ message: 'Erro ao equilibrar times.', error: error.message });
+  }
+});
+
+/* ===================================================================
+   NOVAS ROTAS PARA GERENCIAR HABILIDADES (OFFLINE)
+   /jogos/:jogoId/habilidades [GET, POST]
+=================================================================== */
+
+// GET - Retorna habilidades dos jogadores (baseado em avaliacoes do ORGANIZADOR do jogo)
+router.get('/:jogoId/habilidades', async (req, res) => {
+  try {
+    const { jogoId } = req.params;
+
+    // Primeiro, obter o organizador do jogo
+    const queryJogo = await db.query('SELECT id_usuario FROM jogos WHERE id_jogo = $1', [jogoId]);
+    if (queryJogo.rowCount === 0) {
+      return res.status(404).json({ message: 'Jogo não encontrado.' });
+    }
+    const organizadorId = queryJogo.rows[0].id_usuario;
+
+    // Buscar participantes e suas habilidades (avaliacoes)
+    const result = await db.query(
+      `SELECT 
+         pj.id_usuario AS id,
+         u.nome,
+         COALESCE(a.passe, 0) AS passe,
+         COALESCE(a.ataque, 0) AS ataque,
+         COALESCE(a.levantamento, 0) AS levantamento
+       FROM participacao_jogos pj
+         JOIN usuario u ON pj.id_usuario = u.id_usuario
+         LEFT JOIN avaliacoes a 
+                ON a.usuario_id = pj.id_usuario
+               AND a.organizador_id = $1
+       WHERE pj.id_jogo = $2
+      `,
+      [organizadorId, jogoId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Nenhum jogador encontrado para este jogo.' });
+    }
+
+    return res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Erro ao buscar habilidades dos jogadores:', error);
+    return res.status(500).json({ message: 'Erro ao buscar habilidades dos jogadores.', error });
+  }
+});
+
+// POST - Salva ou atualiza habilidades dos jogadores (UP-SERT em avaliacoes)
+router.post('/:jogoId/habilidades', async (req, res) => {
+  try {
+    const { jogoId } = req.params;
+    const { habilidades } = req.body;
+
+    if (!habilidades || !Array.isArray(habilidades) || habilidades.length === 0) {
+      return res.status(400).json({ message: 'Nenhuma habilidade fornecida.' });
+    }
+
+    // Obter organizador (para usar como organizador_id em avaliacoes)
+    const queryJogo = await db.query('SELECT id_usuario FROM jogos WHERE id_jogo = $1', [jogoId]);
+    if (queryJogo.rowCount === 0) {
+      return res.status(404).json({ message: 'Jogo não encontrado.' });
+    }
+    const organizadorId = queryJogo.rows[0].id_usuario;
+
+    // Percorrer as habilidades e fazer upsert
+    for (const amigo of habilidades) {
+      const { id, passe, ataque, levantamento } = amigo;
+      await db.query(
+        `INSERT INTO avaliacoes (usuario_id, organizador_id, passe, ataque, levantamento)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (usuario_id, organizador_id)
+         DO UPDATE SET 
+           passe = EXCLUDED.passe,
+           ataque = EXCLUDED.ataque,
+           levantamento = EXCLUDED.levantamento
+        `,
+        [id, organizadorId, passe || 0, ataque || 0, levantamento || 0]
+      );
+    }
+
+    return res.status(200).json({ message: 'Habilidades atualizadas com sucesso.' });
+  } catch (error) {
+    console.error('Erro ao salvar habilidades dos jogadores:', error);
+    return res.status(500).json({ message: 'Erro ao salvar habilidades dos jogadores.', error });
   }
 });
 
