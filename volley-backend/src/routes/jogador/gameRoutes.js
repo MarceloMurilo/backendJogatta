@@ -138,7 +138,7 @@ router.post('/iniciar-balanceamento', async (req, res) => {
 router.post('/finalizar-balanceamento', async (req, res) => {
   try {
     const { id_jogo, id_usuario_organizador, times } = req.body;
-    console.log("Recebendo requisição:", req.body); // Adicione este log para ver os dados recebidos
+    console.log("Parametros recebidos:", req.body); // Para debugar e garantir que os dados são passados
 
     if (!id_jogo || !id_usuario_organizador || !times) {
       return res.status(400).json({
@@ -165,8 +165,6 @@ router.post('/finalizar-balanceamento', async (req, res) => {
       [id_jogo]
     );
 
-    // Caso queira salvar 'times' no banco, inserir aqui.
-    // Por enquanto apenas retornamos.
     return res.status(200).json({
       message: 'Balanceamento finalizado.',
       status: 'concluido',
@@ -177,7 +175,6 @@ router.post('/finalizar-balanceamento', async (req, res) => {
     return res.status(500).json({ error: 'Erro ao finalizar balanceamento.' });
   }
 });
-
 /* ===================================================================
    ROTA ORIGINAL DE EQUILIBRAR TIMES
 =================================================================== */
