@@ -41,7 +41,7 @@ router.post(
     try {
       const result = await db.query(
         `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, status)
-         VALUES ($1, $2, $3, $4, $5, $6, 'ativa') RETURNING id_jogo`,
+         VALUES ($1, $2, $3, $4, $5, $6, 'aberto') RETURNING id_jogo`,
         [nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario]
       );
 
