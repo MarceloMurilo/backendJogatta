@@ -70,7 +70,7 @@ router.post('/criar', authMiddleware, async (req, res) => {
 router.post(
   '/convidar',
   authMiddleware,
-  roleMiddleware(['organizador', 'jogador']),
+  // roleMiddleware(['organizador', 'jogador']),
   async (req, res) => {
     const { id_jogo, amigos_ids } = req.body;
 
@@ -98,7 +98,7 @@ router.post(
 router.get(
   '/:id_jogo/habilidades',
   authMiddleware,
-  roleMiddleware(['jogador', 'organizador']),
+  // roleMiddleware(['jogador', 'organizador']),
   async (req, res) => {
     const { id_jogo } = req.params;
 
@@ -135,7 +135,7 @@ router.get(
 router.post(
   '/:id_jogo/habilidades',
   authMiddleware,
-  roleMiddleware(['organizador', 'jogador']),
+  // roleMiddleware(['organizador', 'jogador']),
   async (req, res) => {
     const { id_jogo } = req.params;
     const { habilidades } = req.body;
