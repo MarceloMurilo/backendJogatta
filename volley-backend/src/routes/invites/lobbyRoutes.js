@@ -20,35 +20,43 @@ router.post('/criar-sala', async (req, res) => {
   try {
     const { id_jogo, id_usuario, limite_jogadores } = req.body;
 
-    // Validações
-    if (!id_jogo || !id_usuario || !limite_jogadores || limite_jogadores <= 0) {
+    if (!id_usuario || !limite_jogadores || limite_jogadores <= 0) {
       return res.status(400).json({ error: 'Parâmetros obrigatórios inválidos.' });
     }
 
-    // Insere ou atualiza a sala com status 'aberto'
-    const result = await db.query(
-      `INSERT INTO jogos (id_jogo, id_usuario, status, limite_jogadores)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (id_jogo)
-       DO UPDATE SET
-         status = EXCLUDED.status,
-         limite_jogadores = EXCLUDED.limite_jogadores`,
-      [id_jogo, id_usuario, 'aberto', limite_jogadores]
-    );
+    let query, params;
 
-    // Verifica se a operação foi bem-sucedida
+    if (id_jogo) {
+      // Atualizar sala existente
+      query = `
+        UPDATE jogos
+        SET status = 'aberto', limite_jogadores = $1
+        WHERE id_jogo = $2 RETURNING id_jogo
+      `;
+      params = [limite_jogadores, id_jogo];
+    } else {
+      // Criar nova sala
+      query = `
+        INSERT INTO jogos (id_usuario, status, limite_jogadores)
+        VALUES ($1, $2, $3) RETURNING id_jogo
+      `;
+      params = [id_usuario, 'aberto', limite_jogadores];
+    }
+
+    const result = await db.query(query, params);
+
     if (result.rowCount === 0) {
       return res.status(500).json({ error: 'Erro ao criar ou atualizar a sala.' });
     }
 
-    return res.status(201).json({
+    res.status(201).json({
       message: 'Sala criada ou atualizada com sucesso.',
-      id_jogo,
+      id_jogo: result.rows[0].id_jogo,
       limite_jogadores,
     });
   } catch (error) {
     console.error('Erro ao criar sala:', error.message);
-    return res.status(500).json({ error: 'Erro ao criar sala.' });
+    res.status(500).json({ error: 'Erro ao criar sala.' });
   }
 });
 
@@ -245,9 +253,9 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
       return res.status(404).json({ error: 'Jogo não encontrado.' });
     }
 
-    const { id_usuario: id_organizador, limite_jogadores, status } = jogoQuery.rows[0];
+    const { id_usuario: organizador_id, limite_jogadores, status } = jogoQuery.rows[0];
     const isOrganizer =
-      parseInt(id_usuario_logado, 10) === parseInt(id_organizador, 10);
+      parseInt(id_usuario_logado, 10) === parseInt(organizador_id, 10);
 
     // Busca os jogadores que estão em participacao_jogos como status "ativo"
     const ativosQuery = await db.query(
@@ -470,9 +478,9 @@ router.post('/remover', async (req, res) => {
       return res.status(404).json({ error: 'Jogo não encontrado.' });
     }
 
-    const id_organizador = parseInt(organizadorQuery.rows[0].id_usuario, 10);
+    const organizador_id = parseInt(organizadorQuery.rows[0].id_usuario, 10);
 
-    if (id_organizador !== parseInt(id_usuario_organizador, 10)) {
+    if (organizador_id !== parseInt(id_usuario_organizador, 10)) {
       await client.query('ROLLBACK');
       return res
         .status(403)
@@ -580,8 +588,8 @@ router.post('/toggle-status', async (req, res) => {
       return res.status(404).json({ error: 'Sala não encontrada.' });
     }
 
-    const { id_usuario: id_organizador, status } = jogoQuery.rows[0];
-    if (parseInt(id_organizador, 10) !== parseInt(id_usuario_organizador, 10)) {
+    const { id_usuario: organizador_id, status } = jogoQuery.rows[0];
+    if (parseInt(organizador_id, 10) !== parseInt(id_usuario_organizador, 10)) {
       return res.status(403).json({ error: 'Somente o organizador pode alterar o status.' });
     }
 
