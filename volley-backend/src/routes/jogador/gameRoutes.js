@@ -94,95 +94,162 @@ const gerarSugerirRotacoes = (times, reservas, topN = 2) => {
  * POST /api/jogador/iniciar-balanceamento
  * Marca o status do jogo como 'equilibrando'
  */
-router.post('/iniciar-balanceamento', async (req, res) => {
-  try {
-    const { id_jogo, id_usuario_organizador } = req.body;
-    console.log("Recebido /iniciar-balanceamento:", req.body); // Log para depuração
+router.post(
+  '/iniciar-balanceamento',
+  authMiddleware,
+  roleMiddleware(['organizador']),
+  async (req, res) => {
+    try {
+      const { id_jogo } = req.body;
 
-    if (!id_jogo || !id_usuario_organizador) {
-      return res.status(400).json({ error: 'id_jogo e id_usuario_organizador são obrigatórios.' });
+      console.log('Recebido /iniciar-balanceamento:', req.body); // Log para depuração
+
+      // Verifica se o ID do jogo foi enviado
+      if (!id_jogo) {
+        return res.status(400).json({
+          error: 'O campo id_jogo é obrigatório.',
+        });
+      }
+
+      // Verifica se o jogo existe
+      const jogoQuery = await db.query(
+        `SELECT id_jogo, id_usuario, status FROM jogos WHERE id_jogo = $1 LIMIT 1`,
+        [id_jogo]
+      );
+
+      if (jogoQuery.rowCount === 0) {
+        return res.status(404).json({
+          error: 'Jogo não encontrado.',
+        });
+      }
+
+      const { id_usuario: organizador_id, status } = jogoQuery.rows[0];
+
+      // Verifica se o jogo já está em andamento ou finalizado
+      if (status === 'encerrada' || status === 'equilibrando') {
+        return res.status(400).json({
+          error: 'O jogo já está em andamento ou foi encerrado.',
+        });
+      }
+
+      // Atualiza o status do jogo para "equilibrando"
+      await db.query(
+        `UPDATE jogos SET status = 'equilibrando' WHERE id_jogo = $1`,
+        [id_jogo]
+      );
+
+      // Atualiza o status na tabela usuario_funcao
+      const expiraEm = new Date(Date.now() + 3 * 60 * 60 * 1000); // Expira em 3 horas
+      await db.query(
+        `INSERT INTO usuario_funcao (id_usuario, id_funcao, id_jogo, criado_em, expira_em)
+         VALUES ($1, 1, $2, NOW(), $3)
+         ON CONFLICT (id_usuario, id_funcao, id_jogo) 
+         DO UPDATE SET criado_em = NOW(), expira_em = $3`,
+        [organizador_id, id_jogo, expiraEm]
+      );
+
+      return res.status(200).json({
+        message: 'O organizador iniciou o balanceamento.',
+        status: 'equilibrando',
+      });
+    } catch (error) {
+      console.error('Erro ao iniciar balanceamento:', error);
+      return res.status(500).json({
+        error: 'Erro ao iniciar balanceamento.',
+        details: error.message,
+      });
     }
-
-    // Verifica se o jogo existe e se o solicitante é o organizador
-    const jogoQuery = await db.query(
-      `SELECT id_usuario, status FROM jogos WHERE id_jogo = $1 LIMIT 1`,
-      [id_jogo]
-    );
-
-    if (jogoQuery.rowCount === 0) {
-      return res.status(404).json({ error: 'Jogo não encontrado.' });
-    }
-
-    const { id_usuario: id_organizador, status } = jogoQuery.rows[0];
-    if (parseInt(id_organizador, 10) !== parseInt(id_usuario_organizador, 10)) {
-      return res.status(403).json({ error: 'Somente o organizador pode iniciar o balanceamento.' });
-    }
-
-    // Atualiza para 'equilibrando'
-    await db.query(
-      `UPDATE jogos SET status = 'equilibrando' WHERE id_jogo = $1`,
-      [id_jogo]
-    );
-
-    return res.status(200).json({
-      message: 'Organizador iniciou o balanceamento.',
-      status: 'equilibrando'
-    });
-  } catch (error) {
-    console.error('Erro ao iniciar balanceamento:', error);
-    return res.status(500).json({ error: 'Erro ao iniciar balanceamento.' });
   }
-});
+);
 
 /**
  * POST /api/jogador/finalizar-balanceamento
  * Marca o status do jogo como 'concluido'
  * Retorna times gerados (ou armazenados) para exibir ao usuário
  */
-router.post('/finalizar-balanceamento', async (req, res) => {
-  try {
-    const { id_jogo, id_usuario_organizador, times } = req.body;
-    console.log("Recebido /finalizar-balanceamento:", req.body); // Log para depuração
+router.post(
+  '/finalizar-balanceamento',
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const { id_jogo, id_usuario_organizador, times } = req.body;
+      console.log('Recebido /finalizar-balanceamento:', req.body); // Log para depuração
 
-    if (!id_jogo || !id_usuario_organizador || !times) {
-      return res.status(400).json({
-        error: 'id_jogo, id_usuario_organizador e times são obrigatórios.'
+      // Validações iniciais
+      if (!id_jogo || !id_usuario_organizador || !times) {
+        return res.status(400).json({
+          error: 'id_jogo, id_usuario_organizador e times são obrigatórios.',
+        });
+      }
+
+      // Verifica se o jogo existe e se o solicitante é o organizador
+      const jogoQuery = await db.query(
+        `SELECT id_usuario, status FROM jogos WHERE id_jogo = $1 LIMIT 1`,
+        [id_jogo]
+      );
+
+      if (jogoQuery.rowCount === 0) {
+        return res.status(404).json({ error: 'Jogo não encontrado.' });
+      }
+
+      const { id_usuario: organizador_id, status } = jogoQuery.rows[0];
+
+      if (parseInt(organizador_id, 10) !== parseInt(id_usuario_organizador, 10)) {
+        return res.status(403).json({
+          error: 'Somente o organizador pode finalizar o balanceamento.',
+        });
+      }
+
+      if (status !== 'equilibrando') {
+        return res.status(400).json({
+          error: 'O jogo não está em estado de balanceamento.',
+        });
+      }
+
+      // Atualiza o status do jogo para "concluido"
+      await db.query(
+        `UPDATE jogos SET status = 'concluido' WHERE id_jogo = $1`,
+        [id_jogo]
+      );
+
+      // Remove o papel de organizador na tabela usuario_funcao
+      await db.query(
+        `DELETE FROM usuario_funcao WHERE id_usuario = $1 AND id_jogo = $2 AND id_funcao = 1`,
+        [id_usuario_organizador, id_jogo]
+      );
+
+      // (Opcional) Salvar os times no banco de dados
+      // Salva os times e seus jogadores no banco, se necessário
+      for (const [index, time] of times.entries()) {
+        for (const jogador of time.jogadores) {
+          await db.query(
+            `INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [
+              id_jogo,
+              index + 1, // Número do time (1, 2, ...)
+              jogador.id,
+              time.totalScore,
+              time.totalAltura,
+            ]
+          );
+        }
+      }
+
+      return res.status(200).json({
+        message: 'Balanceamento finalizado.',
+        status: 'concluido',
+        times,
+      });
+    } catch (error) {
+      console.error('Erro ao finalizar balanceamento:', error);
+      return res.status(500).json({
+        error: 'Erro ao finalizar balanceamento.',
+        details: error.message,
       });
     }
-
-    // Verifica se o jogo existe e se o solicitante é o organizador
-    const jogoQuery = await db.query(
-      `SELECT id_usuario, status FROM jogos WHERE id_jogo = $1 LIMIT 1`,
-      [id_jogo]
-    );
-
-    if (jogoQuery.rowCount === 0) {
-      return res.status(404).json({ error: 'Jogo não encontrado.' });
-    }
-
-    const { id_usuario: id_organizador, status } = jogoQuery.rows[0];
-    if (parseInt(id_organizador, 10) !== parseInt(id_usuario_organizador, 10)) {
-      return res.status(403).json({ error: 'Somente o organizador pode finalizar o balanceamento.' });
-    }
-
-    // Atualiza para 'concluido'
-    await db.query(
-      `UPDATE jogos SET status = 'concluido' WHERE id_jogo = $1`,
-      [id_jogo]
-    );
-
-    // (Opcional) Você pode salvar os times no banco de dados aqui, se necessário
-
-    return res.status(200).json({
-      message: 'Balanceamento finalizado.',
-      status: 'concluido',
-      times
-    });
-  } catch (error) {
-    console.error('Erro ao finalizar balanceamento:', error);
-    return res.status(500).json({ error: 'Erro ao finalizar balanceamento.' });
   }
-});
+);
 
 /* ===================================================================
    ROTA ORIGINAL DE EQUILIBRAR TIMES
@@ -394,7 +461,7 @@ router.get('/:jogoId/habilidades', async (req, res) => {
     if (queryJogo.rowCount === 0) {
       return res.status(404).json({ message: 'Jogo não encontrado.' });
     }
-    const organizadorId = queryJogo.rows[0].id_usuario;
+    const organizador_id= queryJogo.rows[0].id_usuario;
 
     // Buscar participantes e suas habilidades (avaliacoes)
     const result = await db.query(
@@ -411,7 +478,7 @@ router.get('/:jogoId/habilidades', async (req, res) => {
                AND a.organizador_id = $1
        WHERE pj.id_jogo = $2
       `,
-      [organizadorId, jogoId]
+      [organizador_id, jogoId]
     );
 
     if (result.rows.length === 0) {
@@ -442,7 +509,7 @@ router.post('/:jogoId/habilidades', async (req, res) => {
     if (queryJogo.rowCount === 0) {
       return res.status(404).json({ message: 'Jogo não encontrado.' });
     }
-    const organizadorId = queryJogo.rows[0].id_usuario;
+    const organizador_id= queryJogo.rows[0].id_usuario;
 
     // Percorrer as habilidades e fazer upsert
     for (const jogador of habilidades) {
@@ -460,7 +527,7 @@ router.post('/:jogoId/habilidades', async (req, res) => {
            ataque = EXCLUDED.ataque,
            levantamento = EXCLUDED.levantamento
         `,
-        [id, organizadorId, passe || 0, ataque || 0, levantamento || 0]
+        [id, organizador_id, passe || 0, ataque || 0, levantamento || 0]
       );
     }
 
