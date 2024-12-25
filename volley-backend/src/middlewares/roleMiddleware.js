@@ -32,9 +32,10 @@ const roleMiddleware = (allowedRoles, options = {}) => {
     try {
       const query = `
         SELECT uf.id_funcao, f.nome_funcao 
-        FROM usuario_funcao uf
-        JOIN funcao f ON uf.id_funcao = f.id_funcao
-        WHERE uf.id_usuario = $1 AND uf.id_jogo = $2 AND uf.expira_em > NOW()
+FROM usuario_funcao uf
+JOIN funcao f ON uf.id_funcao = f.id_funcao
+WHERE uf.id_usuario = $1 AND uf.id_jogo = $2 AND (uf.expira_em IS NULL OR uf.expira_em > NOW())
+
       `;
       const result = await db.query(query, [id, id_jogo]);
 
