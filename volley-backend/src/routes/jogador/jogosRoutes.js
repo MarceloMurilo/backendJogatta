@@ -119,33 +119,19 @@ router.get(
   authMiddleware,
   roleMiddleware(['jogador', 'organizador']),
   async (req, res) => {
+    console.log('Params recebidos:', req.params); // Verificar os parâmetros recebidos
     const { id_jogo } = req.params;
+    console.log('ID do jogo extraído:', id_jogo); // Confirmar o valor de id_jogo
 
     if (!id_jogo) {
       return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
     }
 
     try {
-      const result = await db.query(
-        `SELECT pj.id_usuario, u.nome, u.email, 
-                COALESCE(a.passe, 0) AS passe, 
-                COALESCE(a.ataque, 0) AS ataque, 
-                COALESCE(a.levantamento, 0) AS levantamento
-         FROM participacao_jogos pj
-         JOIN usuario u ON pj.id_usuario = u.id_usuario
-         LEFT JOIN avaliacoes a ON pj.id_usuario = a.usuario_id 
-         WHERE pj.id_jogo = $1`,
-        [id_jogo]
-      );
-
-      if (result.rows.length === 0) {
-        return res.status(404).json({ message: 'Nenhum jogador encontrado para este jogo.' });
-      }
-
-      res.status(200).json(result.rows);
+      // Resto da lógica
     } catch (error) {
-      console.error('Erro ao buscar habilidades dos jogadores:', error);
-      res.status(500).json({ message: 'Erro interno ao buscar habilidades dos jogadores.', error });
+      console.error('Erro ao buscar habilidades:', error);
+      res.status(500).json({ message: 'Erro interno ao buscar habilidades.' });
     }
   }
 );

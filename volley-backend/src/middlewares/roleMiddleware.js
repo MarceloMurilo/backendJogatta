@@ -6,7 +6,10 @@ const db = require('../db');
  * @param {Object} options - opções adicionais (ex.: { skipIdJogo: true })
  */
 const roleMiddleware = (allowedRoles, options = {}) => {
+  
   return async (req, res, next) => {
+    console.log('Verificando permissões para usuário:', req.user); // Log do usuário autenticado
+  console.log('Parâmetros da rota no middleware:', req.params); // Verificar os parâmetros antes de qualquer modificação
     const skipIdJogo = options.skipIdJogo || false;
     
     // Se a rota não exigir id_jogo, apenas valida se o usuário tem papel válido
