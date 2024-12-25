@@ -1,10 +1,10 @@
-// authMiddleware.js
 const jwt = require('jsonwebtoken');
 
 const authMiddleware = (req, res, next) => {
   const authHeader = req.headers['authorization'];
 
   if (!authHeader) {
+    console.error(`[authMiddleware] Token de autorização não fornecido.`);
     return res.status(403).json({ message: 'Token não fornecido' });
   }
 
@@ -12,18 +12,19 @@ const authMiddleware = (req, res, next) => {
 
   jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
     if (err) {
+      console.error(`[authMiddleware] Erro ao verificar token:`, err.message);
       return res.status(401).json({ message: 'Token inválido' });
     }
 
-    // Verifique o conteúdo do token decodificado
-    console.log('Token decodificado:', decoded);
+    console.log('[authMiddleware] Token decodificado:', decoded);
 
-    // Assegure-se de que 'papel_usuario' está presente no token
-    if (!decoded.papel_usuario) {
-      return res.status(403).json({ message: 'Papel do usuário não fornecido no token' });
+    if (!decoded.id || !decoded.papel_usuario) {
+      console.error('[authMiddleware] Campos obrigatórios ausentes no token.');
+      return res.status(403).json({ message: 'Campos obrigatórios ausentes no token.' });
     }
 
     req.user = { id: decoded.id, papel_usuario: decoded.papel_usuario };
+    console.log(`[authMiddleware] Usuário autenticado: ID ${decoded.id}, Papel ${decoded.papel_usuario}`);
     next();
   });
 };
