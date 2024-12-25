@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../../db'); // Conexão com o banco de dados
 const authMiddleware = require('../../middlewares/authMiddleware'); // Certifique-se de que o caminho está correto
-const roleMiddleware = require('../../middlewares/roleMiddleware'); /
+const roleMiddleware = require('../../middlewares/roleMiddleware'); 
 
 // Função para embaralhar um array (Fisher-Yates shuffle)
 const embaralharJogadores = (jogadores) => {
