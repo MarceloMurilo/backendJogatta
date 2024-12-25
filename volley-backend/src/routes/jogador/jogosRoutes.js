@@ -1,13 +1,12 @@
 // routes/jogador/jogosRoutes.js
 
-// routes/jogador/jogosRoutes.js
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
 const authMiddleware = require('../../middlewares/authMiddleware');
-const roleMiddleware = require('../../middlewares/roleMiddleware'); // Não é usado em /criar mais
+const roleMiddleware = require('../../middlewares/roleMiddleware');
 
-// Middleware simples de log
+// Middleware simples de log para todas as rotas
 router.use((req, res, next) => {
   console.log(`=== Nova requisição em /api/jogos ===`);
   console.log(`Método: ${req.method}`);
@@ -18,6 +17,7 @@ router.use((req, res, next) => {
   next();
 });
 
+// Rota para criar um novo jogo
 router.post('/criar', authMiddleware, async (req, res) => {
   const { 
     nome_jogo, 
@@ -84,7 +84,6 @@ router.post('/criar', authMiddleware, async (req, res) => {
   }
 });
 
-
 // Rota para convidar amigos para um jogo
 router.post(
   '/convidar',
@@ -128,7 +127,23 @@ router.get(
     }
 
     try {
-      // Resto da lógica
+      const result = await db.query(
+        `SELECT pj.id_usuario, u.nome, 
+                COALESCE(a.passe, 0) AS passe, 
+                COALESCE(a.ataque, 0) AS ataque, 
+                COALESCE(a.levantamento, 0) AS levantamento
+         FROM participacao_jogos pj
+         JOIN usuario u ON pj.id_usuario = u.id_usuario
+         LEFT JOIN avaliacoes a ON pj.id_usuario = a.usuario_id AND a.organizador_id = $1
+         WHERE pj.id_jogo = $2`,
+        [req.user.id, id_jogo] // Utiliza o ID do organizador autenticado
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: 'Nenhum jogador encontrado para este jogo.' });
+      }
+
+      return res.status(200).json({ jogadores: result.rows });
     } catch (error) {
       console.error('Erro ao buscar habilidades:', error);
       res.status(500).json({ message: 'Erro interno ao buscar habilidades.' });
@@ -156,7 +171,7 @@ router.post(
            VALUES ($1, $2, $3, $4, $5)
            ON CONFLICT (usuario_id, organizador_id) 
            DO UPDATE SET passe = $3, ataque = $4, levantamento = $5`,
-          [jogador.id_usuario, jogador.organizador_id, jogador.passe, jogador.ataque, jogador.levantamento]
+          [jogador.id_usuario, req.user.id, jogador.passe, jogador.ataque, jogador.levantamento] // Utiliza req.user.id
         )
       );
 
@@ -201,8 +216,13 @@ router.get(
       const jogadores = result.rows;
       const times = [[], []];
 
-      jogadores.sort((a, b) => (b.passe + b.ataque + b.levantamento) - (a.passe + a.ataque + a.levantamento));
+      // Ordena os jogadores pela soma das habilidades em ordem decrescente
+      jogadores.sort((a, b) => 
+        (b.passe + b.ataque + b.levantamento) - 
+        (a.passe + a.ataque + a.levantamento)
+      );
 
+      // Distribui os jogadores alternadamente entre os times para equilibrar
       jogadores.forEach((jogador, index) => {
         const teamIndex = index % times.length;
         times[teamIndex].push(jogador);
