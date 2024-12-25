@@ -134,7 +134,7 @@ router.get(
                 COALESCE(a.levantamento, 0) AS levantamento
          FROM participacao_jogos pj
          JOIN usuario u ON pj.id_usuario = u.id_usuario
-         LEFT JOIN avaliacoes a ON pj.id_usuario = a.usuario_id AND a.organizador_id = $1
+         LEFT JOIN avaliacoes a ON pj.id_usuario = a.usuario_id LEFT JOIN avaliacoes a ON pj.id_usuario = a.usuario_id
          WHERE pj.id_jogo = $2`,
         [req.user.id, id_jogo] // Utiliza o ID do organizador autenticado
       );
