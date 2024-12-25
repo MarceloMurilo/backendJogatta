@@ -6,7 +6,7 @@ const authMiddleware = (req, res, next) => {
 
   if (!authHeader) {
     console.error(`[authMiddleware] Token de autorização não fornecido.`);
-    return res.status(401).json({ message: 'Token não fornecido' }); // <-- Ajustado para 401
+    return res.status(401).json({ message: 'Token não fornecido' });
   }
 
   const token = authHeader.split(' ')[1];
@@ -21,11 +21,15 @@ const authMiddleware = (req, res, next) => {
 
     if (!decoded.id || !decoded.papel_usuario) {
       console.error('[authMiddleware] Campos obrigatórios ausentes no token.');
-      return res.status(403).json({ message: 'Campos obrigatórios ausentes no token.' });
+      return res
+        .status(403)
+        .json({ message: 'Campos obrigatórios ausentes no token.' });
     }
 
     req.user = { id: decoded.id, papel_usuario: decoded.papel_usuario };
-    console.log(`[authMiddleware] Usuário autenticado: ID ${decoded.id}, Papel ${decoded.papel_usuario}`);
+    console.log(
+      `[authMiddleware] Usuário autenticado: ID ${decoded.id}, Papel ${decoded.papel_usuario}`
+    );
     next();
   });
 };

@@ -6,7 +6,7 @@ const db = require('../../db');
 const authMiddleware = require('../../middlewares/authMiddleware');
 const roleMiddleware = require('../../middlewares/roleMiddleware');
 
-// Middleware simples de log para todas as rotas
+// Middleware de log
 router.use((req, res, next) => {
   console.log(`=== Nova requisição em /api/jogos ===`);
   console.log(`Método: ${req.method}`);
@@ -17,15 +17,15 @@ router.use((req, res, next) => {
   next();
 });
 
-// Rota para criar um novo jogo
+// POST /api/jogos/criar
 router.post('/criar', authMiddleware, async (req, res) => {
-  const { 
-    nome_jogo, 
-    data_jogo, 
-    horario_inicio, 
-    horario_fim, 
-    limite_jogadores, 
-    id_usuario 
+  const {
+    nome_jogo,
+    data_jogo,
+    horario_inicio,
+    horario_fim,
+    limite_jogadores,
+    id_usuario,
   } = req.body;
 
   if (
@@ -39,18 +39,22 @@ router.post('/criar', authMiddleware, async (req, res) => {
     return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
   }
 
-  // Valida duração (exemplo)
+  // Exemplo de validação de duração:
   const duracao = new Date(horario_fim) - new Date(horario_inicio);
   if (duracao > 12 * 60 * 60 * 1000) {
-    return res.status(400).json({ message: 'A duração máxima do jogo é 12 horas.' });
+    return res
+      .status(400)
+      .json({ message: 'A duração máxima do jogo é 12 horas.' });
   }
   if (duracao <= 0) {
-    return res.status(400).json({ message: 'O horário de término deve ser após o horário de início.' });
+    return res
+      .status(400)
+      .json({ message: 'O horário de término deve ser depois do início.' });
   }
 
-  const client = await db.getClient(); // Obtém o cliente para transações
+  const client = await db.getClient();
   try {
-    await client.query('BEGIN'); // Início da transação
+    await client.query('BEGIN');
 
     const result = await client.query(
       `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, status)
@@ -59,32 +63,33 @@ router.post('/criar', authMiddleware, async (req, res) => {
       [nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario]
     );
 
-    const id_jogo = result.rows[0].id_jogo; // Captura o ID do jogo criado
+    const id_jogo = result.rows[0].id_jogo;
 
-    // Adiciona o papel de organizador no banco
+    // Marca o usuário como organizador
     await client.query(
       `INSERT INTO usuario_funcao (id_usuario, id_jogo, id_funcao, expira_em)
-       VALUES ($1, $2, 
-         (SELECT id_funcao FROM funcao WHERE nome_funcao = 'organizador'), 
-         NULL)`,
+       VALUES (
+         $1,
+         $2,
+         (SELECT id_funcao FROM funcao WHERE nome_funcao = 'organizador'),
+         NULL
+       )`,
       [id_usuario, id_jogo]
     );
 
-    await client.query('COMMIT'); // Finaliza a transação
+    await client.query('COMMIT');
 
-    return res
-      .status(201)
-      .json({ message: 'Jogo criado com sucesso.', id_jogo });
+    return res.status(201).json({ message: 'Jogo criado com sucesso.', id_jogo });
   } catch (error) {
     console.error('Erro ao criar jogo:', error);
-    await client.query('ROLLBACK'); // Reverte alterações em caso de erro
+    await client.query('ROLLBACK');
     res.status(500).json({ message: 'Erro interno ao criar o jogo.', error });
   } finally {
-    client.release(); // Libera o cliente após a execução
+    client.release();
   }
 });
 
-// Rota para convidar amigos para um jogo
+// POST /api/jogos/convidar
 router.post(
   '/convidar',
   authMiddleware,
@@ -93,7 +98,9 @@ router.post(
     const { id_jogo, amigos_ids } = req.body;
 
     if (!id_jogo || !Array.isArray(amigos_ids) || amigos_ids.length === 0) {
-      return res.status(400).json({ message: 'ID do jogo e uma lista de amigos são obrigatórios.' });
+      return res
+        .status(400)
+        .json({ message: 'ID do jogo e lista de amigos são obrigatórios.' });
     }
 
     try {
@@ -102,7 +109,8 @@ router.post(
         .join(', ');
 
       await db.query(
-        `INSERT INTO participacao_jogos (id_jogo, id_usuario, data_participacao) VALUES ${values}`
+        `INSERT INTO participacao_jogos (id_jogo, id_usuario, data_participacao)
+         VALUES ${values}`
       );
       res.status(201).json({ message: 'Amigos convidados com sucesso.' });
     } catch (error) {
@@ -112,15 +120,13 @@ router.post(
   }
 );
 
-// Rota para buscar habilidades dos jogadores de um jogo
+// GET /api/jogos/:id_jogo/habilidades
 router.get(
   '/:id_jogo/habilidades',
   authMiddleware,
   roleMiddleware(['jogador', 'organizador']),
   async (req, res) => {
-    console.log('Params recebidos:', req.params); // Verificar os parâmetros recebidos
     const { id_jogo } = req.params;
-    console.log('ID do jogo extraído:', id_jogo); // Confirmar o valor de id_jogo
 
     if (!id_jogo) {
       return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
@@ -128,19 +134,21 @@ router.get(
 
     try {
       const result = await db.query(
-        `SELECT pj.id_usuario, u.nome, 
-                COALESCE(a.passe, 0) AS passe, 
-                COALESCE(a.ataque, 0) AS ataque, 
+        `SELECT pj.id_usuario, u.nome,
+                COALESCE(a.passe, 0) AS passe,
+                COALESCE(a.ataque, 0) AS ataque,
                 COALESCE(a.levantamento, 0) AS levantamento
-         FROM participacao_jogos pj
-         JOIN usuario u ON pj.id_usuario = u.id_usuario
-         LEFT JOIN avaliacoes a ON pj.id_usuario = a.usuario_id LEFT JOIN avaliacoes a ON pj.id_usuario = a.usuario_id
-         WHERE pj.id_jogo = $2`,
-        [req.user.id, id_jogo] // Utiliza o ID do organizador autenticado
+           FROM participacao_jogos pj
+           JOIN usuario u ON pj.id_usuario = u.id_usuario
+      LEFT JOIN avaliacoes a ON pj.id_usuario = a.usuario_id
+          WHERE pj.id_jogo = $1`,
+        [id_jogo]
       );
 
       if (result.rows.length === 0) {
-        return res.status(404).json({ message: 'Nenhum jogador encontrado para este jogo.' });
+        return res
+          .status(404)
+          .json({ message: 'Nenhum jogador encontrado para este jogo.' });
       }
 
       return res.status(200).json({ jogadores: result.rows });
@@ -151,7 +159,7 @@ router.get(
   }
 );
 
-// Rota para salvar habilidades dos jogadores de um jogo
+// POST /api/jogos/:id_jogo/habilidades
 router.post(
   '/:id_jogo/habilidades',
   authMiddleware,
@@ -161,7 +169,9 @@ router.post(
     const { habilidades } = req.body;
 
     if (!id_jogo || !Array.isArray(habilidades) || habilidades.length === 0) {
-      return res.status(400).json({ message: 'ID do jogo e habilidades dos jogadores são obrigatórios.' });
+      return res
+        .status(400)
+        .json({ message: 'ID do jogo e habilidades são obrigatórios.' });
     }
 
     try {
@@ -169,9 +179,15 @@ router.post(
         db.query(
           `INSERT INTO avaliacoes (usuario_id, organizador_id, passe, ataque, levantamento)
            VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (usuario_id, organizador_id) 
+           ON CONFLICT (usuario_id, organizador_id)
            DO UPDATE SET passe = $3, ataque = $4, levantamento = $5`,
-          [jogador.id_usuario, req.user.id, jogador.passe, jogador.ataque, jogador.levantamento] // Utiliza req.user.id
+          [
+            jogador.id_usuario,
+            req.user.id, // organizador ou usuário logado
+            jogador.passe,
+            jogador.ataque,
+            jogador.levantamento,
+          ]
         )
       );
 
@@ -179,12 +195,14 @@ router.post(
       res.status(200).json({ message: 'Habilidades atualizadas com sucesso.' });
     } catch (error) {
       console.error('Erro ao salvar habilidades:', error);
-      res.status(500).json({ message: 'Erro interno ao salvar habilidades.', error });
+      res
+        .status(500)
+        .json({ message: 'Erro interno ao salvar habilidades.', error });
     }
   }
 );
 
-// Rota para equilibrar times
+// GET /api/jogos/:id_jogo/equilibrar-times
 router.get(
   '/:id_jogo/equilibrar-times',
   authMiddleware,
@@ -198,31 +216,34 @@ router.get(
 
     try {
       const result = await db.query(
-        `SELECT pj.id_usuario, u.nome, 
-                COALESCE(a.passe, 0) AS passe, 
-                COALESCE(a.ataque, 0) AS ataque, 
+        `SELECT pj.id_usuario, u.nome,
+                COALESCE(a.passe, 0) AS passe,
+                COALESCE(a.ataque, 0) AS ataque,
                 COALESCE(a.levantamento, 0) AS levantamento
-         FROM participacao_jogos pj
-         JOIN usuario u ON pj.id_usuario = u.id_usuario
-         LEFT JOIN avaliacoes a ON pj.id_usuario = a.usuario_id
-         WHERE pj.id_jogo = $1`,
+           FROM participacao_jogos pj
+           JOIN usuario u ON pj.id_usuario = u.id_usuario
+      LEFT JOIN avaliacoes a ON pj.id_usuario = a.usuario_id
+          WHERE pj.id_jogo = $1`,
         [id_jogo]
       );
 
       if (result.rows.length === 0) {
-        return res.status(404).json({ message: 'Nenhum jogador encontrado para este jogo.' });
+        return res
+          .status(404)
+          .json({ message: 'Nenhum jogador encontrado para este jogo.' });
       }
 
       const jogadores = result.rows;
       const times = [[], []];
 
-      // Ordena os jogadores pela soma das habilidades em ordem decrescente
-      jogadores.sort((a, b) => 
-        (b.passe + b.ataque + b.levantamento) - 
-        (a.passe + a.ataque + a.levantamento)
+      // Ordena pela soma das habilidades
+      jogadores.sort(
+        (a, b) =>
+          b.passe + b.ataque + b.levantamento -
+          (a.passe + a.ataque + a.levantamento)
       );
 
-      // Distribui os jogadores alternadamente entre os times para equilibrar
+      // Distribui alternadamente
       jogadores.forEach((jogador, index) => {
         const teamIndex = index % times.length;
         times[teamIndex].push(jogador);

@@ -1,6 +1,4 @@
-/**
- * src/routes/lobbyRoutes.js
- */
+// src/routes/lobbyRoutes.js
 
 const express = require('express');
 const router = express.Router();
@@ -10,22 +8,29 @@ const authMiddleware = require('../../middlewares/authMiddleware');
 
 router.use(authMiddleware);
 
-/* =============================================================================
-   1. CRIAR SALA
-   -----------------------------------------------------------------------------
-   - Insere uma nova sala ou atualiza uma existente para "aberto".
-   - Define o limite de jogadores.
-============================================================================= */
+// 1. CRIAR SALA
 router.post('/criar', async (req, res) => {
   try {
-    const { nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario } = req.body;
+    const {
+      nome_jogo,
+      data_jogo,
+      horario_inicio,
+      horario_fim,
+      limite_jogadores,
+      id_usuario,
+    } = req.body;
 
-    // Validações
-    if (!nome_jogo || !data_jogo || !horario_inicio || !horario_fim || !limite_jogadores || !id_usuario) {
+    if (
+      !nome_jogo ||
+      !data_jogo ||
+      !horario_inicio ||
+      !horario_fim ||
+      !limite_jogadores ||
+      !id_usuario
+    ) {
       return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
     }
 
-    // Inserir novo jogo no banco de dados
     const result = await db.query(
       `INSERT INTO jogos (nome, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -47,12 +52,7 @@ router.post('/criar', async (req, res) => {
   }
 });
 
-/* =============================================================================
-   2. GERAR LINK DE CONVITE
-   -----------------------------------------------------------------------------
-   - Gera um UUID (convite_uuid) e um ID numérico exclusivo (id_numerico).
-   - Cria o registro na tabela "convites" com status "pendente".
-============================================================================= */
+// 2. GERAR LINK DE CONVITE
 router.post('/gerar', async (req, res) => {
   try {
     const { id_jogo, id_usuario } = req.body;
@@ -67,7 +67,6 @@ router.post('/gerar', async (req, res) => {
     let idNumerico;
     let isUnique = false;
 
-    // Gera um número de 6 dígitos e checa se não está duplicado
     while (!isUnique) {
       idNumerico = Math.floor(100000 + Math.random() * 900000);
       const existing = await db.query(
@@ -79,7 +78,6 @@ router.post('/gerar', async (req, res) => {
       }
     }
 
-    // Insere o convite como "pendente"
     await db.query(
       `INSERT INTO convites (id_jogo, id_usuario, convite_uuid, status, data_envio, id_numerico)
        VALUES ($1, $2, $3, $4, NOW(), $5)`,
@@ -99,15 +97,7 @@ router.post('/gerar', async (req, res) => {
   }
 });
 
-/* =============================================================================
-   3. ENTRAR NA SALA
-   -----------------------------------------------------------------------------
-   - Verifica se a sala está aberta.
-   - Verifica se o convite existe e está com status "pendente".
-   - Se a sala estiver lotada, jogador vai para a fila_jogos (status "na_espera").
-   - Senão, jogador entra na sala como "ativo" em participacao_jogos.
-   - *Não* marca mais o convite como "usado"; ele permanece "pendente".
-============================================================================= */
+// 3. ENTRAR NA SALA
 router.post('/entrar', async (req, res) => {
   const client = await db.getClient();
 
@@ -115,14 +105,13 @@ router.post('/entrar', async (req, res) => {
     const { convite_uuid, id_numerico, id_usuario } = req.body;
 
     if ((!convite_uuid && !id_numerico) || !id_usuario) {
-      return res
-        .status(400)
-        .json({ error: 'É necessário convite_uuid ou id_numerico + id_usuario.' });
+      return res.status(400).json({
+        error: 'É necessário convite_uuid ou id_numerico + id_usuario.',
+      });
     }
 
     await client.query('BEGIN');
 
-    // Verifica se o convite existe e está pendente
     const conviteQuery = await client.query(
       `SELECT c.id_jogo, j.status AS status_jogo
          FROM convites c
@@ -140,31 +129,26 @@ router.post('/entrar', async (req, res) => {
 
     const { id_jogo, status_jogo } = conviteQuery.rows[0];
 
-    // Verifica se a sala está aberta
     if (status_jogo !== 'aberto') {
       await client.query('ROLLBACK');
-      return res
-        .status(403)
-        .json({ error: 'A sala está fechada. Não é possível entrar.' });
+      return res.status(403).json({
+        error: 'A sala está fechada. Não é possível entrar.',
+      });
     }
 
-    // Verifica quantos jogadores "ativos" já estão
     const ativosCountQuery = await client.query(
       'SELECT COUNT(*) AS total_ativos FROM participacao_jogos WHERE id_jogo = $1 AND status = $2',
       [id_jogo, 'ativo']
     );
     const numJogadoresAtivos = parseInt(ativosCountQuery.rows[0].total_ativos, 10) || 0;
 
-    // Obtém o limite de jogadores
     const jogoQuery = await client.query(
       'SELECT limite_jogadores FROM jogos WHERE id_jogo = $1',
       [id_jogo]
     );
     const limiteJogadores = jogoQuery.rows[0]?.limite_jogadores || 0;
 
-    // Se já estiver lotado, insere na fila
     if (numJogadoresAtivos >= limiteJogadores) {
-      // Verifica se o jogador já está na fila
       const usuarioFilaQuery = await client.query(
         'SELECT 1 FROM fila_jogos WHERE id_jogo = $1 AND id_usuario = $2',
         [id_jogo, id_usuario]
@@ -177,14 +161,12 @@ router.post('/entrar', async (req, res) => {
           .json({ message: 'Jogador já está na lista de espera.' });
       }
 
-      // Calcula a próxima posição na fila
       const posicaoQuery = await client.query(
         'SELECT COUNT(*) + 1 AS posicao FROM fila_jogos WHERE id_jogo = $1',
         [id_jogo]
       );
       const posicao = parseInt(posicaoQuery.rows[0].posicao, 10);
 
-      // Insere na fila com status "na_espera"
       await client.query(
         `INSERT INTO fila_jogos (id_jogo, id_usuario, status, posicao_fila, timestamp)
          VALUES ($1, $2, $3, $4, NOW())`,
@@ -195,7 +177,6 @@ router.post('/entrar', async (req, res) => {
       return res.status(200).json({ message: 'Jogador adicionado à lista de espera.' });
     }
 
-    // Caso contrário, insere/atualiza como "ativo" em participacao_jogos
     await client.query(
       `INSERT INTO participacao_jogos (id_jogo, id_usuario, status, confirmado, pago)
        VALUES ($1, $2, 'ativo', FALSE, FALSE)
@@ -215,19 +196,12 @@ router.post('/entrar', async (req, res) => {
   }
 });
 
-/* =============================================================================
-   4. LISTAR JOGADORES
-   -----------------------------------------------------------------------------
-   - Retorna dois arrays: "ativos" (participacao_jogos com status = 'ativo')
-     e "espera" (fila_jogos com status = 'na_espera').
-   - Retorna isOrganizer, limite_jogadores e status da sala.
-============================================================================= */
+// 4. LISTAR JOGADORES
 router.get('/:id_jogo/jogadores', async (req, res) => {
   try {
     const { id_jogo } = req.params;
     const id_usuario_logado = req.user ? req.user.id : null;
 
-    // Verifica se o jogo existe
     const jogoQuery = await db.query(
       `SELECT id_usuario, limite_jogadores, status
          FROM jogos
@@ -240,11 +214,11 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
       return res.status(404).json({ error: 'Jogo não encontrado.' });
     }
 
-    const { id_usuario: organizador_id, limite_jogadores, status } = jogoQuery.rows[0];
+    const { id_usuario: organizador_id, limite_jogadores, status } =
+      jogoQuery.rows[0];
     const isOrganizer =
       parseInt(id_usuario_logado, 10) === parseInt(organizador_id, 10);
 
-    // Busca os jogadores que estão em participacao_jogos como status "ativo"
     const ativosQuery = await db.query(
       `SELECT u.id_usuario, u.nome, p.status, p.confirmado, p.pago
          FROM participacao_jogos p
@@ -256,7 +230,6 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
     );
     const ativos = ativosQuery.rows;
 
-    // Busca os jogadores que estão na fila (fila_jogos) com status "na_espera"
     const esperaQuery = await db.query(
       `SELECT u.id_usuario, u.nome, f.status, f.posicao_fila
          FROM fila_jogos f
@@ -273,7 +246,7 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
       espera,
       isOrganizer,
       limite_jogadores,
-      status, // Inclui o status da sala
+      status,
     });
   } catch (error) {
     console.error('Erro ao listar jogadores:', error.message);
@@ -281,11 +254,7 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
   }
 });
 
-/* =============================================================================
-   5. CONFIRMAR PRESENÇA
-   -----------------------------------------------------------------------------
-   - Define "confirmado" como TRUE em participacao_jogos.
-============================================================================= */
+// 5. CONFIRMAR PRESENÇA
 router.post('/confirmar-presenca', async (req, res) => {
   try {
     const { id_jogo, id_usuario } = req.body;
@@ -311,11 +280,7 @@ router.post('/confirmar-presenca', async (req, res) => {
   }
 });
 
-/* =============================================================================
-   6. CONFIRMAR PAGAMENTO
-   -----------------------------------------------------------------------------
-   - Define "pago" como TRUE em participacao_jogos.
-============================================================================= */
+// 6. CONFIRMAR PAGAMENTO
 router.post('/confirmar-pagamento', async (req, res) => {
   try {
     const { id_jogo, id_usuario } = req.body;
@@ -334,19 +299,16 @@ router.post('/confirmar-pagamento', async (req, res) => {
       [id_jogo, id_usuario]
     );
 
-    return res.status(200).json({ message: 'Pagamento confirmado com sucesso.' });
+    return res
+      .status(200)
+      .json({ message: 'Pagamento confirmado com sucesso.' });
   } catch (error) {
     console.error('Erro ao confirmar pagamento:', error.message);
     return res.status(500).json({ error: 'Erro ao confirmar pagamento.' });
   }
 });
 
-/* =============================================================================
-   7. SAIR DA SALA
-   -----------------------------------------------------------------------------
-   - Muda o status do jogador para "saiu" em participacao_jogos.
-   - Caso haja alguém na fila, promove para "ativo" (se houver vaga).
-============================================================================= */
+// 7. SAIR DA SALA
 router.post('/sair', async (req, res) => {
   const client = await db.getClient();
 
@@ -361,7 +323,6 @@ router.post('/sair', async (req, res) => {
 
     await client.query('BEGIN');
 
-    // Atualiza status para "saiu"
     await client.query(
       `UPDATE participacao_jogos
           SET status = 'saiu'
@@ -370,7 +331,6 @@ router.post('/sair', async (req, res) => {
       [id_jogo, id_usuario]
     );
 
-    // Verifica se há fila
     const filaQuery = await client.query(
       `SELECT id_usuario
          FROM fila_jogos
@@ -384,7 +344,6 @@ router.post('/sair', async (req, res) => {
     if (filaQuery.rowCount > 0) {
       const proximoDaFila = filaQuery.rows[0].id_usuario;
 
-      // Verifica o número de ativos
       const ativosCountQuery = await client.query(
         `SELECT COUNT(*) AS total_ativos
            FROM participacao_jogos
@@ -394,14 +353,12 @@ router.post('/sair', async (req, res) => {
       );
       const numJogadoresAtivos = parseInt(ativosCountQuery.rows[0].total_ativos, 10) || 0;
 
-      // Obtém o limite
       const jogoQuery = await client.query(
         'SELECT limite_jogadores FROM jogos WHERE id_jogo = $1',
         [id_jogo]
       );
       const limiteJogadores = jogoQuery.rows[0]?.limite_jogadores || 0;
 
-      // Se tiver vaga, promove o próximo da fila
       if (numJogadoresAtivos < limiteJogadores) {
         await client.query(
           `INSERT INTO participacao_jogos (id_jogo, id_usuario, status, confirmado, pago)
@@ -411,7 +368,6 @@ router.post('/sair', async (req, res) => {
           [id_jogo, proximoDaFila]
         );
 
-        // Remove da fila
         await client.query(
           `DELETE FROM fila_jogos
             WHERE id_jogo = $1
@@ -422,9 +378,9 @@ router.post('/sair', async (req, res) => {
     }
 
     await client.query('COMMIT');
-    return res
-      .status(200)
-      .json({ message: 'Usuário saiu. Se havia fila, o próximo foi promovido.' });
+    return res.status(200).json({
+      message: 'Usuário saiu. Se havia fila, o próximo foi promovido.',
+    });
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Erro ao sair da sala:', error.message);
@@ -434,12 +390,7 @@ router.post('/sair', async (req, res) => {
   }
 });
 
-/* =============================================================================
-   8. REMOVER USUÁRIO (SOMENTE ORGANIZADOR)
-   -----------------------------------------------------------------------------
-   - Organizador pode remover um usuário (status = 'removido').
-   - Promove o próximo da fila, se houver espaço.
-============================================================================= */
+// 8. REMOVER USUÁRIO (ORGANIZADOR)
 router.post('/remover', async (req, res) => {
   const client = await db.getClient();
 
@@ -454,7 +405,6 @@ router.post('/remover', async (req, res) => {
 
     await client.query('BEGIN');
 
-    // Verifica se quem remove é o organizador
     const organizadorQuery = await client.query(
       'SELECT id_usuario FROM jogos WHERE id_jogo = $1',
       [id_jogo]
@@ -474,7 +424,6 @@ router.post('/remover', async (req, res) => {
         .json({ error: 'Somente o organizador pode remover usuários.' });
     }
 
-    // Seta status como "removido"
     await client.query(
       `UPDATE participacao_jogos
           SET status = 'removido'
@@ -483,7 +432,6 @@ router.post('/remover', async (req, res) => {
       [id_jogo, id_usuario_remover]
     );
 
-    // Verifica fila
     const filaQuery = await client.query(
       `SELECT id_usuario
          FROM fila_jogos
@@ -497,7 +445,6 @@ router.post('/remover', async (req, res) => {
     if (filaQuery.rowCount > 0) {
       const proximoDaFila = filaQuery.rows[0].id_usuario;
 
-      // Contagem de ativos
       const ativosCountQuery = await client.query(
         `SELECT COUNT(*) AS total_ativos
            FROM participacao_jogos
@@ -507,14 +454,12 @@ router.post('/remover', async (req, res) => {
       );
       const numJogadoresAtivos = parseInt(ativosCountQuery.rows[0].total_ativos, 10) || 0;
 
-      // Limite
       const jogoQuery = await client.query(
         'SELECT limite_jogadores FROM jogos WHERE id_jogo = $1',
         [id_jogo]
       );
       const limiteJogadores = jogoQuery.rows[0]?.limite_jogadores || 0;
 
-      // Promove se houver espaço
       if (numJogadoresAtivos < limiteJogadores) {
         await client.query(
           `INSERT INTO participacao_jogos (id_jogo, id_usuario, status, confirmado, pago)
@@ -524,7 +469,6 @@ router.post('/remover', async (req, res) => {
           [id_jogo, proximoDaFila]
         );
 
-        // Remove da fila
         await client.query(
           `DELETE FROM fila_jogos
             WHERE id_jogo = $1
@@ -545,24 +489,17 @@ router.post('/remover', async (req, res) => {
   }
 });
 
-/* =============================================================================
-   9. TOGGLE STATUS SALA
-   -----------------------------------------------------------------------------
-   - Alterna o status de 'aberto' -> 'fechado' ou 'fechado' -> 'aberto'
-   - Mantém o mesmo id_jogo e uuid
-   - (Opcional) Expira convites pendentes ao fechar
-============================================================================= */
+// 9. TOGGLE STATUS SALA
 router.post('/toggle-status', async (req, res) => {
   try {
     const { id_jogo, id_usuario_organizador } = req.body;
 
     if (!id_jogo || !id_usuario_organizador) {
       return res.status(400).json({
-        error: 'id_jogo e id_usuario_organizador são obrigatórios.'
+        error: 'id_jogo e id_usuario_organizador são obrigatórios.',
       });
     }
 
-    // Verifica se a sala existe e obtém o organizador
     const jogoQuery = await db.query(
       `SELECT id_usuario, status
          FROM jogos
@@ -577,13 +514,13 @@ router.post('/toggle-status', async (req, res) => {
 
     const { id_usuario: organizador_id, status } = jogoQuery.rows[0];
     if (parseInt(organizador_id, 10) !== parseInt(id_usuario_organizador, 10)) {
-      return res.status(403).json({ error: 'Somente o organizador pode alterar o status.' });
+      return res
+        .status(403)
+        .json({ error: 'Somente o organizador pode alterar o status.' });
     }
 
-    // Determina novo status
-    const novoStatus = (status === 'aberto') ? 'fechado' : 'aberto';
+    const novoStatus = status === 'aberto' ? 'fechado' : 'aberto';
 
-    // Atualiza o status no banco
     await db.query(
       `UPDATE jogos
           SET status = $1
@@ -591,7 +528,6 @@ router.post('/toggle-status', async (req, res) => {
       [novoStatus, id_jogo]
     );
 
-    // (Opcional) Se quiser expirar convites pendentes ao fechar, faça:
     if (novoStatus === 'fechado') {
       await db.query(
         `UPDATE convites
@@ -604,23 +540,12 @@ router.post('/toggle-status', async (req, res) => {
 
     return res.status(200).json({
       message: `Status da sala atualizado para '${novoStatus}'.`,
-      status: novoStatus
+      status: novoStatus,
     });
   } catch (error) {
     console.error('Erro ao alterar status da sala:', error.message);
     return res.status(500).json({ error: 'Erro ao alterar status da sala.' });
   }
 });
-
-// REMOVA OU COMENTE O ENDPOINT ABAIXO SE NÃO FOR MAIS NECESSÁRIO
-// /* =============================================================================
-//    10. FECHAR SALA
-//    -----------------------------------------------------------------------------
-//    - Organizador fecha a sala: status = 'fechado'.
-//    - Expira todos os convites pendentes (status = 'expirado').
-// ============================================================================= */
-// router.post('/fechar-sala', async (req, res) => {
-//   // Código antigo do fechar-sala
-// });
 
 module.exports = router;
