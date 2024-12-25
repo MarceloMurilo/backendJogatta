@@ -18,7 +18,6 @@ router.use((req, res, next) => {
   next();
 });
 
-// Rota para criar um jogo
 router.post('/criar', authMiddleware, async (req, res) => {
   const { 
     nome_jogo, 
@@ -49,22 +48,42 @@ router.post('/criar', authMiddleware, async (req, res) => {
     return res.status(400).json({ message: 'O horário de término deve ser após o horário de início.' });
   }
 
+  const client = await db.getClient(); // Obtém o cliente para transações
   try {
-    const result = await db.query(
+    await client.query('BEGIN'); // Início da transação
+
+    const result = await client.query(
       `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, status)
        VALUES ($1, $2, $3, $4, $5, $6, 'aberto')
        RETURNING id_jogo`,
       [nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario]
     );
 
+    const id_jogo = result.rows[0].id_jogo; // Captura o ID do jogo criado
+
+    // Adiciona o papel de organizador no banco
+    await client.query(
+      `INSERT INTO usuario_funcao (id_usuario, id_jogo, id_funcao, expira_em)
+       VALUES ($1, $2, 
+         (SELECT id_funcao FROM funcao WHERE nome_funcao = 'organizador'), 
+         NULL)`,
+      [id_usuario, id_jogo]
+    );
+
+    await client.query('COMMIT'); // Finaliza a transação
+
     return res
       .status(201)
-      .json({ message: 'Jogo criado com sucesso.', id_jogo: result.rows[0].id_jogo });
+      .json({ message: 'Jogo criado com sucesso.', id_jogo });
   } catch (error) {
     console.error('Erro ao criar jogo:', error);
+    await client.query('ROLLBACK'); // Reverte alterações em caso de erro
     res.status(500).json({ message: 'Erro interno ao criar o jogo.', error });
+  } finally {
+    client.release(); // Libera o cliente após a execução
   }
 });
+
 
 // Rota para convidar amigos para um jogo
 router.post(
