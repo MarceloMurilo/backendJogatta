@@ -1,14 +1,15 @@
 // routes/jogador/jogosRoutes.js
 
+// routes/jogador/jogosRoutes.js
 const express = require('express');
 const router = express.Router();
-const db = require('../../db'); // Importa a conexão com o banco de dados
+const db = require('../../db');
 const authMiddleware = require('../../middlewares/authMiddleware');
-const roleMiddleware = require('../../middlewares/roleMiddleware');
+// const roleMiddleware = require('../../middlewares/roleMiddleware'); // Não é usado em /criar mais
 
-// Middleware para log de requisições
+// Middleware simples de log
 router.use((req, res, next) => {
-  console.log(`=== Nova requisição recebida ===`);
+  console.log(`=== Nova requisição em /api/jogos ===`);
   console.log(`Método: ${req.method}`);
   console.log(`URL: ${req.originalUrl}`);
   console.log(`Body:`, req.body);
@@ -18,40 +19,52 @@ router.use((req, res, next) => {
 });
 
 // Rota para criar um jogo
-router.post(
-  '/criar',
-  authMiddleware,
-  roleMiddleware(['organizador', 'jogador']),
-  async (req, res) => {
-    const { nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario } = req.body;
+router.post('/criar', authMiddleware, async (req, res) => {
+  const { 
+    nome_jogo, 
+    data_jogo, 
+    horario_inicio, 
+    horario_fim, 
+    limite_jogadores, 
+    id_usuario 
+  } = req.body;
 
-    if (!nome_jogo || !data_jogo || !horario_inicio || !horario_fim || !limite_jogadores || !id_usuario) {
-      return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
-    }
-
-    // Valida a duração do jogo
-    const duracao = new Date(horario_fim) - new Date(horario_inicio);
-    if (duracao > 12 * 60 * 60 * 1000) {
-      return res.status(400).json({ message: 'A duração máxima do jogo é 12 horas.' });
-    }
-    if (duracao <= 0) {
-      return res.status(400).json({ message: 'O horário de término deve ser após o horário de início.' });
-    }
-
-    try {
-      const result = await db.query(
-        `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, status)
-         VALUES ($1, $2, $3, $4, $5, $6, 'aberto') RETURNING id_jogo`,
-        [nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario]
-      );
-
-      res.status(201).json({ message: 'Jogo criado com sucesso.', id_jogo: result.rows[0].id_jogo });
-    } catch (error) {
-      console.error('Erro ao criar jogo:', error);
-      res.status(500).json({ message: 'Erro interno ao criar o jogo.', error });
-    }
+  if (
+    !nome_jogo ||
+    !data_jogo ||
+    !horario_inicio ||
+    !horario_fim ||
+    !limite_jogadores ||
+    !id_usuario
+  ) {
+    return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
   }
-);
+
+  // Valida duração (exemplo)
+  const duracao = new Date(horario_fim) - new Date(horario_inicio);
+  if (duracao > 12 * 60 * 60 * 1000) {
+    return res.status(400).json({ message: 'A duração máxima do jogo é 12 horas.' });
+  }
+  if (duracao <= 0) {
+    return res.status(400).json({ message: 'O horário de término deve ser após o horário de início.' });
+  }
+
+  try {
+    const result = await db.query(
+      `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'aberto')
+       RETURNING id_jogo`,
+      [nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario]
+    );
+
+    return res
+      .status(201)
+      .json({ message: 'Jogo criado com sucesso.', id_jogo: result.rows[0].id_jogo });
+  } catch (error) {
+    console.error('Erro ao criar jogo:', error);
+    res.status(500).json({ message: 'Erro interno ao criar o jogo.', error });
+  }
+});
 
 // Rota para convidar amigos para um jogo
 router.post(

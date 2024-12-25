@@ -1,3 +1,4 @@
+// middlewares/authMiddleware.js
 const jwt = require('jsonwebtoken');
 
 const authMiddleware = (req, res, next) => {
@@ -5,7 +6,7 @@ const authMiddleware = (req, res, next) => {
 
   if (!authHeader) {
     console.error(`[authMiddleware] Token de autorização não fornecido.`);
-    return res.status(403).json({ message: 'Token não fornecido' });
+    return res.status(401).json({ message: 'Token não fornecido' }); // <-- Ajustado para 401
   }
 
   const token = authHeader.split(' ')[1];

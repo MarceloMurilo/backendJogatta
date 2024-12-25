@@ -1,15 +1,32 @@
+// middlewares/roleMiddleware.js
 const db = require('../db');
 
-const roleMiddleware = (allowedRoles) => {
+/**
+ * @param {Array} allowedRoles - lista de papéis permitidos
+ * @param {Object} options - opções adicionais (ex.: { skipIdJogo: true })
+ */
+const roleMiddleware = (allowedRoles, options = {}) => {
   return async (req, res, next) => {
-    const { id } = req.user; // ID do usuário autenticado
-    const { id_jogo } = req.body; // ID do jogo fornecido na requisição
+    const skipIdJogo = options.skipIdJogo || false;
+    
+    // Se a rota não exigir id_jogo, apenas valida se o usuário tem papel válido
+    if (skipIdJogo) {
+      const userRole = req.user?.papel_usuario;
+      if (!allowedRoles.includes(userRole)) {
+        console.log(`[roleMiddleware] Função ${userRole} não autorizada para este endpoint.`);
+        return res.status(403).json({ message: 'Acesso negado - Papel do usuário não autorizado.' });
+      }
+      return next();
+    }
 
-    // Verificar se o id_jogo foi fornecido
+    // Caso contrário, exige id_jogo no body ou params
+    const { id_jogo } = req.body || req.params;
+
     if (!id_jogo) {
       return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
     }
 
+    const { id } = req.user; // ID do usuário autenticado
     console.log(`[roleMiddleware] Verificando papel do usuário (ID: ${id}) no jogo (ID: ${id_jogo})`);
 
     try {
@@ -27,14 +44,13 @@ const roleMiddleware = (allowedRoles) => {
       }
 
       const userRole = result.rows[0].nome_funcao;
-
       if (!allowedRoles.includes(userRole)) {
         console.log(`[roleMiddleware] Função ${userRole} não autorizada para este endpoint.`);
         return res.status(403).json({ message: 'Acesso negado - Papel do usuário não autorizado neste jogo.' });
       }
 
       console.log(`[roleMiddleware] Permissão concedida para o papel ${userRole}`);
-      next(); // Permissão validada, prossegue
+      next();
     } catch (error) {
       console.error(`[roleMiddleware] Erro ao verificar função do usuário:`, error);
       return res.status(500).json({ message: 'Erro interno no servidor ao validar permissões.' });

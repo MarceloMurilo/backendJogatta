@@ -16,47 +16,34 @@ router.use(authMiddleware);
    - Insere uma nova sala ou atualiza uma existente para "aberto".
    - Define o limite de jogadores.
 ============================================================================= */
-router.post('/criar-sala', async (req, res) => {
+router.post('/criar', async (req, res) => {
   try {
-    const { id_jogo, id_usuario, limite_jogadores } = req.body;
+    const { nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario } = req.body;
 
-    if (!id_usuario || !limite_jogadores || limite_jogadores <= 0) {
-      return res.status(400).json({ error: 'Parâmetros obrigatórios inválidos.' });
+    // Validações
+    if (!nome_jogo || !data_jogo || !horario_inicio || !horario_fim || !limite_jogadores || !id_usuario) {
+      return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
     }
 
-    let query, params;
-
-    if (id_jogo) {
-      // Atualizar sala existente
-      query = `
-        UPDATE jogos
-        SET status = 'aberto', limite_jogadores = $1
-        WHERE id_jogo = $2 RETURNING id_jogo
-      `;
-      params = [limite_jogadores, id_jogo];
-    } else {
-      // Criar nova sala
-      query = `
-        INSERT INTO jogos (id_usuario, status, limite_jogadores)
-        VALUES ($1, $2, $3) RETURNING id_jogo
-      `;
-      params = [id_usuario, 'aberto', limite_jogadores];
-    }
-
-    const result = await db.query(query, params);
+    // Inserir novo jogo no banco de dados
+    const result = await db.query(
+      `INSERT INTO jogos (nome, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id_jogo`,
+      [nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, 'aberto']
+    );
 
     if (result.rowCount === 0) {
-      return res.status(500).json({ error: 'Erro ao criar ou atualizar a sala.' });
+      return res.status(500).json({ message: 'Erro ao criar o jogo.' });
     }
 
-    res.status(201).json({
-      message: 'Sala criada ou atualizada com sucesso.',
+    return res.status(201).json({
+      message: 'Jogo criado com sucesso.',
       id_jogo: result.rows[0].id_jogo,
-      limite_jogadores,
     });
   } catch (error) {
-    console.error('Erro ao criar sala:', error.message);
-    res.status(500).json({ error: 'Erro ao criar sala.' });
+    console.error('Erro ao criar o jogo:', error.message);
+    return res.status(500).json({ message: 'Erro ao criar o jogo.' });
   }
 });
 

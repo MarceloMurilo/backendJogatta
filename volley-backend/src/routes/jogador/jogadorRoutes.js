@@ -1,20 +1,24 @@
+// routes/jogador/jogadorRoutes.js
 const express = require('express');
 const router = express.Router();
-const db = require('../../db'); // Conexão com o banco de dados
+const db = require('../../db');
 const authMiddleware = require('../../middlewares/authMiddleware');
 const roleMiddleware = require('../../middlewares/roleMiddleware');
+
 
 // Rota para atualizar a imagem de perfil
 router.put(
   '/imagem_perfil',
   authMiddleware,
-  roleMiddleware(['jogador', 'organizador']),
+  roleMiddleware(['jogador', 'organizador']), // Aqui ainda exige id_jogo? Ajuste conforme sua regra
   async (req, res) => {
     try {
       const { id_usuario, imagem_perfil } = req.body;
 
       if (!id_usuario || !imagem_perfil) {
-        return res.status(400).json({ message: 'ID do usuário e URL da imagem são obrigatórios.' });
+        return res
+          .status(400)
+          .json({ message: 'ID do usuário e URL da imagem são obrigatórios.' });
       }
 
       const result = await db.query(
@@ -28,7 +32,7 @@ router.put(
 
       res.status(200).json({
         message: 'Imagem de perfil atualizada com sucesso!',
-        usuario: result.rows[0]
+        usuario: result.rows[0],
       });
     } catch (error) {
       console.error('Erro ao atualizar imagem de perfil:', error);
@@ -40,8 +44,8 @@ router.put(
 // Rota para obter informações do perfil do jogador
 router.get(
   '/perfil',
-  authMiddleware, 
-  roleMiddleware(['jogador', 'organizador']), 
+  authMiddleware,
+  // Removido roleMiddleware pois não temos id_jogo aqui
   async (req, res) => {
     try {
       const userId = req.user.id;
