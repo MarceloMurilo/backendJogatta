@@ -138,6 +138,8 @@ router.post('/iniciar-balanceamento', async (req, res) => {
 router.post('/finalizar-balanceamento', async (req, res) => {
   try {
     const { id_jogo, id_usuario_organizador, times } = req.body;
+    console.log("Recebendo requisição:", req.body); // Adicione este log para ver os dados recebidos
+
     if (!id_jogo || !id_usuario_organizador || !times) {
       return res.status(400).json({
         error: 'id_jogo, id_usuario_organizador e times são obrigatórios.'
