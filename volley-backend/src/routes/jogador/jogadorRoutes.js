@@ -102,25 +102,25 @@ router.get(
 
 /* ===========================================================
    NOVOS ENDPOINTS PARA LIDAR COM AVALIAÇÕES DO ORGANIZADOR
-   (USADOS PELO FRONTEND /api/avaliacoes/organizador/:organizadorId,
+   (USADOS PELO FRONTEND /api/avaliacoes/organizador/:organizador_id,
    E /api/avaliacoes/salvar)
 =========================================================== */
 
 // GET - Retorna todas as avaliações de um determinado organizador
 router.get(
-  '/avaliacoes/organizador/:organizadorId',
+  '/avaliacoes/organizador/:organizador_id',
   authMiddleware,
   roleMiddleware(['jogador', 'organizador']),
   async (req, res) => {
     try {
-      const { organizadorId } = req.params;
+      const { organizador_id} = req.params;
 
       const result = await db.query(
         `SELECT usuario_id, passe, ataque, levantamento
          FROM avaliacoes
          WHERE organizador_id = $1
         `,
-        [organizadorId]
+        [organizador_id]
       );
 
       res.status(200).json(result.rows);
