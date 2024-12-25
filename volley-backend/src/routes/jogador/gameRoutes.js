@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../../db');
+const db = require('../../db'); // Ajuste o caminho conforme necessário
 
 // Função para embaralhar um array (Fisher-Yates shuffle)
 const embaralharJogadores = (jogadores) => {
@@ -97,6 +97,8 @@ const gerarSugerirRotacoes = (times, reservas, topN = 2) => {
 router.post('/iniciar-balanceamento', async (req, res) => {
   try {
     const { id_jogo, id_usuario_organizador } = req.body;
+    console.log("Recebido /iniciar-balanceamento:", req.body); // Log para depuração
+
     if (!id_jogo || !id_usuario_organizador) {
       return res.status(400).json({ error: 'id_jogo e id_usuario_organizador são obrigatórios.' });
     }
@@ -106,9 +108,11 @@ router.post('/iniciar-balanceamento', async (req, res) => {
       `SELECT id_usuario, status FROM jogos WHERE id_jogo = $1 LIMIT 1`,
       [id_jogo]
     );
+
     if (jogoQuery.rowCount === 0) {
       return res.status(404).json({ error: 'Jogo não encontrado.' });
     }
+
     const { id_usuario: id_organizador, status } = jogoQuery.rows[0];
     if (parseInt(id_organizador, 10) !== parseInt(id_usuario_organizador, 10)) {
       return res.status(403).json({ error: 'Somente o organizador pode iniciar o balanceamento.' });
@@ -138,7 +142,7 @@ router.post('/iniciar-balanceamento', async (req, res) => {
 router.post('/finalizar-balanceamento', async (req, res) => {
   try {
     const { id_jogo, id_usuario_organizador, times } = req.body;
-    console.log("Parametros recebidos:", req.body); // Para debugar e garantir que os dados são passados
+    console.log("Recebido /finalizar-balanceamento:", req.body); // Log para depuração
 
     if (!id_jogo || !id_usuario_organizador || !times) {
       return res.status(400).json({
@@ -148,13 +152,15 @@ router.post('/finalizar-balanceamento', async (req, res) => {
 
     // Verifica se o jogo existe e se o solicitante é o organizador
     const jogoQuery = await db.query(
-      `SELECT id_usuario FROM jogos WHERE id_jogo = $1 LIMIT 1`,
+      `SELECT id_usuario, status FROM jogos WHERE id_jogo = $1 LIMIT 1`,
       [id_jogo]
     );
+
     if (jogoQuery.rowCount === 0) {
       return res.status(404).json({ error: 'Jogo não encontrado.' });
     }
-    const { id_usuario: id_organizador } = jogoQuery.rows[0];
+
+    const { id_usuario: id_organizador, status } = jogoQuery.rows[0];
     if (parseInt(id_organizador, 10) !== parseInt(id_usuario_organizador, 10)) {
       return res.status(403).json({ error: 'Somente o organizador pode finalizar o balanceamento.' });
     }
@@ -164,6 +170,8 @@ router.post('/finalizar-balanceamento', async (req, res) => {
       `UPDATE jogos SET status = 'concluido' WHERE id_jogo = $1`,
       [id_jogo]
     );
+
+    // (Opcional) Você pode salvar os times no banco de dados aqui, se necessário
 
     return res.status(200).json({
       message: 'Balanceamento finalizado.',
@@ -175,6 +183,7 @@ router.post('/finalizar-balanceamento', async (req, res) => {
     return res.status(500).json({ error: 'Erro ao finalizar balanceamento.' });
   }
 });
+
 /* ===================================================================
    ROTA ORIGINAL DE EQUILIBRAR TIMES
 =================================================================== */
@@ -422,6 +431,8 @@ router.post('/:jogoId/habilidades', async (req, res) => {
     const { jogoId } = req.params;
     const { habilidades } = req.body;
 
+    console.log("Recebido /jogos/:jogoId/habilidades POST:", req.body); // Log para depuração
+
     if (!habilidades || !Array.isArray(habilidades) || habilidades.length === 0) {
       return res.status(400).json({ message: 'Nenhuma habilidade fornecida.' });
     }
@@ -434,8 +445,12 @@ router.post('/:jogoId/habilidades', async (req, res) => {
     const organizadorId = queryJogo.rows[0].id_usuario;
 
     // Percorrer as habilidades e fazer upsert
-    for (const amigo of habilidades) {
-      const { id, passe, ataque, levantamento } = amigo;
+    for (const jogador of habilidades) {
+      const { id, passe, ataque, levantamento } = jogador;
+      if (!id) {
+        return res.status(400).json({ message: 'ID do jogador é obrigatório em cada habilidade.' });
+      }
+
       await db.query(
         `INSERT INTO avaliacoes (usuario_id, organizador_id, passe, ataque, levantamento)
          VALUES ($1, $2, $3, $4, $5)
