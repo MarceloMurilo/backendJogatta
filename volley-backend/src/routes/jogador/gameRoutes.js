@@ -153,6 +153,7 @@ router.post(
       return res.status(200).json({
         message: 'O organizador iniciou o balanceamento.',
         status: 'equilibrando',
+        id_jogo: id_jogo, // Incluindo o id_jogo na resposta
       });
     } catch (error) {
       console.error('Erro ao iniciar balanceamento:', error);
