@@ -445,7 +445,8 @@ router.post('/equilibrar-times', async (req, res) => {
     }
 
     return res.json({
-      times,
+      id_jogo,          // Certifique-se de que o ID do jogo esteja disponível no backend
+      times,            // Times balanceados
       reservas: reservasFinal,
       rotacoes
     });
