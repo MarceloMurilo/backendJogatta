@@ -76,7 +76,7 @@ router.get(
     const { jogoId } = req.params;
 
     if (!jogoId) {
-      return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
+      return res.status(400).json({ message: 'ID do jogo é obrigatório4.' });
     }
 
     try {

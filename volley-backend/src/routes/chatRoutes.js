@@ -18,7 +18,7 @@ router.get('/:id_jogo', async (req, res) => {
   const { id_jogo } = req.params;
 
   if (!id_jogo) {
-    return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
+    return res.status(400).json({ message: 'ID do jogo é obrigatório3.' });
   }
 
   try {

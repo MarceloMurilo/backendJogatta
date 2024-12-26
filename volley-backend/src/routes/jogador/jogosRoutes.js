@@ -127,7 +127,7 @@ router.get(
     const { id_jogo } = req.params;
 
     if (!id_jogo) {
-      return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
+      return res.status(400).json({ message: 'ID do jogo é obrigatório5.' });
     }
 
     try {
@@ -199,7 +199,7 @@ router.get(
     const { id_jogo } = req.params;
 
     if (!id_jogo) {
-      return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
+      return res.status(400).json({ message: 'ID do jogo é obrigatório6.' });
     }
 
     try {
