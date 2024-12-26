@@ -15,10 +15,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
 
     const id_jogo = req.body?.id_jogo || req.params?.id_jogo || null;
 
-    console.log(
-      '[roleMiddleware] Status:',
-      { skipIdJogo, optionalIdJogo, id_jogo }
-    );
+    console.log('[roleMiddleware] Status:', { skipIdJogo, optionalIdJogo, id_jogo });
 
     if (skipIdJogo) {
       const userRole = req.user?.papel_usuario;
@@ -33,15 +30,12 @@ const roleMiddleware = (allowedRoles, options = {}) => {
       return next();
     }
 
-    if (!id_jogo && !optionalIdJogo) {
-      console.log('[roleMiddleware] Falha: ID do jogo é obrigatório.(1)');
-      return res.status(400).json({ message: 'ID do jogo é obrigatório.(2)' });
-    }
-
-    if (!id_jogo && optionalIdJogo) {
-      console.log('[roleMiddleware] ID do jogo não é obrigatório nesta rota.');
-      return next();
-    }
+    // Temporariamente ignorando a validação de id_jogo
+    console.log('[roleMiddleware] Ignorando validação de ID do jogo.');
+    // if (!id_jogo && !optionalIdJogo) {
+    //   console.log('[roleMiddleware] Falha: ID do jogo é obrigatório.(1)');
+    //   return res.status(400).json({ message: 'ID do jogo é obrigatório.(2)' });
+    // }
 
     const { id } = req.user;
     console.log(
