@@ -284,9 +284,9 @@ router.post('/equilibrar-times', async (req, res) => {
   }
 
   try {
-    console.log('Consultando jogadores no banco de dados com base nos selecionados...');
+    console.log('Consultando jogadores no banco de dados com base nos IDs fornecidos...');
 
-    // Monta os placeholders para o IN
+    // Monta a query para buscar informações dos jogadores
     const baseIndex = id_jogo ? 3 : 2;
     const placeholders = jogadores.map((_, index) => `$${index + baseIndex}`).join(', ');
 
@@ -301,7 +301,7 @@ router.post('/equilibrar-times', async (req, res) => {
       AND a.usuario_id IN (${placeholders})
     ;`;
 
-    const params = id_jogo 
+    const params = id_jogo
       ? [organizador_id, id_jogo, ...jogadores]
       : [organizador_id, ...jogadores];
 
@@ -312,6 +312,7 @@ router.post('/equilibrar-times', async (req, res) => {
       return res.status(404).json({ message: 'Nenhum jogador encontrado com os critérios fornecidos.' });
     }
 
+    // Processar jogadores e calcular suas pontuações
     let jogadoresComPontuacao = jogadoresResult.rows.map((jogador) => ({
       id: jogador.usuario_id,
       nome: jogador.nome,
@@ -322,141 +323,93 @@ router.post('/equilibrar-times', async (req, res) => {
       total: jogador.passe + jogador.ataque + jogador.levantamento,
     }));
 
-    // Embaralhar a lista de jogadores para introduzir aleatoriedade
+    // Embaralhar e ordenar jogadores
     jogadoresComPontuacao = embaralharJogadores(jogadoresComPontuacao);
-
-    // Ordenar jogadores por total de habilidades (desc)
     jogadoresComPontuacao.sort((a, b) => b.total - a.total);
 
     const numero_times = Math.floor(jogadoresComPontuacao.length / tamanho_time);
 
-    if (numero_times < 1) {
+    if (numero_times < 2) {
       return res.status(400).json({
-        message: 'Jogadores insuficientes para formar ao menos um time completo.',
+        message: `Jogadores insuficientes. Necessário no mínimo ${tamanho_time * 2} jogadores para formar 2 times.`,
       });
     }
 
-    if (jogadoresComPontuacao.length < tamanho_time * 2) {
-      return res.status(400).json({
-        message: `Jogadores insuficientes. Necessário no mínimo ${tamanho_time * 2} jogadores para formar pelo menos 2 times.`,
-      });
-    }
-
-    // Separar levantadores
-    let levantadores = jogadoresComPontuacao.filter(j => j.levantamento >= 4);
-    let naoLevantadores = jogadoresComPontuacao.filter(j => j.levantamento < 4);
+    // Separar levantadores e não-levantadores
+    let levantadores = jogadoresComPontuacao.filter((j) => j.levantamento >= 4);
+    let naoLevantadores = jogadoresComPontuacao.filter((j) => j.levantamento < 4);
 
     console.log(`Total de levantadores: ${levantadores.length}`);
     console.log(`Total de não-levantadores: ${naoLevantadores.length}`);
 
-    // Se não houver levantadores suficientes, cria substitutos
+    // Garantir pelo menos um levantador por time
     if (levantadores.length < numero_times) {
-      naoLevantadores.sort((a, b) => b.levantamento - a.levantamento);
       const needed = numero_times - levantadores.length;
+      naoLevantadores.sort((a, b) => b.levantamento - a.levantamento);
       const substitutos = naoLevantadores.slice(0, needed);
-      naoLevantadores = naoLevantadores.slice(needed);
       levantadores = levantadores.concat(substitutos);
-
-      if (levantadores.length < numero_times) {
-        return res.status(400).json({
-          message: 'Não foi possível garantir um levantador ou substituto adequado para cada time.'
-        });
-      }
+      naoLevantadores = naoLevantadores.slice(needed);
     }
 
-    // Cria estrutura dos times
+    // Criar estrutura dos times
     const times = Array.from({ length: numero_times }, () => ({
       jogadores: [],
       totalScore: 0,
       totalAltura: 0,
     }));
 
-    // Distribui 1 levantador em cada time
-    levantadores.sort((a, b) => b.total - a.total);
-    for (let i = 0; i < numero_times; i++) {
-      const lev = levantadores[i];
-      times[i].jogadores.push(lev);
-      times[i].totalScore += lev.total;
-      times[i].totalAltura += lev.altura;
-    }
-
-    const jogadoresAlocados = times.flatMap(time => time.jogadores.map(j => j.id));
-    let reservas = jogadoresComPontuacao.filter(j => !jogadoresAlocados.includes(j.id));
-
-    let filtrados = reservas.slice();
-    filtrados.sort((a, b) => b.total - a.total);
-    filtrados = embaralharJogadores(filtrados);
-
-    const pesoPontuacao = 1; // Ajuste se necessário
-    const pesoAltura = 1;    // Ajuste se necessário
+    // Distribuir levantadores nos times
+    levantadores.forEach((lev, index) => {
+      const timeIndex = index % numero_times;
+      times[timeIndex].jogadores.push(lev);
+      times[timeIndex].totalScore += lev.total;
+      times[timeIndex].totalAltura += lev.altura;
+    });
 
     // Distribuir os demais jogadores minimizando o custo
-    filtrados.forEach(jogador => {
+    naoLevantadores.forEach((jogador) => {
       let melhorTime = -1;
-      let melhorCusto = Infinity;
-      const custoInicial = calcularCusto(times, pesoPontuacao, pesoAltura);
+      let menorCusto = Infinity;
 
-      for (let t = 0; t < numero_times; t++) {
-        if (times[t].jogadores.length >= tamanho_time) {
-          continue;
+      times.forEach((time, index) => {
+        if (time.jogadores.length < tamanho_time) {
+          const custo = calcularCusto([time], jogador);
+          if (custo < menorCusto) {
+            menorCusto = custo;
+            melhorTime = index;
+          }
         }
-        const custoFinal = calcularCusto([
-          ...times.slice(0, t),
-          {
-            jogadores: [...times[t].jogadores, jogador],
-            totalScore: times[t].totalScore + jogador.total,
-            totalAltura: times[t].totalAltura + jogador.altura,
-          },
-          ...times.slice(t + 1)
-        ], pesoPontuacao, pesoAltura);
+      });
 
-        const delta = custoFinal - custoInicial;
-        if (delta < melhorCusto) {
-          melhorCusto = delta;
-          melhorTime = t;
-        }
-      }
-
-      if (melhorTime !== -1 && times[melhorTime].jogadores.length < tamanho_time) {
+      if (melhorTime !== -1) {
         times[melhorTime].jogadores.push(jogador);
         times[melhorTime].totalScore += jogador.total;
         times[melhorTime].totalAltura += jogador.altura;
       }
     });
 
-    // Recalcular quem ficou de fora como reservas
-    const jogadoresAlocadosFinal = times.flatMap(time => time.jogadores.map(j => j.id));
-    let reservasFinal = jogadoresComPontuacao.filter(j => !jogadoresAlocadosFinal.includes(j.id));
-    reservasFinal = embaralharJogadores(reservasFinal);
+    // Recalcular reservas
+    const jogadoresAlocados = times.flatMap((time) => time.jogadores.map((j) => j.id));
+    const reservas = jogadoresComPontuacao.filter((j) => !jogadoresAlocados.includes(j.id));
 
-    console.log('Times equilibrados:', JSON.stringify(times, null, 2));
-    console.log('Jogadores em reserva:', JSON.stringify(reservasFinal, null, 2));
+    console.log('Times finais:', JSON.stringify(times, null, 2));
+    console.log('Reservas finais:', JSON.stringify(reservas, null, 2));
 
-    const rotacoes = gerarSugerirRotacoes(times, reservasFinal, 2);
-    console.log('Sugestões de Rotação:', JSON.stringify(rotacoes, null, 2));
-
-    // Checagem final
-    for (let i = 0; i < numero_times; i++) {
-      if (times[i].jogadores.length !== tamanho_time) {
-        return res.status(500).json({
-          message: `Erro interno: o time ${i + 1} não atingiu o tamanho esperado de ${tamanho_time} jogadores.`,
-          time: times[i],
-        });
-      }
-    }
+    // Gera sugestões de rotação
+    const rotacoes = gerarSugerirRotacoes(times, reservas, 2);
+    console.log('Sugestões de rotação:', JSON.stringify(rotacoes, null, 2));
 
     return res.json({
-      id_jogo,          // Certifique-se de que o ID do jogo esteja disponível no backend
-      times,            // Times balanceados
-      reservas: reservasFinal,
-      rotacoes
+      id_jogo: id_jogo || null, // Retorna ID do jogo, se disponível
+      times,
+      reservas,
+      rotacoes,
     });
   } catch (error) {
     console.error('Erro ao equilibrar times:', error);
     return res.status(500).json({ message: 'Erro ao equilibrar times.', error: error.message });
   }
 });
-
 /* ===================================================================
    NOVAS ROTAS PARA GERENCIAR HABILIDADES (OFFLINE)
    /jogos/:jogoId/habilidades [GET, POST]
