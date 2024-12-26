@@ -5,11 +5,14 @@ const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const db = require('../../db');
 const authMiddleware = require('../../middlewares/authMiddleware');
+const roleMiddleware = require('../../middlewares/roleMiddleware'); // Adicione se necessário
 
 router.use(authMiddleware);
 
 // 1. CRIAR SALA
 router.post('/criar', async (req, res) => {
+  const client = await db.getClient();
+
   try {
     const {
       nome_jogo,
@@ -31,7 +34,19 @@ router.post('/criar', async (req, res) => {
       return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
     }
 
-    const result = await db.query(
+    // Valida duração do jogo
+    const duracao = new Date(horario_fim) - new Date(horario_inicio);
+    if (duracao > 12 * 60 * 60 * 1000) {
+      return res.status(400).json({ message: 'A duração máxima do jogo é 12 horas.' });
+    }
+    if (duracao <= 0) {
+      return res.status(400).json({ message: 'O horário de término deve ser após o horário de início.' });
+    }
+
+    await client.query('BEGIN');
+
+    // Inserção do jogo na tabela 'jogos'
+    const result = await client.query(
       `INSERT INTO jogos (nome, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id_jogo`,
@@ -39,16 +54,40 @@ router.post('/criar', async (req, res) => {
     );
 
     if (result.rowCount === 0) {
+      await client.query('ROLLBACK');
       return res.status(500).json({ message: 'Erro ao criar o jogo.' });
     }
 
+    const id_jogo = result.rows[0].id_jogo; // Captura o ID do jogo criado
+
+    // Atribuição do papel de organizador na tabela 'usuario_funcao'
+    await client.query(
+      `INSERT INTO usuario_funcao (id_usuario, id_jogo, id_funcao, expira_em)
+       VALUES ($1, $2, 
+         (SELECT id_funcao FROM funcao WHERE nome_funcao = 'organizador'), 
+         NULL)`,
+      [id_usuario, id_jogo]
+    );
+
+    // Inserir o organizador na tabela 'participacao_jogos'
+    await client.query(
+      `INSERT INTO participacao_jogos (id_jogo, id_usuario, data_participacao, status)
+       VALUES ($1, $2, NOW(), 'ativo')`,
+      [id_jogo, id_usuario]
+    );
+
+    await client.query('COMMIT'); // Finaliza a transação
+
     return res.status(201).json({
       message: 'Jogo criado com sucesso.',
-      id_jogo: result.rows[0].id_jogo,
+      id_jogo: id_jogo,
     });
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Erro ao criar o jogo:', error.message);
-    return res.status(500).json({ message: 'Erro ao criar o jogo.' });
+    return res.status(500).json({ message: 'Erro ao criar o jogo.', error });
+  } finally {
+    client.release();
   }
 });
 
@@ -214,10 +253,8 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
       return res.status(404).json({ error: 'Jogo não encontrado.' });
     }
 
-    const { id_usuario: organizador_id, limite_jogadores, status } =
-      jogoQuery.rows[0];
-    const isOrganizer =
-      parseInt(id_usuario_logado, 10) === parseInt(organizador_id, 10);
+    const { id_usuario: organizador_id, limite_jogadores, status } = jogoQuery.rows[0];
+    const isOrganizer = parseInt(id_usuario_logado, 10) === parseInt(organizador_id, 10);
 
     const ativosQuery = await db.query(
       `SELECT u.id_usuario, u.nome, p.status, p.confirmado, p.pago
@@ -241,8 +278,11 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
     );
     const espera = esperaQuery.rows;
 
+    console.log('Jogadores ativos:', ativos);
+    console.log('Jogadores na fila:', espera);
+
     return res.status(200).json({
-      ativos,
+      jogadores: ativos, // Encapsular ativos como 'jogadores'
       espera,
       isOrganizer,
       limite_jogadores,
@@ -545,6 +585,75 @@ router.post('/toggle-status', async (req, res) => {
   } catch (error) {
     console.error('Erro ao alterar status da sala:', error.message);
     return res.status(500).json({ error: 'Erro ao alterar status da sala.' });
+  }
+});
+
+// 10. Rota para Iniciar Balanceamento (exemplo)
+router.post('/iniciar-balanceamento', async (req, res) => {
+  const client = await db.getClient();
+
+  try {
+    const { id_jogo, id_usuario_organizador } = req.body;
+
+    if (!id_jogo || !id_usuario_organizador) {
+      return res.status(400).json({ error: 'id_jogo e id_usuario_organizador são obrigatórios.' });
+    }
+
+    await client.query('BEGIN');
+
+    // Verificar se o organizador está no jogo
+    const organizadorQuery = await client.query(
+      `SELECT 1 FROM participacao_jogos 
+       WHERE id_jogo = $1 AND id_usuario = $2 AND status = 'ativo'`,
+      [id_jogo, id_usuario_organizador]
+    );
+
+    if (organizadorQuery.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Organizador não está ativo no jogo.' });
+    }
+
+    // Atualizar o status do jogo para 'equilibrando'
+    await client.query(
+      `UPDATE jogos SET status = 'equilibrando' WHERE id_jogo = $1`,
+      [id_jogo]
+    );
+
+    // Recuperar os jogadores ativos, incluindo o organizador
+    const jogadoresResult = await client.query(
+      `SELECT u.id_usuario, u.nome, p.status, p.confirmado, p.pago
+         FROM participacao_jogos p
+         JOIN usuario u ON p.id_usuario = u.id_usuario
+        WHERE p.id_jogo = $1 AND p.status = 'ativo'
+        ORDER BY u.nome ASC`,
+      [id_jogo]
+    );
+
+    console.log('Jogadores após iniciar balanceamento:', jogadoresResult.rows);
+
+    // Implementar a lógica de balanceamento aqui ou no frontend
+
+    await client.query('COMMIT');
+
+    // Supondo que o balanceamento é feito no backend e retornamos os times
+    // Aqui está um exemplo simples de balanceamento alternado
+    const jogadores = jogadoresResult.rows;
+    const times = [[], []];
+
+    jogadores.sort((a, b) => (b.confirmado ? 1 : 0) - (a.confirmado ? 1 : 0)); // Exemplo de ordenação
+
+    jogadores.forEach((jogador, index) => {
+      const teamIndex = index % times.length;
+      times[teamIndex].push(jogador);
+    });
+
+    return res.status(200).json({ message: 'Balanceamento iniciado.', times });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Erro ao iniciar balanceamento:', error.message);
+    return res.status(500).json({ error: 'Erro ao iniciar balanceamento.' });
+  } finally {
+    client.release();
   }
 });
 
