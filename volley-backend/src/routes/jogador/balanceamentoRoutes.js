@@ -4,6 +4,12 @@ const db = require('../../db'); // Conexão com o banco de dados
 const authMiddleware = require('../../middlewares/authMiddleware'); // Certifique-se de que o caminho está correto
 const roleMiddleware = require('../../middlewares/roleMiddleware'); 
 
+// Este arquivo deve ser focado exclusivamente no balanceamento de times, incluindo:
+// Distribuir jogadores.
+// Cálculos de custo e variância.
+// Geração de rotações sugeridas.
+
+
 // Função para embaralhar um array (Fisher-Yates shuffle)
 const embaralharJogadores = (jogadores) => {
   for (let i = jogadores.length - 1; i > 0; i--) {
@@ -454,91 +460,91 @@ router.post('/equilibrar-times', async (req, res) => {
    /jogos/:jogoId/habilidades [GET, POST]
 =================================================================== */
 
-// GET - Retorna habilidades dos jogadores (baseado em avaliacoes do ORGANIZADOR do jogo)
-router.get('/:jogoId/habilidades', async (req, res) => {
-  try {
-    const { jogoId } = req.params;
+// // GET - Retorna habilidades dos jogadores (baseado em avaliacoes do ORGANIZADOR do jogo)
+// router.get('/:jogoId/habilidades', async (req, res) => {
+//   try {
+//     const { jogoId } = req.params;
 
-    // Primeiro, obter o organizador do jogo
-    const queryJogo = await db.query('SELECT id_usuario FROM jogos WHERE id_jogo = $1', [jogoId]);
-    if (queryJogo.rowCount === 0) {
-      return res.status(404).json({ message: 'Jogo não encontrado.' });
-    }
-    const organizador_id= queryJogo.rows[0].id_usuario;
+//     // Primeiro, obter o organizador do jogo
+//     const queryJogo = await db.query('SELECT id_usuario FROM jogos WHERE id_jogo = $1', [jogoId]);
+//     if (queryJogo.rowCount === 0) {
+//       return res.status(404).json({ message: 'Jogo não encontrado.' });
+//     }
+//     const organizador_id= queryJogo.rows[0].id_usuario;
 
-    // Buscar participantes e suas habilidades (avaliacoes)
-    const result = await db.query(
-      `SELECT 
-         pj.id_usuario AS id,
-         u.nome,
-         COALESCE(a.passe, 0) AS passe,
-         COALESCE(a.ataque, 0) AS ataque,
-         COALESCE(a.levantamento, 0) AS levantamento
-       FROM participacao_jogos pj
-         JOIN usuario u ON pj.id_usuario = u.id_usuario
-         LEFT JOIN avaliacoes a 
-                ON a.usuario_id = pj.id_usuario
-               AND a.organizador_id = $1
-       WHERE pj.id_jogo = $2
-      `,
-      [organizador_id, jogoId]
-    );
+//     // Buscar participantes e suas habilidades (avaliacoes)
+//     const result = await db.query(
+//       `SELECT 
+//          pj.id_usuario AS id,
+//          u.nome,
+//          COALESCE(a.passe, 0) AS passe,
+//          COALESCE(a.ataque, 0) AS ataque,
+//          COALESCE(a.levantamento, 0) AS levantamento
+//        FROM participacao_jogos pj
+//          JOIN usuario u ON pj.id_usuario = u.id_usuario
+//          LEFT JOIN avaliacoes a 
+//                 ON a.usuario_id = pj.id_usuario
+//                AND a.organizador_id = $1
+//        WHERE pj.id_jogo = $2
+//       `,
+//       [organizador_id, jogoId]
+//     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Nenhum jogador encontrado para este jogo.' });
-    }
+//     if (result.rows.length === 0) {
+//       return res.status(404).json({ message: 'Nenhum jogador encontrado para este jogo.' });
+//     }
 
-    return res.status(200).json(result.rows);
-  } catch (error) {
-    console.error('Erro ao buscar habilidades dos jogadores:', error);
-    return res.status(500).json({ message: 'Erro ao buscar habilidades dos jogadores.', error });
-  }
-});
+//     return res.status(200).json(result.rows);
+//   } catch (error) {
+//     console.error('Erro ao buscar habilidades dos jogadores:', error);
+//     return res.status(500).json({ message: 'Erro ao buscar habilidades dos jogadores.', error });
+//   }
+// });
 
-// POST - Salva ou atualiza habilidades dos jogadores (UP-SERT em avaliacoes)
-router.post('/:jogoId/habilidades', async (req, res) => {
-  try {
-    const { jogoId } = req.params;
-    const { habilidades } = req.body;
+// // POST - Salva ou atualiza habilidades dos jogadores (UP-SERT em avaliacoes)
+// router.post('/:jogoId/habilidades', async (req, res) => {
+//   try {
+//     const { jogoId } = req.params;
+//     const { habilidades } = req.body;
 
-    console.log("Recebido /jogos/:jogoId/habilidades POST:", req.body); // Log para depuração
+//     console.log("Recebido /jogos/:jogoId/habilidades POST:", req.body); // Log para depuração
 
-    if (!habilidades || !Array.isArray(habilidades) || habilidades.length === 0) {
-      return res.status(400).json({ message: 'Nenhuma habilidade fornecida.' });
-    }
+//     if (!habilidades || !Array.isArray(habilidades) || habilidades.length === 0) {
+//       return res.status(400).json({ message: 'Nenhuma habilidade fornecida.' });
+//     }
 
-    // Obter organizador (para usar como organizador_id em avaliacoes)
-    const queryJogo = await db.query('SELECT id_usuario FROM jogos WHERE id_jogo = $1', [jogoId]);
-    if (queryJogo.rowCount === 0) {
-      return res.status(404).json({ message: 'Jogo não encontrado.' });
-    }
-    const organizador_id= queryJogo.rows[0].id_usuario;
+//     // Obter organizador (para usar como organizador_id em avaliacoes)
+//     const queryJogo = await db.query('SELECT id_usuario FROM jogos WHERE id_jogo = $1', [jogoId]);
+//     if (queryJogo.rowCount === 0) {
+//       return res.status(404).json({ message: 'Jogo não encontrado.' });
+//     }
+//     const organizador_id= queryJogo.rows[0].id_usuario;
 
-    // Percorrer as habilidades e fazer upsert
-    for (const jogador of habilidades) {
-      const { id, passe, ataque, levantamento } = jogador;
-      if (!id) {
-        return res.status(400).json({ message: 'ID do jogador é obrigatório em cada habilidade.' });
-      }
+//     // Percorrer as habilidades e fazer upsert
+//     for (const jogador of habilidades) {
+//       const { id, passe, ataque, levantamento } = jogador;
+//       if (!id) {
+//         return res.status(400).json({ message: 'ID do jogador é obrigatório em cada habilidade.' });
+//       }
 
-      await db.query(
-        `INSERT INTO avaliacoes (usuario_id, organizador_id, passe, ataque, levantamento)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (usuario_id, organizador_id)
-         DO UPDATE SET 
-           passe = EXCLUDED.passe,
-           ataque = EXCLUDED.ataque,
-           levantamento = EXCLUDED.levantamento
-        `,
-        [id, organizador_id, passe || 0, ataque || 0, levantamento || 0]
-      );
-    }
+//       await db.query(
+//         `INSERT INTO avaliacoes (usuario_id, organizador_id, passe, ataque, levantamento)
+//          VALUES ($1, $2, $3, $4, $5)
+//          ON CONFLICT (usuario_id, organizador_id)
+//          DO UPDATE SET 
+//            passe = EXCLUDED.passe,
+//            ataque = EXCLUDED.ataque,
+//            levantamento = EXCLUDED.levantamento
+//         `,
+//         [id, organizador_id, passe || 0, ataque || 0, levantamento || 0]
+//       );
+//     }
 
-    return res.status(200).json({ message: 'Habilidades atualizadas com sucesso.' });
-  } catch (error) {
-    console.error('Erro ao salvar habilidades dos jogadores:', error);
-    return res.status(500).json({ message: 'Erro ao salvar habilidades dos jogadores.', error });
-  }
-});
+//     return res.status(200).json({ message: 'Habilidades atualizadas com sucesso.' });
+//   } catch (error) {
+//     console.error('Erro ao salvar habilidades dos jogadores:', error);
+//     return res.status(500).json({ message: 'Erro ao salvar habilidades dos jogadores.', error });
+//   }
+// });
 
 module.exports = router;
