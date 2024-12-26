@@ -1,9 +1,8 @@
 const db = require('../db');
 
 /**
- * Middleware para controle de permissões com base no papel do usuário.
- * 
- * @param {Array} allowedRoles - Lista de papéis permitidos (ex.: ['organizador', 'jogador']).
+ * Middleware para verificar as permissões do usuário.
+ * @param {Array} allowedRoles - Lista de papéis permitidos.
  * @param {Object} options - Opções adicionais (ex.: { skipIdJogo: true, optionalIdJogo: true }).
  */
 const roleMiddleware = (allowedRoles, options = {}) => {
@@ -29,13 +28,13 @@ const roleMiddleware = (allowedRoles, options = {}) => {
 
     const { id_jogo } = req.body || req.params || {};
     if (!id_jogo && !optionalIdJogo) {
-      console.log('[roleMiddleware] Falha: ID do jogo é obrigatório1.');
-      return res.status(400).json({ message: 'ID do jogo é obrigatório2.' });
+      console.log('[roleMiddleware] Falha: ID do jogo é obrigatório.');
+      return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
     }
 
     const { id } = req.user;
     console.log(
-      `[roleMiddleware] Verificando papel do usuário (ID: ${id}) no jogo (ID: ${id_jogo})`
+      `[roleMiddleware] Verificando papel do usuário (ID: ${id}) no jogo (ID: ${id_jogo || 'N/A'})`
     );
 
     try {
@@ -47,7 +46,6 @@ const roleMiddleware = (allowedRoles, options = {}) => {
            ${id_jogo ? 'AND uf.id_jogo = $2' : ''}
            AND (uf.expira_em IS NULL OR uf.expira_em > NOW())
       `;
-
       const queryParams = id_jogo ? [id, id_jogo] : [id];
       const result = await db.query(query, queryParams);
 
@@ -60,8 +58,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
         });
       }
 
-      const userRole = result.rowCount > 0 ? result.rows[0].nome_funcao : req.user.papel_usuario;
-
+      const userRole = result.rows[0]?.nome_funcao || 'sem função';
       if (!allowedRoles.includes(userRole)) {
         console.log(
           `[roleMiddleware] Função ${userRole} não autorizada para este endpoint.`
