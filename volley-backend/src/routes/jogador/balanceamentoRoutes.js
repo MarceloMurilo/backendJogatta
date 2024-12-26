@@ -267,7 +267,7 @@ router.post('/equilibrar-times', async (req, res) => {
   console.log('==== Requisição recebida em /equilibrar-times ====');
   console.log('Payload recebido:', JSON.stringify(req.body, null, 2));
 
-  const { organizador_id, jogo_id, tamanho_time, jogadores } = req.body;
+  const { organizador_id, id_jogo, tamanho_time, jogadores } = req.body;
 
   // Validações iniciais
   if (!organizador_id || !tamanho_time) {
@@ -286,7 +286,7 @@ router.post('/equilibrar-times', async (req, res) => {
     console.log('Consultando jogadores no banco de dados com base nos selecionados...');
 
     // Monta os placeholders para o IN
-    const baseIndex = jogo_id ? 3 : 2;
+    const baseIndex = id_jogo ? 3 : 2;
     const placeholders = jogadores.map((_, index) => `$${index + baseIndex}`).join(', ');
 
     const query = `
@@ -294,14 +294,14 @@ router.post('/equilibrar-times', async (req, res) => {
              a.passe, a.ataque, a.levantamento
       FROM avaliacoes a
       JOIN usuario u ON a.usuario_id = u.id_usuario
-      ${jogo_id ? 'JOIN participacao_jogos pj ON pj.id_usuario = a.usuario_id' : ''}
+      ${id_jogo ? 'JOIN participacao_jogos pj ON pj.id_usuario = a.usuario_id' : ''}
       WHERE a.organizador_id = $1
-      ${jogo_id ? 'AND pj.id_jogo = $2' : ''}
+      ${id_jogo ? 'AND pj.id_jogo = $2' : ''}
       AND a.usuario_id IN (${placeholders})
     ;`;
 
-    const params = jogo_id 
-      ? [organizador_id, jogo_id, ...jogadores]
+    const params = id_jogo 
+      ? [organizador_id, id_jogo, ...jogadores]
       : [organizador_id, ...jogadores];
 
     console.log('Executando consulta SQL:', query, '| Parâmetros:', params);
