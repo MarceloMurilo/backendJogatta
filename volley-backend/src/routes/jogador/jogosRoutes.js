@@ -1,11 +1,9 @@
 // routes/jogador/jogosRoutes.js
-
-// routes/jogador/jogosRoutes.js
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
 const authMiddleware = require('../../middlewares/authMiddleware');
-const roleMiddleware = require('../../middlewares/roleMiddleware'); // Não é usado em /criar mais
+const roleMiddleware = require('../../middlewares/roleMiddleware'); // Será usado em outras rotas
 
 // Middleware simples de log
 router.use((req, res, next) => {
@@ -40,7 +38,7 @@ router.post('/criar', authMiddleware, async (req, res) => {
     return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
   }
 
-  // Valida duração (exemplo)
+  // Valida duração do jogo
   const duracao = new Date(horario_fim) - new Date(horario_inicio);
   if (duracao > 12 * 60 * 60 * 1000) {
     return res.status(400).json({ message: 'A duração máxima do jogo é 12 horas.' });
@@ -49,20 +47,40 @@ router.post('/criar', authMiddleware, async (req, res) => {
     return res.status(400).json({ message: 'O horário de término deve ser após o horário de início.' });
   }
 
+  const client = await db.getClient();
   try {
-    const result = await db.query(
+    await client.query('BEGIN');
+
+    // Inserção do jogo na tabela 'jogos'
+    const result = await client.query(
       `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, status)
        VALUES ($1, $2, $3, $4, $5, $6, 'aberto')
        RETURNING id_jogo`,
       [nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario]
     );
 
+    const id_jogo = result.rows[0].id_jogo; // Captura o ID do jogo criado
+
+    // Atribuição do papel de organizador na tabela 'usuario_funcao'
+    await client.query(
+      `INSERT INTO usuario_funcao (id_usuario, id_jogo, id_funcao, expira_em)
+       VALUES ($1, $2, 
+         (SELECT id_funcao FROM funcao WHERE nome_funcao = 'organizador'), 
+         NULL)`,
+      [id_usuario, id_jogo]
+    );
+
+    await client.query('COMMIT'); // Finaliza a transação
+
     return res
       .status(201)
-      .json({ message: 'Jogo criado com sucesso.', id_jogo: result.rows[0].id_jogo });
+      .json({ message: 'Jogo criado com sucesso.', id_jogo });
   } catch (error) {
     console.error('Erro ao criar jogo:', error);
+    await client.query('ROLLBACK'); // Reverte alterações em caso de erro
     res.status(500).json({ message: 'Erro interno ao criar o jogo.', error });
+  } finally {
+    client.release();
   }
 });
 
@@ -70,7 +88,7 @@ router.post('/criar', authMiddleware, async (req, res) => {
 router.post(
   '/convidar',
   authMiddleware,
-  roleMiddleware(['organizador', 'jogador']),
+  roleMiddleware(['organizador']), // Apenas organizadores podem convidar
   async (req, res) => {
     const { id_jogo, amigos_ids } = req.body;
 
@@ -79,13 +97,13 @@ router.post(
     }
 
     try {
-      const values = amigos_ids
-        .map((id_amigo) => `(${id_jogo}, ${id_amigo}, NOW())`)
-        .join(', ');
+      const queryText = `
+        INSERT INTO participacao_jogos (id_jogo, id_usuario, data_participacao)
+        VALUES ${amigos_ids.map((_, idx) => `($1, $${idx + 2}, NOW())`).join(', ')}
+      `;
+      const queryValues = [id_jogo, ...amigos_ids];
 
-      await db.query(
-        `INSERT INTO participacao_jogos (id_jogo, id_usuario, data_participacao) VALUES ${values}`
-      );
+      await db.query(queryText, queryValues);
       res.status(201).json({ message: 'Amigos convidados com sucesso.' });
     } catch (error) {
       console.error('Erro ao convidar amigos:', error);
@@ -98,7 +116,7 @@ router.post(
 router.get(
   '/:id_jogo/habilidades',
   authMiddleware,
-  roleMiddleware(['jogador', 'organizador']),
+  roleMiddleware(['jogador', 'organizador']), // Ambos podem acessar
   async (req, res) => {
     const { id_jogo } = req.params;
 
@@ -135,7 +153,7 @@ router.get(
 router.post(
   '/:id_jogo/habilidades',
   authMiddleware,
-  roleMiddleware(['organizador', 'jogador']),
+  roleMiddleware(['organizador']), // Apenas organizadores podem salvar habilidades
   async (req, res) => {
     const { id_jogo } = req.params;
     const { habilidades } = req.body;
@@ -151,7 +169,7 @@ router.post(
            VALUES ($1, $2, $3, $4, $5)
            ON CONFLICT (usuario_id, organizador_id) 
            DO UPDATE SET passe = $3, ataque = $4, levantamento = $5`,
-          [jogador.id_usuario, jogador.organizador_id, jogador.passe, jogador.ataque, jogador.levantamento]
+          [jogador.id_usuario, req.user.id, jogador.passe, jogador.ataque, jogador.levantamento]
         )
       );
 
@@ -168,7 +186,7 @@ router.post(
 router.get(
   '/:id_jogo/equilibrar-times',
   authMiddleware,
-  roleMiddleware(['organizador', 'jogador']),
+  roleMiddleware(['organizador', 'jogador']), // Ambos podem solicitar
   async (req, res) => {
     const { id_jogo } = req.params;
 
@@ -196,8 +214,14 @@ router.get(
       const jogadores = result.rows;
       const times = [[], []];
 
-      jogadores.sort((a, b) => (b.passe + b.ataque + b.levantamento) - (a.passe + a.ataque + a.levantamento));
+      // Ordena pela soma das habilidades
+      jogadores.sort(
+        (a, b) =>
+          (b.passe + b.ataque + b.levantamento) -
+          (a.passe + a.ataque + a.levantamento)
+      );
 
+      // Distribui alternadamente entre os times
       jogadores.forEach((jogador, index) => {
         const teamIndex = index % times.length;
         times[teamIndex].push(jogador);
