@@ -1,248 +1,248 @@
-const express = require('express');
-const router = express.Router();
-const db = require('../../db');
-const authMiddleware = require('../../middlewares/authMiddleware');
-const roleMiddleware = require('../../middlewares/roleMiddleware'); // Será usado em outras rotas
+// const express = require('express');
+// const router = express.Router();
+// const db = require('../../db');
+// const authMiddleware = require('../../middlewares/authMiddleware');
+// const roleMiddleware = require('../../middlewares/roleMiddleware'); // Será usado em outras rotas
 
-// Middleware simples de log
-router.use((req, res, next) => {
-  console.log(`=== Nova requisição em /api/jogos ===`);
-  console.log(`Método: ${req.method}`);
-  console.log(`URL: ${req.originalUrl}`);
-  console.log(`Body:`, req.body);
-  console.log(`Params:`, req.params);
-  console.log(`==============================`);
-  next();
-});
+// // Middleware simples de log
+// router.use((req, res, next) => {
+//   console.log(`=== Nova requisição em /api/jogos ===`);
+//   console.log(`Método: ${req.method}`);
+//   console.log(`URL: ${req.originalUrl}`);
+//   console.log(`Body:`, req.body);
+//   console.log(`Params:`, req.params);
+//   console.log(`==============================`);
+//   next();
+// });
 
-// Rota para criar um jogo
-router.post('/criar', authMiddleware, async (req, res) => {
-  const { 
-    nome_jogo, 
-    data_jogo, 
-    horario_inicio, 
-    horario_fim, 
-    limite_jogadores, 
-    id_usuario 
-  } = req.body;
+// // Rota para criar um jogo
+// router.post('/criar', authMiddleware, async (req, res) => {
+//   const { 
+//     nome_jogo, 
+//     data_jogo, 
+//     horario_inicio, 
+//     horario_fim, 
+//     limite_jogadores, 
+//     id_usuario 
+//   } = req.body;
 
-  if (
-    !nome_jogo ||
-    !data_jogo ||
-    !horario_inicio ||
-    !horario_fim ||
-    !limite_jogadores ||
-    !id_usuario
-  ) {
-    return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
-  }
+//   if (
+//     !nome_jogo ||
+//     !data_jogo ||
+//     !horario_inicio ||
+//     !horario_fim ||
+//     !limite_jogadores ||
+//     !id_usuario
+//   ) {
+//     return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
+//   }
 
-  // Valida duração do jogo
-  const duracao = new Date(horario_fim) - new Date(horario_inicio);
-  if (duracao > 12 * 60 * 60 * 1000) {
-    return res.status(400).json({ message: 'A duração máxima do jogo é 12 horas.' });
-  }
-  if (duracao <= 0) {
-    return res.status(400).json({ message: 'O horário de término deve ser após o horário de início.' });
-  }
+//   // Valida duração do jogo
+//   const duracao = new Date(horario_fim) - new Date(horario_inicio);
+//   if (duracao > 12 * 60 * 60 * 1000) {
+//     return res.status(400).json({ message: 'A duração máxima do jogo é 12 horas.' });
+//   }
+//   if (duracao <= 0) {
+//     return res.status(400).json({ message: 'O horário de término deve ser após o horário de início.' });
+//   }
 
-  const client = await db.getClient();
-  try {
-    await client.query('BEGIN');
+//   const client = await db.getClient();
+//   try {
+//     await client.query('BEGIN');
 
-    // Inserção do jogo na tabela 'jogos'
-    const result = await client.query(
-      `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'aberto')
-       RETURNING id_jogo`,
-      [nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario]
-    );
+//     // Inserção do jogo na tabela 'jogos'
+//     const result = await client.query(
+//       `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, status)
+//        VALUES ($1, $2, $3, $4, $5, $6, 'aberto')
+//        RETURNING id_jogo`,
+//       [nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario]
+//     );
 
-    const id_jogo = result.rows[0].id_jogo; // Captura o ID do jogo criado
+//     const id_jogo = result.rows[0].id_jogo; // Captura o ID do jogo criado
 
-    // Atribuição do papel de organizador na tabela 'usuario_funcao'
-    await client.query(
-      `INSERT INTO usuario_funcao (id_usuario, id_jogo, id_funcao, expira_em)
-       VALUES ($1, $2, 
-         (SELECT id_funcao FROM funcao WHERE nome_funcao = 'organizador'), 
-         NULL)`,
-      [id_usuario, id_jogo]
-    );
+//     // Atribuição do papel de organizador na tabela 'usuario_funcao'
+//     await client.query(
+//       `INSERT INTO usuario_funcao (id_usuario, id_jogo, id_funcao, expira_em)
+//        VALUES ($1, $2, 
+//          (SELECT id_funcao FROM funcao WHERE nome_funcao = 'organizador'), 
+//          NULL)`,
+//       [id_usuario, id_jogo]
+//     );
 
-    // Inserir o organizador na tabela 'participacao_jogos'
-    await client.query(
-      `INSERT INTO participacao_jogos (id_jogo, id_usuario, data_participacao, status)
-       VALUES ($1, $2, NOW(), 'confirmado')`,
-      [id_jogo, id_usuario]
-    );
+//     // Inserir o organizador na tabela 'participacao_jogos'
+//     await client.query(
+//       `INSERT INTO participacao_jogos (id_jogo, id_usuario, data_participacao, status)
+//        VALUES ($1, $2, NOW(), 'confirmado')`,
+//       [id_jogo, id_usuario]
+//     );
 
-    await client.query('COMMIT'); // Finaliza a transação
+//     await client.query('COMMIT'); // Finaliza a transação
 
-    return res
-      .status(201)
-      .json({ message: 'Jogo criado com sucesso.', id_jogo });
-  } catch (error) {
-    console.error('Erro ao criar jogo:', error);
-    await client.query('ROLLBACK'); // Reverte alterações em caso de erro
-    res.status(500).json({ message: 'Erro interno ao criar o jogo.', error });
-  } finally {
-    client.release();
-  }
-});
+//     return res
+//       .status(201)
+//       .json({ message: 'Jogo criado com sucesso.', id_jogo });
+//   } catch (error) {
+//     console.error('Erro ao criar jogo:', error);
+//     await client.query('ROLLBACK'); // Reverte alterações em caso de erro
+//     res.status(500).json({ message: 'Erro interno ao criar o jogo.', error });
+//   } finally {
+//     client.release();
+//   }
+// });
 
-// Rota para convidar amigos para um jogo
-router.post(
-  '/convidar',
-  authMiddleware,
-  roleMiddleware(['organizador']), // Apenas organizadores podem convidar
-  async (req, res) => {
-    const { id_jogo, amigos_ids } = req.body;
+// // Rota para convidar amigos para um jogo
+// router.post(
+//   '/convidar',
+//   authMiddleware,
+//   roleMiddleware(['organizador']), // Apenas organizadores podem convidar
+//   async (req, res) => {
+//     const { id_jogo, amigos_ids } = req.body;
 
-    if (!id_jogo || !Array.isArray(amigos_ids) || amigos_ids.length === 0) {
-      return res.status(400).json({ message: 'ID do jogo e uma lista de amigos são obrigatórios.' });
-    }
+//     if (!id_jogo || !Array.isArray(amigos_ids) || amigos_ids.length === 0) {
+//       return res.status(400).json({ message: 'ID do jogo e uma lista de amigos são obrigatórios.' });
+//     }
 
-    try {
-      const queryText = `
-        INSERT INTO participacao_jogos (id_jogo, id_usuario, data_participacao)
-        VALUES ${amigos_ids.map((_, idx) => `($1, $${idx + 2}, NOW())`).join(', ')}
-      `;
-      const queryValues = [id_jogo, ...amigos_ids];
+//     try {
+//       const queryText = `
+//         INSERT INTO participacao_jogos (id_jogo, id_usuario, data_participacao)
+//         VALUES ${amigos_ids.map((_, idx) => `($1, $${idx + 2}, NOW())`).join(', ')}
+//       `;
+//       const queryValues = [id_jogo, ...amigos_ids];
 
-      await db.query(queryText, queryValues);
-      res.status(201).json({ message: 'Amigos convidados com sucesso.' });
-    } catch (error) {
-      console.error('Erro ao convidar amigos:', error);
-      res.status(500).json({ message: 'Erro interno ao convidar amigos.', error });
-    }
-  }
-);
+//       await db.query(queryText, queryValues);
+//       res.status(201).json({ message: 'Amigos convidados com sucesso.' });
+//     } catch (error) {
+//       console.error('Erro ao convidar amigos:', error);
+//       res.status(500).json({ message: 'Erro interno ao convidar amigos.', error });
+//     }
+//   }
+// );
 
-// Rota para buscar habilidades dos jogadores de um jogo
-router.get(
-  '/:id_jogo/habilidades',
-  authMiddleware,
-  roleMiddleware(['jogador', 'organizador']), // Ambos podem acessar
-  async (req, res) => {
-    const { id_jogo } = req.params;
+// // Rota para buscar habilidades dos jogadores de um jogo
+// router.get(
+//   '/:id_jogo/habilidades',
+//   authMiddleware,
+//   roleMiddleware(['jogador', 'organizador']), // Ambos podem acessar
+//   async (req, res) => {
+//     const { id_jogo } = req.params;
 
-    if (!id_jogo) {
-      return res.status(400).json({ message: 'ID do jogo é obrigatório5.' });
-    }
+//     if (!id_jogo) {
+//       return res.status(400).json({ message: 'ID do jogo é obrigatório5.' });
+//     }
 
-    try {
-      const result = await db.query(
-        `SELECT pj.id_usuario, u.nome, u.email, 
-                COALESCE(a.passe, 0) AS passe, 
-                COALESCE(a.ataque, 0) AS ataque, 
-                COALESCE(a.levantamento, 0) AS levantamento
-         FROM participacao_jogos pj
-         JOIN usuario u ON pj.id_usuario = u.id_usuario
-         LEFT JOIN avaliacoes a ON pj.id_usuario = a.usuario_id 
-         WHERE pj.id_jogo = $1`,
-        [id_jogo]
-      );
+//     try {
+//       const result = await db.query(
+//         `SELECT pj.id_usuario, u.nome, u.email, 
+//                 COALESCE(a.passe, 0) AS passe, 
+//                 COALESCE(a.ataque, 0) AS ataque, 
+//                 COALESCE(a.levantamento, 0) AS levantamento
+//          FROM participacao_jogos pj
+//          JOIN usuario u ON pj.id_usuario = u.id_usuario
+//          LEFT JOIN avaliacoes a ON pj.id_usuario = a.usuario_id 
+//          WHERE pj.id_jogo = $1`,
+//         [id_jogo]
+//       );
 
-      console.log('Resultado da consulta para habilidades:', result.rows);
+//       console.log('Resultado da consulta para habilidades:', result.rows);
 
-      if (result.rows.length === 0) {
-        return res.status(404).json({ message: 'Nenhum jogador encontrado para este jogo.' });
-      }
+//       if (result.rows.length === 0) {
+//         return res.status(404).json({ message: 'Nenhum jogador encontrado para este jogo.' });
+//       }
 
-      res.status(200).json({ jogadores: result.rows }); // Encapsular dentro de 'jogadores'
-    } catch (error) {
-      console.error('Erro ao buscar habilidades dos jogadores:', error);
-      res.status(500).json({ message: 'Erro interno ao buscar habilidades dos jogadores.', error });
-    }
-  }
-);
+//       res.status(200).json({ jogadores: result.rows }); // Encapsular dentro de 'jogadores'
+//     } catch (error) {
+//       console.error('Erro ao buscar habilidades dos jogadores:', error);
+//       res.status(500).json({ message: 'Erro interno ao buscar habilidades dos jogadores.', error });
+//     }
+//   }
+// );
 
-// Rota para salvar habilidades dos jogadores de um jogo
-router.post(
-  '/:id_jogo/habilidades',
-  authMiddleware,
-  roleMiddleware(['organizador']), // Apenas organizadores podem salvar habilidades
-  async (req, res) => {
-    const { id_jogo } = req.params;
-    const { habilidades } = req.body;
+// // Rota para salvar habilidades dos jogadores de um jogo
+// router.post(
+//   '/:id_jogo/habilidades',
+//   authMiddleware,
+//   roleMiddleware(['organizador']), // Apenas organizadores podem salvar habilidades
+//   async (req, res) => {
+//     const { id_jogo } = req.params;
+//     const { habilidades } = req.body;
 
-    if (!id_jogo || !Array.isArray(habilidades) || habilidades.length === 0) {
-      return res.status(400).json({ message: 'ID do jogo e habilidades dos jogadores são obrigatórios.' });
-    }
+//     if (!id_jogo || !Array.isArray(habilidades) || habilidades.length === 0) {
+//       return res.status(400).json({ message: 'ID do jogo e habilidades dos jogadores são obrigatórios.' });
+//     }
 
-    try {
-      const queries = habilidades.map((jogador) =>
-        db.query(
-          `INSERT INTO avaliacoes (usuario_id, organizador_id, passe, ataque, levantamento)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (usuario_id, organizador_id) 
-           DO UPDATE SET passe = $3, ataque = $4, levantamento = $5`,
-          [jogador.id_usuario, req.user.id, jogador.passe, jogador.ataque, jogador.levantamento]
-        )
-      );
+//     try {
+//       const queries = habilidades.map((jogador) =>
+//         db.query(
+//           `INSERT INTO avaliacoes (usuario_id, organizador_id, passe, ataque, levantamento)
+//            VALUES ($1, $2, $3, $4, $5)
+//            ON CONFLICT (usuario_id, organizador_id) 
+//            DO UPDATE SET passe = $3, ataque = $4, levantamento = $5`,
+//           [jogador.id_usuario, req.user.id, jogador.passe, jogador.ataque, jogador.levantamento]
+//         )
+//       );
 
-      await Promise.all(queries);
-      res.status(200).json({ message: 'Habilidades atualizadas com sucesso.' });
-    } catch (error) {
-      console.error('Erro ao salvar habilidades:', error);
-      res.status(500).json({ message: 'Erro interno ao salvar habilidades.', error });
-    }
-  }
-);
+//       await Promise.all(queries);
+//       res.status(200).json({ message: 'Habilidades atualizadas com sucesso.' });
+//     } catch (error) {
+//       console.error('Erro ao salvar habilidades:', error);
+//       res.status(500).json({ message: 'Erro interno ao salvar habilidades.', error });
+//     }
+//   }
+// );
 
-// Rota para equilibrar times
-router.get(
-  '/:id_jogo/equilibrar-times',
-  authMiddleware,
-  roleMiddleware(['organizador', 'jogador']), // Ambos podem solicitar
-  async (req, res) => {
-    const { id_jogo } = req.params;
+// // Rota para equilibrar times
+// router.get(
+//   '/:id_jogo/equilibrar-times',
+//   authMiddleware,
+//   roleMiddleware(['organizador', 'jogador']), // Ambos podem solicitar
+//   async (req, res) => {
+//     const { id_jogo } = req.params;
 
-    if (!id_jogo) {
-      return res.status(400).json({ message: 'ID do jogo é obrigatório6.' });
-    }
+//     if (!id_jogo) {
+//       return res.status(400).json({ message: 'ID do jogo é obrigatório6.' });
+//     }
 
-    try {
-      const result = await db.query(
-        `SELECT pj.id_usuario, u.nome, 
-                COALESCE(a.passe, 0) AS passe, 
-                COALESCE(a.ataque, 0) AS ataque, 
-                COALESCE(a.levantamento, 0) AS levantamento
-         FROM participacao_jogos pj
-         JOIN usuario u ON pj.id_usuario = u.id_usuario
-         LEFT JOIN avaliacoes a ON pj.id_usuario = a.usuario_id
-         WHERE pj.id_jogo = $1`,
-        [id_jogo]
-      );
+//     try {
+//       const result = await db.query(
+//         `SELECT pj.id_usuario, u.nome, 
+//                 COALESCE(a.passe, 0) AS passe, 
+//                 COALESCE(a.ataque, 0) AS ataque, 
+//                 COALESCE(a.levantamento, 0) AS levantamento
+//          FROM participacao_jogos pj
+//          JOIN usuario u ON pj.id_usuario = u.id_usuario
+//          LEFT JOIN avaliacoes a ON pj.id_usuario = a.usuario_id
+//          WHERE pj.id_jogo = $1`,
+//         [id_jogo]
+//       );
 
-      console.log('Resultado da consulta para equilibrar times:', result.rows);
+//       console.log('Resultado da consulta para equilibrar times:', result.rows);
 
-      if (result.rows.length === 0) {
-        return res.status(404).json({ message: 'Nenhum jogador encontrado para este jogo.' });
-      }
+//       if (result.rows.length === 0) {
+//         return res.status(404).json({ message: 'Nenhum jogador encontrado para este jogo.' });
+//       }
 
-      const jogadores = result.rows;
-      const times = [[], []];
+//       const jogadores = result.rows;
+//       const times = [[], []];
 
-      // Ordena pela soma das habilidades
-      jogadores.sort(
-        (a, b) =>
-          (b.passe + b.ataque + b.levantamento) -
-          (a.passe + a.ataque + a.levantamento)
-      );
+//       // Ordena pela soma das habilidades
+//       jogadores.sort(
+//         (a, b) =>
+//           (b.passe + b.ataque + b.levantamento) -
+//           (a.passe + a.ataque + a.levantamento)
+//       );
 
-      // Distribui alternadamente entre os times
-      jogadores.forEach((jogador, index) => {
-        const teamIndex = index % times.length;
-        times[teamIndex].push(jogador);
-      });
+//       // Distribui alternadamente entre os times
+//       jogadores.forEach((jogador, index) => {
+//         const teamIndex = index % times.length;
+//         times[teamIndex].push(jogador);
+//       });
 
-      res.status(200).json({ times });
-    } catch (error) {
-      console.error('Erro ao equilibrar times:', error);
-      res.status(500).json({ message: 'Erro interno ao equilibrar times.', error });
-    }
-  }
-);
+//       res.status(200).json({ times });
+//     } catch (error) {
+//       console.error('Erro ao equilibrar times:', error);
+//       res.status(500).json({ message: 'Erro interno ao equilibrar times.', error });
+//     }
+//   }
+// );
 
-module.exports = router;
+// module.exports = router;
