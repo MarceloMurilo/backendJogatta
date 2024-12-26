@@ -1,10 +1,3 @@
-// middlewares/roleMiddleware.js
-const db = require('../db');
-
-/**
- * @param {Array} allowedRoles - lista de papéis permitidos
- * @param {Object} options - opções adicionais (ex.: { skipIdJogo: true })
- */
 const roleMiddleware = (allowedRoles, options = {}) => {
   return async (req, res, next) => {
     console.log('Verificando permissões para usuário:', req.user);
@@ -25,9 +18,10 @@ const roleMiddleware = (allowedRoles, options = {}) => {
       return next();
     }
 
-    const { id_jogo } = req.body || req.params;
-
-    if (!id_jogo) {
+    // Adicionado: Rotas sem id_jogo especificado no body ou params
+    const { id_jogo } = req.body || req.params || {};
+    if (!id_jogo && !options.optionalIdJogo) {
+      console.log('[roleMiddleware] Falha: ID do jogo é obrigatório.');
       return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
     }
 
@@ -45,7 +39,9 @@ const roleMiddleware = (allowedRoles, options = {}) => {
            AND uf.id_jogo = $2
            AND (uf.expira_em IS NULL OR uf.expira_em > NOW())
       `;
-      const result = await db.query(query, [id, id_jogo]);
+      const result = id_jogo
+        ? await db.query(query, [id, id_jogo])
+        : { rowCount: 1, rows: [{ nome_funcao: req.user.papel_usuario }] }; // Skip if id_jogo not required
 
       if (result.rowCount === 0) {
         console.log(
