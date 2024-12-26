@@ -62,13 +62,13 @@ router.post('/criar', authMiddleware, async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Inserção do jogo na tabela 'jogos'
-    const result = await client.query(
-      `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'aberto')
-       RETURNING id_jogo`,
-      [nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario]
-    );
+     // Inserção do jogo na tabela 'jogos' com is_open
+  const result = await client.query(
+    `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, status, is_open)
+     VALUES ($1, $2, $3, $4, $5, $6, 'aberto', true)
+     RETURNING id_jogo`,
+    [nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario]
+  );
 
     const id_jogo = result.rows[0].id_jogo;
 
