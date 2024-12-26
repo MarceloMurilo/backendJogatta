@@ -248,6 +248,7 @@ router.post(
       return res.status(200).json({
         message: 'Balanceamento finalizado.',
         status: 'concluido',
+        id_jogo, // Incluído para confirmar qual jogo foi atualizado
         times,
       });
     } catch (error) {
