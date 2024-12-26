@@ -11,7 +11,7 @@ const roleMiddleware = require('./middlewares/roleMiddleware');
 // Importando rotas
 const jogadorRoutes = require('./routes/jogador/jogadorRoutes');
 const reservationRoutes = require('./routes/jogador/reservationRoutes');
-const gameRoutes = require('./routes/jogador/gameRoutes');
+const balanceamentoRoutes = require('./routes/jogador/balanceamentoRoutes');
 const jogosRoutes = require('./routes/jogador/jogosRoutes');
 const courtManagementRoutes = require('./routes/owner/courtManagementRoutes');
 const ownerReservationsRoutes = require('./routes/owner/ownerReservationsRoutes');
@@ -45,7 +45,7 @@ app.use((req, res, next) => {
 app.use('/api/chat', authMiddleware, chatRoutes);
 app.use('/api/jogador', authMiddleware, roleMiddleware(['jogador', 'organizador']), jogadorRoutes);
 app.use('/api/jogador/reservas', authMiddleware, reservationRoutes);
-app.use('/api/jogador', authMiddleware, gameRoutes);
+app.use('/api/jogador', authMiddleware, balanceamentoRoutes);
 
 app.use('/api/jogos', authMiddleware, jogosRoutes);
 app.use('/api/owner/quadras', authMiddleware, roleMiddleware(['owner']), courtManagementRoutes);
@@ -61,8 +61,8 @@ app.use('/api/groups', groupRoutes);
 app.use('/api/lobby', authMiddleware, lobbyRoutes);
 app.use('/api/cep', authMiddleware, cepRoutes);
 
-// Incluindo endpoints de balanceamento diretamente de gameRoutes
-app.use('/api/times', authMiddleware, gameRoutes);
+// Incluindo endpoints de balanceamento diretamente de balanceamentoRoutes
+app.use('/api/times', authMiddleware, balanceamentoRoutes);
 
 app.get('/api/test', (req, res) => {
   res.json({ message: 'Rota de teste funcionando!' });
