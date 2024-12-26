@@ -5,6 +5,7 @@ const router = express.Router();
 const db = require('../../db');
 const authMiddleware = require('../../middlewares/authMiddleware');
 const roleMiddleware = require('../../middlewares/roleMiddleware');
+const jwt = require('jsonwebtoken'); // Importação do jsonwebtoken
 
 // Middleware de log
 router.use((req, res, next) => {
@@ -26,20 +27,25 @@ router.post('/criar', authMiddleware, async (req, res) => {
     horario_fim,
     limite_jogadores,
     id_usuario,
+    email, // Certifique-se de receber o email no corpo da requisição
+    nome // Receber o nome do usuário, se necessário
   } = req.body;
 
+  // Validações existentes...
   if (
     !nome_jogo ||
     !data_jogo ||
     !horario_inicio ||
     !horario_fim ||
     !limite_jogadores ||
-    !id_usuario
+    !id_usuario ||
+    !email ||
+    !nome
   ) {
     return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
   }
 
-  // Exemplo de validação de duração:
+  // Validação de duração do jogo
   const duracao = new Date(horario_fim) - new Date(horario_inicio);
   if (duracao > 12 * 60 * 60 * 1000) {
     return res
@@ -56,6 +62,7 @@ router.post('/criar', authMiddleware, async (req, res) => {
   try {
     await client.query('BEGIN');
 
+    // Inserção do jogo na tabela 'jogos'
     const result = await client.query(
       `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, status)
        VALUES ($1, $2, $3, $4, $5, $6, 'aberto')
@@ -65,7 +72,7 @@ router.post('/criar', authMiddleware, async (req, res) => {
 
     const id_jogo = result.rows[0].id_jogo;
 
-    // Marca o usuário como organizador
+    // Atribuição do papel de organizador na tabela 'usuario_funcao'
     await client.query(
       `INSERT INTO usuario_funcao (id_usuario, id_jogo, id_funcao, expira_em)
        VALUES (
@@ -77,9 +84,25 @@ router.post('/criar', authMiddleware, async (req, res) => {
       [id_usuario, id_jogo]
     );
 
+    // Geração de um novo token JWT com o papel atualizado
+    const novoToken = jwt.sign(
+      { 
+        id: id_usuario, 
+        nome: nome, 
+        email: email, 
+        papel_usuario: 'organizador' 
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
     await client.query('COMMIT');
 
-    return res.status(201).json({ message: 'Jogo criado com sucesso.', id_jogo });
+    return res.status(201).json({ 
+      message: 'Jogo criado com sucesso.', 
+      id_jogo,
+      token: novoToken // Retorna o novo token
+    });
   } catch (error) {
     console.error('Erro ao criar jogo:', error);
     await client.query('ROLLBACK');
