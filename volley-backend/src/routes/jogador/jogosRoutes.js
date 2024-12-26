@@ -1,4 +1,3 @@
-// routes/jogador/jogosRoutes.js
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
@@ -70,6 +69,13 @@ router.post('/criar', authMiddleware, async (req, res) => {
       [id_usuario, id_jogo]
     );
 
+    // Inserir o organizador na tabela 'participacao_jogos'
+    await client.query(
+      `INSERT INTO participacao_jogos (id_jogo, id_usuario, data_participacao, status)
+       VALUES ($1, $2, NOW(), 'confirmado')`,
+      [id_jogo, id_usuario]
+    );
+
     await client.query('COMMIT'); // Finaliza a transação
 
     return res
@@ -137,11 +143,13 @@ router.get(
         [id_jogo]
       );
 
+      console.log('Resultado da consulta para habilidades:', result.rows);
+
       if (result.rows.length === 0) {
         return res.status(404).json({ message: 'Nenhum jogador encontrado para este jogo.' });
       }
 
-      res.status(200).json(result.rows);
+      res.status(200).json({ jogadores: result.rows }); // Encapsular dentro de 'jogadores'
     } catch (error) {
       console.error('Erro ao buscar habilidades dos jogadores:', error);
       res.status(500).json({ message: 'Erro interno ao buscar habilidades dos jogadores.', error });
@@ -206,6 +214,8 @@ router.get(
          WHERE pj.id_jogo = $1`,
         [id_jogo]
       );
+
+      console.log('Resultado da consulta para equilibrar times:', result.rows);
 
       if (result.rows.length === 0) {
         return res.status(404).json({ message: 'Nenhum jogador encontrado para este jogo.' });
