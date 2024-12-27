@@ -690,7 +690,7 @@ router.get('/me', async (req, res) => {
 
   try {
     const salasQuery = await db.query(
-      `SELECT j.id_jogo, j.nome AS nome_jogo, j.data_jogo, j.horario_inicio, j.horario_fim, j.status, p.status AS participacao_status
+      `SELECT j.id_jogo, j.nome_jogo AS nome_jogo, j.data_jogo, j.horario_inicio, j.horario_fim, j.status, p.status AS participacao_status
          FROM participacao_jogos p
          JOIN jogos j ON p.id_jogo = j.id_jogo
         WHERE p.id_usuario = $1
