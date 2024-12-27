@@ -690,13 +690,19 @@ router.get('/me', async (req, res) => {
 
   try {
     const salasQuery = await db.query(
-      `SELECT j.id_jogo, j.nome_jogo AS nome_jogo, j.data_jogo, j.horario_inicio, j.horario_fim, j.status, p.status AS participacao_status
-         FROM participacao_jogos p
-         JOIN jogos j ON p.id_jogo = j.id_jogo
-        WHERE p.id_usuario = $1
-          AND p.status = 'ativo'
-          AND j.status != 'fechada'
-        ORDER BY j.data_jogo, j.horario_inicio`,
+      `SELECT j.id_jogo,
+       j.nome_jogo AS nome_jogo,
+       to_char(j.data_jogo, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_jogo,
+       to_char(j.horario_inicio, 'HH24:MI:SS') AS horario_inicio,
+       to_char(j.horario_fim, 'HH24:MI:SS') AS horario_fim,
+       j.status,
+       p.status AS participacao_status
+  FROM participacao_jogos p
+  JOIN jogos j ON p.id_jogo = j.id_jogo
+ WHERE p.id_usuario = $1
+   AND p.status = 'ativo'
+   AND j.status != 'fechada'
+ ORDER BY j.data_jogo, j.horario_inicio;`,
       [id_usuario]
     );
 
