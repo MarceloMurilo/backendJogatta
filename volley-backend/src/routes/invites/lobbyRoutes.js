@@ -241,12 +241,36 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
     );
     const espera = esperaQuery.rows;
 
+    const timesQuery = await db.query(
+      `SELECT t.nome AS time_nome, u.nome AS jogador_nome
+         FROM times t
+         JOIN jogadores_times jt ON t.id_time = jt.id_time
+         JOIN usuario u ON jt.id_usuario = u.id_usuario
+        WHERE t.id_jogo = $1
+        ORDER BY t.nome, u.nome`,
+      [id_jogo]
+    );
+    
+    const times = timesQuery.rows.reduce((acc, row) => {
+      const timeExistente = acc.find((t) => t.nome === row.time_nome);
+      if (timeExistente) {
+        timeExistente.jogadores.push({ nome: row.jogador_nome });
+      } else {
+        acc.push({
+          nome: row.time_nome,
+          jogadores: [{ nome: row.jogador_nome }],
+        });
+      }
+      return acc;
+    }, []);
+    
     return res.status(200).json({
       ativos,
       espera,
       isOrganizer,
       limite_jogadores,
       status,
+      times, // Inclui os times formados
     });
   } catch (error) {
     console.error('Erro ao listar jogadores:', error.message);
