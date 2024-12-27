@@ -577,4 +577,98 @@ router.post('/toggle-status', async (req, res) => {
   }
 });
 
+/*
+  -------------------------------------------
+  10. FECHAR SALA
+  -------------------------------------------
+  Endpoint para encerrar a sala, atualizando o status para 'fechada'.
+*/
+router.post('/fechar-sala', async (req, res) => {
+  const { id_jogo, id_usuario_organizador } = req.body;
+
+  if (!id_jogo || !id_usuario_organizador) {
+    return res.status(400).json({ error: 'Parâmetros obrigatórios ausentes.' });
+  }
+
+  try {
+    // Verificar se o usuário é organizador
+    const organizadorQuery = await db.query(
+      'SELECT id_usuario FROM jogos WHERE id_jogo = $1',
+      [id_jogo]
+    );
+
+    if (organizadorQuery.rowCount === 0) {
+      return res.status(404).json({ error: 'Jogo não encontrado.' });
+    }
+
+    const organizador_id = organizadorQuery.rows[0].id_usuario;
+    if (parseInt(organizador_id) !== parseInt(id_usuario_organizador)) {
+      return res.status(403).json({ error: 'Apenas o organizador pode encerrar a sala.' });
+    }
+
+    // Atualizar o status do jogo para 'fechada'
+    await db.query(
+      'UPDATE jogos SET status = $1 WHERE id_jogo = $2',
+      ['fechada', id_jogo]
+    );
+
+    return res.status(200).json({ message: 'Sala fechada com sucesso.', status: 'fechada' });
+  } catch (error) {
+    console.error('Erro ao fechar a sala:', error.message);
+    return res.status(500).json({ error: 'Erro ao fechar a sala.' });
+  }
+});
+
+/*
+  -------------------------------------------
+  11. ESTENDER TEMPO DA SALA
+  -------------------------------------------
+  Endpoint para estender o tempo de término da sala.
+*/
+router.post('/estender-tempo', async (req, res) => {
+  const { id_jogo, id_usuario_organizador, novo_termino } = req.body;
+
+  if (!id_jogo || !id_usuario_organizador || !novo_termino) {
+    return res.status(400).json({ error: 'Parâmetros obrigatórios ausentes.' });
+  }
+
+  try {
+    // Verificar se o usuário é organizador
+    const organizadorQuery = await db.query(
+      'SELECT id_usuario FROM jogos WHERE id_jogo = $1',
+      [id_jogo]
+    );
+
+    if (organizadorQuery.rowCount === 0) {
+      return res.status(404).json({ error: 'Jogo não encontrado.' });
+    }
+
+    const organizador_id = organizadorQuery.rows[0].id_usuario;
+    if (parseInt(organizador_id) !== parseInt(id_usuario_organizador)) {
+      return res.status(403).json({ error: 'Apenas o organizador pode estender o tempo.' });
+    }
+
+    // Validar novo término
+    const terminoAtual = await db.query(
+      'SELECT termino FROM reservas WHERE id_jogo = $1',
+      [id_jogo]
+    );
+
+    if (!terminoAtual.rows[0] || new Date(novo_termino) <= new Date(terminoAtual.rows[0].termino)) {
+      return res.status(400).json({ error: 'O novo término deve ser maior que o término atual.' });
+    }
+
+    // Atualizar o horário de término
+    await db.query(
+      'UPDATE reservas SET termino = $1 WHERE id_jogo = $2',
+      [novo_termino, id_jogo]
+    );
+
+    return res.status(200).json({ message: 'Tempo da sala estendido com sucesso.' });
+  } catch (error) {
+    console.error('Erro ao estender o tempo da sala:', error.message);
+    return res.status(500).json({ error: 'Erro ao processar sua solicitação.' });
+  }
+});
+
 module.exports = router;
