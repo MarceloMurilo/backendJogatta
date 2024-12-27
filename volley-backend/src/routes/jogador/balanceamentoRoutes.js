@@ -444,6 +444,7 @@ router.post('/equilibrar-times', async (req, res) => {
         });
       }
     }
+    console.log('Recebido no backend - id_jogo:', req.body.id_jogo || req.params?.id_jogo || 'undefined');
 
     return res.json({
       id_jogo: id_jogo || req.body.id_jogo,         // Certifique-se de que o ID do jogo esteja disponível no backend

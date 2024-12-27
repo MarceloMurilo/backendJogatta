@@ -47,15 +47,40 @@ router.get('/', async (req, res) => {
 
 // Rota para listar um único usuário por ID (Read)
 router.get('/:id', async (req, res) => {
-  const { id } = req.params;
+  const { id } = req.params; // ID do usuário a ser buscado
+  const organizadorId = req.query.organizador_id; // ID do organizador enviado como parâmetro
+
   try {
-    const result = await pool.query('SELECT * FROM public.usuario WHERE id_usuario = $1', [id]);
-    if (result.rows.length === 0) {
+    // Busca o usuário pelo ID
+    const userResult = await pool.query('SELECT * FROM public.usuario WHERE id_usuario = $1', [id]);
+
+    if (userResult.rows.length === 0) {
       console.log(`Usuário com ID ${id} não encontrado.`);
       return res.status(404).json({ error: 'Usuário não encontrado' });
     }
-    console.log(`Usuário encontrado: `, result.rows[0]);
-    res.status(200).json(result.rows[0]);
+
+    const user = userResult.rows[0];
+
+    // Adiciona o campo isfriend, verificando a relação no banco
+    if (organizadorId) {
+      const isFriendResult = await pool.query(
+        `SELECT 
+           CASE 
+             WHEN EXISTS (
+               SELECT 1 FROM amizades 
+               WHERE organizador_id = $1 AND amigo_id = $2
+             ) THEN true ELSE false
+           END AS isfriend`,
+        [organizadorId, id]
+      );
+
+      user.isfriend = isFriendResult.rows[0].isfriend;
+    } else {
+      user.isfriend = false; // Se o organizador_id não for passado, assume que não é amigo
+    }
+
+    console.log(`Usuário encontrado:`, user);
+    res.status(200).json(user);
   } catch (error) {
     console.error('Erro ao buscar o usuário:', error);
     res.status(500).json({ error: 'Erro ao buscar o usuário', details: error.message });
