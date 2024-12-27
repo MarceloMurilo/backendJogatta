@@ -649,18 +649,26 @@ router.post('/estender-tempo', async (req, res) => {
     }
 
     // Validar novo término
-    const terminoAtual = await db.query(
-      'SELECT termino FROM reservas WHERE id_jogo = $1',
+    const terminoAtualQuery = await db.query(
+      'SELECT horario_fim FROM jogos WHERE id_jogo = $1',
       [id_jogo]
     );
 
-    if (!terminoAtual.rows[0] || new Date(novo_termino) <= new Date(terminoAtual.rows[0].termino)) {
+    if (terminoAtualQuery.rowCount === 0) {
+      return res.status(404).json({ error: 'Jogo não encontrado.' });
+    }
+
+    const terminoAtual = terminoAtualQuery.rows[0].horario_fim;
+    const novoTerminodata = new Date(novo_termino);
+    const terminoAtualDate = new Date(terminoAtual);
+
+    if (novoTerminodata <= terminoAtualDate) {
       return res.status(400).json({ error: 'O novo término deve ser maior que o término atual.' });
     }
 
     // Atualizar o horário de término
     await db.query(
-      'UPDATE reservas SET termino = $1 WHERE id_jogo = $2',
+      'UPDATE jogos SET horario_fim = $1 WHERE id_jogo = $2',
       [novo_termino, id_jogo]
     );
 
@@ -668,6 +676,36 @@ router.post('/estender-tempo', async (req, res) => {
   } catch (error) {
     console.error('Erro ao estender o tempo da sala:', error.message);
     return res.status(500).json({ error: 'Erro ao processar sua solicitação.' });
+  }
+});
+
+/*
+  -------------------------------------------
+  12. OBTÉM SALAS ATIVAS DO USUÁRIO
+  -------------------------------------------
+  Endpoint para obter todas as salas em que o usuário está participando.
+*/
+router.get('/me', async (req, res) => {
+  const id_usuario = req.user.id;
+
+  try {
+    const salasQuery = await db.query(
+      `SELECT j.id_jogo, j.nome AS nome_jogo, j.data_jogo, j.horario_inicio, j.horario_fim, j.status, p.status AS participacao_status
+         FROM participacao_jogos p
+         JOIN jogos j ON p.id_jogo = j.id_jogo
+        WHERE p.id_usuario = $1
+          AND p.status = 'ativo'
+          AND j.status != 'fechada'
+        ORDER BY j.data_jogo, j.horario_inicio`,
+      [id_usuario]
+    );
+
+    const salas = salasQuery.rows;
+
+    return res.status(200).json({ salas });
+  } catch (error) {
+    console.error('Erro ao obter salas do usuário:', error.message);
+    return res.status(500).json({ error: 'Erro ao obter salas do usuário.' });
   }
 });
 
