@@ -202,6 +202,7 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
     const { id_jogo } = req.params;
     const id_usuario_logado = req.user ? req.user.id : null;
 
+    // Verifica se o jogo existe
     const jogoQuery = await db.query(
       `SELECT id_usuario, limite_jogadores, status
          FROM jogos
@@ -219,6 +220,7 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
     const isOrganizer =
       parseInt(id_usuario_logado, 10) === parseInt(organizador_id, 10);
 
+    // Lista jogadores ativos
     const ativosQuery = await db.query(
       `SELECT u.id_usuario, u.nome, p.status, p.confirmado, p.pago
          FROM participacao_jogos p
@@ -230,6 +232,7 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
     );
     const ativos = ativosQuery.rows;
 
+    // Lista jogadores na fila de espera
     const esperaQuery = await db.query(
       `SELECT u.id_usuario, u.nome, f.status, f.posicao_fila
          FROM fila_jogos f
@@ -241,29 +244,31 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
     );
     const espera = esperaQuery.rows;
 
+    // Lista os times e jogadores associados
     const timesQuery = await db.query(
-      `SELECT t.nome AS time_nome, u.nome AS jogador_nome
+      `SELECT t.numero_time AS time_numero, u.nome AS jogador_nome
          FROM times t
-         JOIN jogadores_times jt ON t.id_time = jt.id_time
-         JOIN usuario u ON jt.id_usuario = u.id_usuario
+         JOIN usuario u ON t.id_usuario = u.id_usuario
         WHERE t.id_jogo = $1
-        ORDER BY t.nome, u.nome`,
+        ORDER BY t.numero_time, u.nome`,
       [id_jogo]
     );
-    
+
+    // Estrutura os times com seus jogadores
     const times = timesQuery.rows.reduce((acc, row) => {
-      const timeExistente = acc.find((t) => t.nome === row.time_nome);
+      const timeExistente = acc.find((t) => t.numero === row.time_numero);
       if (timeExistente) {
         timeExistente.jogadores.push({ nome: row.jogador_nome });
       } else {
         acc.push({
-          nome: row.time_nome,
+          numero: row.time_numero,
           jogadores: [{ nome: row.jogador_nome }],
         });
       }
       return acc;
     }, []);
-    
+
+    // Retorna todos os dados estruturados
     return res.status(200).json({
       ativos,
       espera,
