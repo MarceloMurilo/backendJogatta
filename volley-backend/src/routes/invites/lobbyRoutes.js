@@ -692,7 +692,7 @@ router.get('/me', async (req, res) => {
     const salasQuery = await db.query(
       `SELECT j.id_jogo,
        j.nome_jogo AS nome_jogo,
-       to_char(j.data_jogo, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_jogo,
+       to_char(j.data_jogo, 'YYYY-MM-DD') AS data_jogo,
        to_char(j.horario_inicio, 'HH24:MI:SS') AS horario_inicio,
        to_char(j.horario_fim, 'HH24:MI:SS') AS horario_fim,
        j.status,
