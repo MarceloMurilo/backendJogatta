@@ -15,7 +15,7 @@ router.use((req, res, next) => {
   next();
 });
 
-/// Rota para criar um jogo
+// Rota para criar um jogo
 router.post('/criar', authMiddleware, async (req, res) => {
   const { 
     nome_jogo, 
@@ -48,7 +48,7 @@ router.post('/criar', authMiddleware, async (req, res) => {
   }
 
   // Valida duração do jogo
-  const duracao = new Date(horario_fim) - new Date(horario_inicio);
+  const duracao = new Date(`${data_jogo}T${horario_fim}`) - new Date(`${data_jogo}T${horario_inicio}`);
   if (duracao > 12 * 60 * 60 * 1000) {
     console.error('[ERROR] A duração do jogo excede 12 horas.');
     return res.status(400).json({ message: 'A duração máxima do jogo é 12 horas.' });
@@ -74,24 +74,17 @@ router.post('/criar', authMiddleware, async (req, res) => {
       [nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario]
     );
 
-    const id_jogo = result.rows[0].id_jogo;
+    const id_jogo = result.rows[0]?.id_jogo;
+    if (!id_jogo) {
+      throw new Error('Falha ao obter o ID do jogo recém-criado.');
+    }
     console.log('[INFO] Jogo criado com ID:', id_jogo);
-
-    // Atribuição do papel de organizador na tabela 'usuario_funcao'
-    console.log('[INFO] Atribuindo papel de organizador ao usuário:', id_usuario);
-    await client.query(
-      `INSERT INTO usuario_funcao (id_usuario, id_jogo, id_funcao, expira_em)
-       VALUES ($1, $2, 
-         (SELECT id_funcao FROM funcao WHERE nome_funcao = 'organizador'), 
-         NULL)`,
-      [id_usuario, id_jogo]
-    );
 
     // Inserir o organizador na tabela 'participacao_jogos'
     console.log('[INFO] Inserindo participação do organizador na tabela `participacao_jogos`.');
     await client.query(
       `INSERT INTO participacao_jogos (id_jogo, id_usuario, data_participacao, status)
-       VALUES ($1, $2, NOW(), 'confirmado')`,
+       VALUES ($1, $2, NOW(), 'ativo')`,
       [id_jogo, id_usuario]
     );
 
@@ -102,9 +95,9 @@ router.post('/criar', authMiddleware, async (req, res) => {
       .status(201)
       .json({ message: 'Jogo criado com sucesso.', id_jogo });
   } catch (error) {
-    console.error('[ERROR] Erro ao criar jogo:', error);
+    console.error('[ERROR] Erro ao criar jogo:', error.message);
     await client.query('ROLLBACK'); // Reverte alterações em caso de erro
-    return res.status(500).json({ message: 'Erro interno ao criar o jogo.', error });
+    return res.status(500).json({ message: 'Erro interno ao criar o jogo.', error: error.message });
   } finally {
     client.release();
     console.log('[INFO] Conexão com o banco de dados liberada.');
