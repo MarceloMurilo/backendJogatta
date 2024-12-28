@@ -612,7 +612,7 @@ router.post('/fechar-sala', async (req, res) => {
       ['finalizado', id_jogo]
     );
 
-    return res.status(200).json({ message: 'Sala fechada com sucesso.', status: 'fechada' });
+    return res.status(200).json({ message: 'Sala fechada com sucesso.', status: 'finalizado' });
   } catch (error) {
     console.error('Erro ao fechar a sala:', error.message);
     return res.status(500).json({ error: 'Erro ao fechar a sala.' });
