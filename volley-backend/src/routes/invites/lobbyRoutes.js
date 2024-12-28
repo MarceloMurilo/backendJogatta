@@ -8,7 +8,7 @@ const authMiddleware = require('../../middlewares/authMiddleware');
 
 router.use(authMiddleware);
 
-// 1. CRIAR SALA
+// 1. CRIAR SALA COM LOGS DETALHADOS
 router.post('/criar', async (req, res) => {
   try {
     const {
@@ -21,6 +21,16 @@ router.post('/criar', async (req, res) => {
 
     const id_usuario = req.user.id; // Obtém o ID do usuário autenticado
 
+    console.log('[INFO] Iniciando criação de sala...');
+    console.log('[DEBUG] Dados recebidos:', {
+      nome_jogo,
+      data_jogo,
+      horario_inicio,
+      horario_fim,
+      limite_jogadores,
+      id_usuario,
+    });
+
     if (
       !nome_jogo ||
       !data_jogo ||
@@ -28,13 +38,12 @@ router.post('/criar', async (req, res) => {
       !horario_fim ||
       !limite_jogadores
     ) {
+      console.error('[ERROR] Campos obrigatórios ausentes.');
       return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
     }
 
-    console.log('Criando jogo para o usuário:', id_usuario);
-    console.log('Dados do jogo:', { nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores });
-
     // Insere o jogo na tabela `jogos` com status 'aberto'
+    console.log('[INFO] Inserindo jogo na tabela `jogos`...');
     const result = await db.query(
       `INSERT INTO jogos (nome, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, status)
        VALUES ($1, $2, $3, $4, $5, $6, 'aberto')
@@ -42,31 +51,43 @@ router.post('/criar', async (req, res) => {
       [nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario]
     );
 
+    console.log('[DEBUG] Resultado da inserção na tabela `jogos`:', result.rows);
+
     if (result.rowCount === 0) {
+      console.error('[ERROR] Falha ao inserir o jogo na tabela `jogos`.');
       return res.status(500).json({ message: 'Erro ao criar o jogo.' });
     }
 
     const id_jogo = result.rows[0].id_jogo;
-    console.log('Jogo criado com ID:', id_jogo);
+    console.log('[INFO] Jogo criado com sucesso. ID do jogo:', id_jogo);
 
     // Adiciona o criador como participante ativo na tabela `participacao_jogos`
-    await db.query(
+    console.log('[INFO] Inserindo criador na tabela `participacao_jogos`...');
+    const participacaoResult = await db.query(
       `INSERT INTO participacao_jogos (id_jogo, id_usuario, lider_time, status)
        VALUES ($1, $2, $3, 'ativo')`,
       [id_jogo, id_usuario, true]
     );
 
-    console.log('Participação adicionada para o usuário:', id_usuario);
+    console.log('[DEBUG] Resultado da inserção na tabela `participacao_jogos`:', participacaoResult.rowCount);
+
+    if (participacaoResult.rowCount === 0) {
+      console.error('[ERROR] Falha ao inserir o criador na tabela `participacao_jogos`.');
+      return res.status(500).json({ message: 'Erro ao adicionar o criador como participante.' });
+    }
+
+    console.log('[INFO] Sala criada e criador adicionado com sucesso.');
 
     return res.status(201).json({
       message: 'Jogo criado com sucesso.',
       id_jogo,
     });
   } catch (error) {
-    console.error('Erro ao criar o jogo:', error.message);
+    console.error('[ERROR] Erro ao criar o jogo:', error.message);
     return res.status(500).json({ message: 'Erro ao criar o jogo.' });
   }
 });
+
 
 
 // 2. GERAR LINK DE CONVITE
