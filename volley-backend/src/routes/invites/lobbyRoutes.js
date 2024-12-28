@@ -557,7 +557,7 @@ router.post('/toggle-status', async (req, res) => {
       [novoStatus, id_jogo]
     );
 
-    if (novoStatus === 'fechado') {
+    if (novoStatus === 'finalizado') {
       await db.query(
         `UPDATE convites
             SET status = 'expirado'
