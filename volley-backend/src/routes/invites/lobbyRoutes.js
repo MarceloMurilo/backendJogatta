@@ -710,7 +710,7 @@ router.get('/me', async (req, res) => {
        p.status AS participacao_status
 FROM participacao_jogos p
 JOIN jogos j ON p.id_jogo = j.id_jogo
-WHERE p.id_usuario = 1
+WHERE p.id_usuario = $1
   AND p.status = 'ativo'  -- Participação ativa
   AND j.status IN ('aberto', 'balanceando times', 'em andamento')  -- Status do jogo
 ORDER BY j.data_jogo, j.horario_inicio;`,
