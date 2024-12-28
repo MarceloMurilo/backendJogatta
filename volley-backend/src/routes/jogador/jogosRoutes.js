@@ -15,7 +15,7 @@ router.use((req, res, next) => {
   next();
 });
 
-// Rota para criar um jogo
+/// Rota para criar um jogo
 router.post('/criar', authMiddleware, async (req, res) => {
   const { 
     nome_jogo, 
@@ -26,6 +26,15 @@ router.post('/criar', authMiddleware, async (req, res) => {
     id_usuario 
   } = req.body;
 
+  console.log('[INFO] Recebida solicitação para criar jogo:', {
+    nome_jogo,
+    data_jogo,
+    horario_inicio,
+    horario_fim,
+    limite_jogadores,
+    id_usuario,
+  });
+
   if (
     !nome_jogo ||
     !data_jogo ||
@@ -34,23 +43,30 @@ router.post('/criar', authMiddleware, async (req, res) => {
     !limite_jogadores ||
     !id_usuario
   ) {
+    console.error('[ERROR] Campos obrigatórios ausentes.');
     return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
   }
 
   // Valida duração do jogo
   const duracao = new Date(horario_fim) - new Date(horario_inicio);
   if (duracao > 12 * 60 * 60 * 1000) {
+    console.error('[ERROR] A duração do jogo excede 12 horas.');
     return res.status(400).json({ message: 'A duração máxima do jogo é 12 horas.' });
   }
   if (duracao <= 0) {
-    return res.status(400).json({ message: 'O horário de término deve ser após o horário de início.' });
+    console.error('[ERROR] O horário de término é anterior ao horário de início.');
+    return res
+      .status(400)
+      .json({ message: 'O horário de término deve ser após o horário de início.' });
   }
 
   const client = await db.getClient();
   try {
+    console.log('[INFO] Iniciando transação para criar jogo.');
     await client.query('BEGIN');
 
     // Inserção do jogo na tabela 'jogos'
+    console.log('[INFO] Inserindo jogo na tabela `jogos`.');
     const result = await client.query(
       `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, status)
        VALUES ($1, $2, $3, $4, $5, $6, 'aberto')
@@ -58,9 +74,11 @@ router.post('/criar', authMiddleware, async (req, res) => {
       [nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario]
     );
 
-    const id_jogo = result.rows[0].id_jogo; // Captura o ID do jogo criado
+    const id_jogo = result.rows[0].id_jogo;
+    console.log('[INFO] Jogo criado com ID:', id_jogo);
 
     // Atribuição do papel de organizador na tabela 'usuario_funcao'
+    console.log('[INFO] Atribuindo papel de organizador ao usuário:', id_usuario);
     await client.query(
       `INSERT INTO usuario_funcao (id_usuario, id_jogo, id_funcao, expira_em)
        VALUES ($1, $2, 
@@ -70,6 +88,7 @@ router.post('/criar', authMiddleware, async (req, res) => {
     );
 
     // Inserir o organizador na tabela 'participacao_jogos'
+    console.log('[INFO] Inserindo participação do organizador na tabela `participacao_jogos`.');
     await client.query(
       `INSERT INTO participacao_jogos (id_jogo, id_usuario, data_participacao, status)
        VALUES ($1, $2, NOW(), 'confirmado')`,
@@ -77,16 +96,18 @@ router.post('/criar', authMiddleware, async (req, res) => {
     );
 
     await client.query('COMMIT'); // Finaliza a transação
+    console.log('[INFO] Jogo criado com sucesso. Transação concluída.');
 
     return res
       .status(201)
       .json({ message: 'Jogo criado com sucesso.', id_jogo });
   } catch (error) {
-    console.error('Erro ao criar jogo:', error);
+    console.error('[ERROR] Erro ao criar jogo:', error);
     await client.query('ROLLBACK'); // Reverte alterações em caso de erro
-    res.status(500).json({ message: 'Erro interno ao criar o jogo.', error });
+    return res.status(500).json({ message: 'Erro interno ao criar o jogo.', error });
   } finally {
     client.release();
+    console.log('[INFO] Conexão com o banco de dados liberada.');
   }
 });
 
