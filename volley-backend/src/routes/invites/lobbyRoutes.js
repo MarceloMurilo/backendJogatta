@@ -31,6 +31,7 @@ router.post('/criar', async (req, res) => {
       return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
     }
 
+    // Insere o jogo na tabela `jogos`
     const result = await db.query(
       `INSERT INTO jogos (nome, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -42,15 +43,25 @@ router.post('/criar', async (req, res) => {
       return res.status(500).json({ message: 'Erro ao criar o jogo.' });
     }
 
+    const id_jogo = result.rows[0].id_jogo;
+
+    // Adiciona o criador como participante ativo na tabela `participacao_jogos`
+    await db.query(
+      `INSERT INTO participacao_jogos (id_jogo, id_usuario, lider_time, status)
+       VALUES ($1, $2, $3, $4)`,
+      [id_jogo, id_usuario, true, 'ativo']
+    );
+
     return res.status(201).json({
       message: 'Jogo criado com sucesso.',
-      id_jogo: result.rows[0].id_jogo,
+      id_jogo,
     });
   } catch (error) {
     console.error('Erro ao criar o jogo:', error.message);
     return res.status(500).json({ message: 'Erro ao criar o jogo.' });
   }
 });
+
 
 // 2. GERAR LINK DE CONVITE
 router.post('/gerar', async (req, res) => {
