@@ -81,7 +81,7 @@ router.post('/gerar', async (req, res) => {
     await db.query(
       `INSERT INTO convites (id_jogo, id_usuario, convite_uuid, status, data_envio, id_numerico)
        VALUES ($1, $2, $3, $4, NOW(), $5)`,
-      [id_jogo, id_usuario, convite_uuid, 'pendente', idNumerico]
+      [id_jogo, id_usuario, convite_uuid, 'aberto', idNumerico]
     );
 
     return res.status(201).json({
@@ -129,10 +129,10 @@ router.post('/entrar', async (req, res) => {
 
     const { id_jogo, status_jogo } = conviteQuery.rows[0];
 
-    if (status_jogo !== 'aberto') {
+    if (!['aberto', 'balanceando times'].includes(status_jogo)) {
       await client.query('ROLLBACK');
       return res.status(403).json({
-        error: 'A sala está fechada. Não é possível entrar.',
+        error: 'A sala não está disponível para entrada.',
       });
     }
 
@@ -548,7 +548,7 @@ router.post('/toggle-status', async (req, res) => {
         .json({ error: 'Somente o organizador pode alterar o status.' });
     }
 
-    const novoStatus = status === 'aberto' ? 'fechado' : 'aberto';
+    const novoStatus = status === 'aberto' ? 'finalizado' : 'aberto';
 
     await db.query(
       `UPDATE jogos
@@ -609,7 +609,7 @@ router.post('/fechar-sala', async (req, res) => {
     // Atualizar o status do jogo para 'fechada'
     await db.query(
       'UPDATE jogos SET status = $1 WHERE id_jogo = $2',
-      ['fechada', id_jogo]
+      ['finalizado', id_jogo]
     );
 
     return res.status(200).json({ message: 'Sala fechada com sucesso.', status: 'fechada' });
@@ -701,7 +701,7 @@ router.get('/me', async (req, res) => {
   JOIN jogos j ON p.id_jogo = j.id_jogo
  WHERE p.id_usuario = $1
    AND p.status = 'ativo'
-   AND j.status != 'fechada'
+  AND j.status IN ('aberto', 'balanceando times', 'em andamento')
  ORDER BY j.data_jogo, j.horario_inicio;`,
       [id_usuario]
     );
