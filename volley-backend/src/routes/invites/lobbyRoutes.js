@@ -17,26 +17,26 @@ router.post('/criar', async (req, res) => {
       horario_inicio,
       horario_fim,
       limite_jogadores,
-      id_usuario,
     } = req.body;
+
+    const id_usuario = req.user.id; // Obtém o ID do usuário autenticado
 
     if (
       !nome_jogo ||
       !data_jogo ||
       !horario_inicio ||
       !horario_fim ||
-      !limite_jogadores ||
-      !id_usuario
+      !limite_jogadores
     ) {
       return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
     }
 
-    // Insere o jogo na tabela `jogos`
+    // Insere o jogo na tabela `jogos` com status 'aberto'
     const result = await db.query(
       `INSERT INTO jogos (nome, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       VALUES ($1, $2, $3, $4, $5, $6, 'aberto')
        RETURNING id_jogo`,
-      [nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, 'aberto']
+      [nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario]
     );
 
     if (result.rowCount === 0) {
@@ -48,8 +48,8 @@ router.post('/criar', async (req, res) => {
     // Adiciona o criador como participante ativo na tabela `participacao_jogos`
     await db.query(
       `INSERT INTO participacao_jogos (id_jogo, id_usuario, lider_time, status)
-       VALUES ($1, $2, $3, $4)`,
-      [id_jogo, id_usuario, true, 'ativo']
+       VALUES ($1, $2, $3, 'ativo')`,
+      [id_jogo, id_usuario, true]
     );
 
     return res.status(201).json({
