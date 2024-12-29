@@ -46,7 +46,7 @@ app.use('/api/chat', authMiddleware, chatRoutes);
 app.use('/api/jogador', authMiddleware, roleMiddleware(['jogador', 'organizador']), jogadorRoutes);
 app.use('/api/jogador/reservas', authMiddleware, reservationRoutes);
 app.use('/api/jogador', authMiddleware, balanceamentoRoutes);
-
+app.use('/api/usuario', userRoutes);
 app.use('/api/jogos', authMiddleware, jogosRoutes);
 app.use('/api/owner/quadras', authMiddleware, roleMiddleware(['owner']), courtManagementRoutes);
 app.use('/api/owner/reservas', authMiddleware, ownerReservationsRoutes);
