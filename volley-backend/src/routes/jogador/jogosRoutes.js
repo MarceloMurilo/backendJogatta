@@ -17,13 +17,13 @@ router.use((req, res, next) => {
 
 // Rota para criar um jogo
 router.post('/criar', authMiddleware, async (req, res) => {
-  const { 
-    nome_jogo, 
-    data_jogo, 
-    horario_inicio, 
-    horario_fim, 
-    limite_jogadores, 
-    id_usuario, 
+  const {
+    nome_jogo,
+    data_jogo,
+    horario_inicio,
+    horario_fim,
+    limite_jogadores,
+    id_usuario,
     descricao, // Opcional
     chave_pix // Opcional
   } = req.body;
@@ -77,12 +77,12 @@ router.post('/criar', authMiddleware, async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'aberto')
        RETURNING id_jogo`,
       [
-        nome_jogo, 
-        data_jogo, 
-        horario_inicio, 
-        horario_fim, 
-        limite_jogadores, 
-        id_usuario, 
+        nome_jogo,
+        data_jogo,
+        horario_inicio,
+        horario_fim,
+        limite_jogadores,
+        id_usuario,
         descricao || null, // Preenche null se não enviado
         chave_pix || null  // Preenche null se não enviado
       ]
@@ -118,103 +118,91 @@ router.post('/criar', authMiddleware, async (req, res) => {
   }
 });
 
-// Rota para convidar amigos para um jogo
-router.post(
-  '/convidar',
-  authMiddleware,
-  roleMiddleware(['organizador']), // Apenas organizadores podem convidar
-  async (req, res) => {
-    const { id_jogo, amigos_ids } = req.body;
+// Rota para detalhes do jogo
+router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
+  const { id_jogo } = req.params;
 
-    if (!id_jogo || !Array.isArray(amigos_ids) || amigos_ids.length === 0) {
-      return res.status(400).json({ message: 'ID do jogo e uma lista de amigos são obrigatórios.' });
-    }
-
-    try {
-      const queryText = `
-        INSERT INTO participacao_jogos (id_jogo, id_usuario, data_participacao)
-        VALUES ${amigos_ids.map((_, idx) => `($1, $${idx + 2}, NOW())`).join(', ')}`;
-      const queryValues = [id_jogo, ...amigos_ids];
-
-      await db.query(queryText, queryValues);
-      res.status(201).json({ message: 'Amigos convidados com sucesso.' });
-    } catch (error) {
-      console.error('Erro ao convidar amigos:', error);
-      res.status(500).json({ message: 'Erro interno ao convidar amigos.', error });
-    }
+  if (!id_jogo) {
+    return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
   }
-);
 
-// Rota para buscar habilidades dos jogadores de um jogo
-router.get(
-  '/:id_jogo/habilidades',
-  authMiddleware,
-  roleMiddleware(['jogador', 'organizador']), // Ambos podem acessar
-  async (req, res) => {
-    const { id_jogo } = req.params;
+  try {
+    const jogoResult = await db.query(
+      `SELECT j.id_jogo, j.nome_jogo, j.data_jogo, j.horario_inicio, j.horario_fim,
+              j.limite_jogadores, j.descricao, j.chave_pix, j.status,
+              (CASE WHEN j.id_usuario = $1 THEN true ELSE false END) AS "isOrganizer"
+         FROM jogos j
+         WHERE j.id_jogo = $2
+         LIMIT 1`,
+      [req.user.id, id_jogo]
+    );
 
-    if (!id_jogo) {
-      return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
+    if (jogoResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Jogo não encontrado.' });
     }
 
-    try {
-      const result = await db.query(
-        `SELECT pj.id_usuario, u.nome, u.email, 
-                COALESCE(a.passe, 0) AS passe, 
-                COALESCE(a.ataque, 0) AS ataque, 
-                COALESCE(a.levantamento, 0) AS levantamento
+    const jogo = jogoResult.rows[0];
+
+    const participacaoResult = await db.query(
+      `SELECT pj.id_usuario, u.nome, pj.status AS status, 
+              COALESCE((pj.data_pagamento IS NOT NULL), false) AS pago,
+              COALESCE((pj.data_confirmacao IS NOT NULL), false) AS confirmado
          FROM participacao_jogos pj
          JOIN usuario u ON pj.id_usuario = u.id_usuario
-         LEFT JOIN avaliacoes a ON pj.id_usuario = a.usuario_id 
          WHERE pj.id_jogo = $1`,
-        [id_jogo]
-      );
+      [id_jogo]
+    );
 
-      console.log('Resultado da consulta para habilidades:', result.rows);
+    const ativos = [];
+    const espera = [];
+    participacaoResult.rows.forEach((row) => {
+      if (row.status === 'ativo') ativos.push(row);
+      else espera.push(row);
+    });
 
-      if (result.rows.length === 0) {
-        return res.status(404).json({ message: 'Nenhum jogador encontrado para este jogo.' });
-      }
-
-      res.status(200).json({ jogadores: result.rows }); // Encapsular dentro de 'jogadores'
-    } catch (error) {
-      console.error('Erro ao buscar habilidades dos jogadores:', error);
-      res.status(500).json({ message: 'Erro interno ao buscar habilidades dos jogadores.', error });
-    }
+    return res.status(200).json({
+      id_jogo: jogo.id_jogo,
+      nome_jogo: jogo.nome_jogo,
+      data_jogo: jogo.data_jogo,
+      horario_inicio: jogo.horario_inicio,
+      horario_fim: jogo.horario_fim,
+      limite_jogadores: jogo.limite_jogadores,
+      descricao: jogo.descricao,
+      chave_pix: jogo.chave_pix,
+      status: jogo.status,
+      isOrganizer: jogo.isOrganizer,
+      jogadoresAtivos: ativos,
+      jogadoresEspera: espera,
+    });
+  } catch (error) {
+    console.error('Erro ao buscar detalhes do jogo:', error.message);
+    return res.status(500).json({ message: 'Erro interno ao buscar detalhes do jogo.' });
   }
-);
+});
 
-// Rota para salvar habilidades dos jogadores de um jogo
-router.post(
-  '/:id_jogo/habilidades',
-  authMiddleware,
-  roleMiddleware(['organizador']), // Apenas organizadores podem salvar habilidades
-  async (req, res) => {
-    const { id_jogo } = req.params;
-    const { habilidades } = req.body;
+// Rota para gerar convite
+router.post('/convites/gerar', authMiddleware, async (req, res) => {
+  const { id_jogo, id_usuario } = req.body;
+  try {
+    const idNumerico = Math.floor(100000 + Math.random() * 900000);
+    const link = `https://seusite.com/sala/${idNumerico}`;
 
-    if (!id_jogo || !Array.isArray(habilidades) || habilidades.length === 0) {
-      return res.status(400).json({ message: 'ID do jogo e habilidades dos jogadores são obrigatórios.' });
-    }
+    await db.query(
+      `INSERT INTO convites (id_jogo, id_usuario, id_numerico, link)
+       VALUES ($1, $2, $3, $4)`,
+      [id_jogo, id_usuario, idNumerico, link]
+    );
 
-    try {
-      const queries = habilidades.map((jogador) =>
-        db.query(
-          `INSERT INTO avaliacoes (usuario_id, organizador_id, passe, ataque, levantamento)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (usuario_id, organizador_id) 
-           DO UPDATE SET passe = $3, ataque = $4, levantamento = $5`,
-          [jogador.id_usuario, req.user.id, jogador.passe, jogador.ataque, jogador.levantamento]
-        )
-      );
-
-      await Promise.all(queries);
-      res.status(200).json({ message: 'Habilidades atualizadas com sucesso.' });
-    } catch (error) {
-      console.error('Erro ao salvar habilidades:', error);
-      res.status(500).json({ message: 'Erro interno ao salvar habilidades.', error });
-    }
+    return res.status(200).json({
+      convite: {
+        id_numerico: idNumerico,
+        link,
+      },
+    });
+  } catch (error) {
+    console.error('Erro ao gerar convite:', error.message);
+    return res.status(500).json({ message: 'Erro ao gerar convite.' });
   }
-);
+});
 
 module.exports = router;
