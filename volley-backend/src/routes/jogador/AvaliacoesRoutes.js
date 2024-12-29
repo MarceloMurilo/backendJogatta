@@ -34,8 +34,8 @@ router.post(
     try {
       // Insere usuário temporário no banco, se necessário
       await db.query(
-        `INSERT INTO usuario (id_usuario, nome, email, imagem_perfil, temporario)
-         VALUES ($1, $2, NULL, NULL, TRUE)
+        `INSERT INTO usuario (id_usuario, nome, email, senha, imagem_perfil, temporario)
+         VALUES ($1, $2, NULL, 'senha_temporaria', NULL, TRUE)
          ON CONFLICT (id_usuario) DO NOTHING;`,
         [usuario_id, nome || 'Usuário Temporário']
       );
