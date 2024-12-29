@@ -15,21 +15,32 @@ router.use((req, res, next) => {
   next();
 });
 
+
+
 // Rota para salvar ou atualizar avaliações
 router.post(
   '/salvar',
   authMiddleware,
   roleMiddleware(['organizador', 'jogador']),
   async (req, res) => {
-    const { organizador_id, usuario_id, passe, ataque, levantamento } = req.body;
+    const { organizador_id, usuario_id, passe, ataque, levantamento, nome } = req.body;
 
-    console.log('Dados recebidos para salvar avaliação:', { organizador_id, usuario_id, passe, ataque, levantamento });
+    console.log('Dados recebidos para salvar avaliação:', { organizador_id, usuario_id, passe, ataque, levantamento, nome });
 
     if (!organizador_id || !usuario_id) {
       return res.status(400).json({ message: 'Organizador e Usuário são obrigatórios.' });
     }
 
     try {
+      // Insere usuário temporário no banco, se necessário
+      await db.query(
+        `INSERT INTO usuario (id_usuario, nome, email, imagem_perfil, temporario)
+         VALUES ($1, $2, NULL, NULL, TRUE)
+         ON CONFLICT (id_usuario) DO NOTHING;`,
+        [usuario_id, nome || 'Usuário Temporário']
+      );
+
+      // Salva ou atualiza a avaliação do usuário
       const result = await db.query(
         `INSERT INTO avaliacoes (organizador_id, usuario_id, passe, ataque, levantamento)
          VALUES ($1, $2, $3, $4, $5)
@@ -47,6 +58,7 @@ router.post(
   }
 );
 
+
 // Rota para buscar avaliações feitas pelo organizador
 router.get(
   '/organizador/:organizador_id',
@@ -55,7 +67,13 @@ router.get(
   async (req, res) => {
     const { organizador_id } = req.params;
 
-    console.log('Organizador ID recebido para buscar avaliações:', organizador_id);
+    console.log('Recebendo requisição na rota de avaliações:');
+    console.log('Organizador ID:', organizador_id);
+    console.log('Usuário autenticado:', req.user);
+
+    if (!organizador_id) {
+      return res.status(400).json({ message: 'Organizador ID é obrigatório.' });
+    }
 
     try {
       const result = await db.query(
