@@ -229,7 +229,7 @@ router.post(
             [
               id_jogo,
               index + 1, // número do time (1, 2, ...)
-              jogador.id,
+              jogador.id_usuario,
               time.totalScore,
               time.totalAltura,
             ]
