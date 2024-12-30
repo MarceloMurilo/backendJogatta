@@ -8,8 +8,10 @@ const db = require('../db');
  */
 const roleMiddleware = (allowedRoles, options = {}) => {
   return async (req, res, next) => {
-    console.log('Verificando permissões para usuário:', req.user);
-    console.log('Parâmetros da rota no middleware:', req.params);
+    console.log('=== [roleMiddleware] Início da Verificação ===');
+    console.log('Usuário autenticado:', req.user);
+    console.log('Parâmetros da rota:', req.params);
+    console.log('Corpo da requisição:', req.body);
 
     const skipIdJogo = options.skipIdJogo || false;
     const optionalIdJogo = options.optionalIdJogo || false;
@@ -29,6 +31,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
           .status(403)
           .json({ message: 'Acesso negado - Papel do usuário não autorizado.' });
       }
+      console.log('[roleMiddleware] Permissão concedida (skipIdJogo ativado).');
       return next();
     }
 
@@ -53,6 +56,12 @@ const roleMiddleware = (allowedRoles, options = {}) => {
            ${id_jogo ? 'AND uf.id_jogo = $2' : ''}
       `;
       const queryParams = id_jogo ? [id, id_jogo] : [id];
+
+      console.log('[roleMiddleware] Executando query para verificar função do usuário:', {
+        query,
+        queryParams,
+      });
+
       const result = await db.query(query, queryParams);
 
       if (id_jogo && result.rowCount === 0) {
