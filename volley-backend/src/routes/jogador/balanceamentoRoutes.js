@@ -472,5 +472,58 @@ router.post('/equilibrar-times', async (req, res) => {
     return res.status(500).json({ message: 'Erro ao equilibrar times.', error: error.message });
   }
 });
+// DANTAS
+router.post(
+  '/atualizar-times',
+  authMiddleware,
+  roleMiddleware(['organizador']),
+  async (req, res) => {
+    try {
+      const { id_jogo, times } = req.body;
+
+      // Validação dos parâmetros
+      if (!id_jogo || !times || !Array.isArray(times)) {
+        return res.status(400).json({
+          error: 'id_jogo e times são obrigatórios, e times deve ser uma lista.',
+        });
+      }
+
+      // Verifica se o jogo existe
+      const jogoQuery = await db.query(
+        `SELECT id_jogo FROM jogos WHERE id_jogo = $1 LIMIT 1`,
+        [id_jogo]
+      );
+
+      if (jogoQuery.rowCount === 0) {
+        return res.status(404).json({
+          error: 'Jogo não encontrado.',
+        });
+      }
+
+      // Atualiza os times no banco de dados (formato JSON armazenado no campo `times`)
+      await db.query(
+        `UPDATE jogos 
+         SET times = $1 
+         WHERE id_jogo = $2`,
+        [JSON.stringify(times), id_jogo]
+      );
+
+      console.log(`[INFO] Times atualizados para o jogo ID: ${id_jogo}`);
+
+      return res.status(200).json({
+        message: 'Times atualizados com sucesso!',
+        times,
+      });
+    } catch (error) {
+      console.error('Erro ao atualizar times:', error);
+      return res.status(500).json({
+        error: 'Erro ao atualizar os times.',
+        details: error.message,
+      });
+    }
+  }
+);
+
+// DANTAS
 
 module.exports = router;
