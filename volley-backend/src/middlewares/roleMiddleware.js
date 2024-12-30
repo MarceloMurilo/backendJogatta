@@ -1,3 +1,4 @@
+// middlewares/roleMiddleware.js
 const db = require('../db');
 
 /**
@@ -17,6 +18,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
 
     console.log('[roleMiddleware] Status:', { skipIdJogo, optionalIdJogo, id_jogo });
 
+    // Se for para ignorar verificação de id_jogo, basta checar se o papel do usuário está na lista
     if (skipIdJogo) {
       const userRole = req.user?.papel_usuario;
       if (!allowedRoles.includes(userRole)) {
@@ -30,11 +32,10 @@ const roleMiddleware = (allowedRoles, options = {}) => {
       return next();
     }
 
-    // Temporariamente ignorando a validação de id_jogo
-    console.log('[roleMiddleware] Ignorando validação de ID do jogo.');
+    // Se não for opcional, precisa ter o id_jogo
     if (!id_jogo && !optionalIdJogo) {
-      console.log('[roleMiddleware] Falha: ID do jogo é obrigatório.(1)');
-      return res.status(400).json({ message: 'ID do jogo é obrigatório.(2)' });
+      console.log('[roleMiddleware] Falha: ID do jogo é obrigatório.');
+      return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
     }
 
     const { id } = req.user;
@@ -43,13 +44,13 @@ const roleMiddleware = (allowedRoles, options = {}) => {
     );
 
     try {
+      // Removido "AND (uf.expira_em IS NULL OR uf.expira_em > NOW())", pois não queremos mais expiração
       const query = `
-        SELECT uf.id_funcao, f.nome_funcao 
+        SELECT uf.id_funcao, f.nome_funcao
           FROM usuario_funcao uf
           JOIN funcao f ON uf.id_funcao = f.id_funcao
          WHERE uf.id_usuario = $1
            ${id_jogo ? 'AND uf.id_jogo = $2' : ''}
-           AND (uf.expira_em IS NULL OR uf.expira_em > NOW())
       `;
       const queryParams = id_jogo ? [id, id_jogo] : [id];
       const result = await db.query(query, queryParams);

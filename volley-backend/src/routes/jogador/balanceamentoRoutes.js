@@ -1,16 +1,11 @@
+// routes/balanceamentoRoutes.js
 const express = require('express');
 const router = express.Router();
 const db = require('../../db'); // Conexão com o banco de dados
-const authMiddleware = require('../../middlewares/authMiddleware'); // Certifique-se de que o caminho está correto
-const roleMiddleware = require('../../middlewares/roleMiddleware'); 
+const authMiddleware = require('../../middlewares/authMiddleware');
+const roleMiddleware = require('../../middlewares/roleMiddleware');
 
-// Este arquivo deve ser focado exclusivamente no balanceamento de times, incluindo:
-// Distribuir jogadores.
-// Cálculos de custo e variância.
-// Geração de rotações sugeridas.
-
-
-// Função para embaralhar um array (Fisher-Yates shuffle)
+// Função para embaralhar (Fisher-Yates shuffle)
 const embaralharJogadores = (jogadores) => {
   for (let i = jogadores.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -26,20 +21,19 @@ const calcularVariancia = (valores) => {
   return valores.reduce((sum, v) => sum + Math.pow(v - media, 2), 0) / valores.length;
 };
 
-// Função de custo com pesos customizáveis
+// Função de custo
 const calcularCusto = (times, pesoPontuacao = 1, pesoAltura = 1) => {
   const pontuacoes = times.map(t => t.totalScore);
   const alturasMedias = times.map(t =>
     t.jogadores.length > 0 ? t.totalAltura / t.jogadores.length : 0
   );
-
   const varPontuacao = calcularVariancia(pontuacoes);
   const varAltura = calcularVariancia(alturasMedias);
 
   return (pesoPontuacao * varPontuacao) + (pesoAltura * varAltura);
 };
 
-// Função para calcular a distância euclidiana entre dois jogadores (opcional para rotação)
+// Função para calcular distância euclidiana (opcional)
 const calcularDistancia = (jogador1, jogador2) => {
   const alturaDiff = jogador1.altura - jogador2.altura;
   const passeDiff = jogador1.passe - jogador2.passe;
@@ -48,19 +42,18 @@ const calcularDistancia = (jogador1, jogador2) => {
 
   return Math.sqrt(
     Math.pow(alturaDiff, 2) +
-    Math.pow(passeDiff, 2) +
-    Math.pow(ataqueDiff, 2) +
-    Math.pow(levantamentoDiff, 2)
+      Math.pow(passeDiff, 2) +
+      Math.pow(ataqueDiff, 2) +
+      Math.pow(levantamentoDiff, 2)
   );
 };
 
-// Função para gerar sugestões de rotação
+// Gerar sugestões de rotação
 const gerarSugerirRotacoes = (times, reservas, topN = 2) => {
   const rotacoes = [];
 
   reservas.forEach(reserva => {
     const sugeridos = [];
-
     times.forEach((time, timeIndex) => {
       time.jogadores.forEach(jogador => {
         const distancia = calcularDistancia(reserva, jogador);
@@ -72,10 +65,10 @@ const gerarSugerirRotacoes = (times, reservas, topN = 2) => {
       });
     });
 
-    // Ordenar sugeridos por menor distância (maior compatibilidade)
+    // Ordena por menor distância
     sugeridos.sort((a, b) => a.distancia - b.distancia);
 
-    // Selecionar os topN mais compatíveis
+    // Pega topN
     const topSugeridos = sugeridos.slice(0, topN).map(s => ({
       time: s.time,
       jogador: s.jogador,
@@ -92,8 +85,6 @@ const gerarSugerirRotacoes = (times, reservas, topN = 2) => {
 };
 
 /* ===================================================================
-   NOVOS ENDPOINTS ADICIONADOS (para controlar o status do organizador)
-   -------------------------------------------------------------------
    1) /iniciar-balanceamento
    2) /finalizar-balanceamento
 =================================================================== */
@@ -109,10 +100,8 @@ router.post(
   async (req, res) => {
     try {
       const { id_jogo } = req.body;
+      console.log('Recebido /iniciar-balanceamento:', req.body);
 
-      console.log('Recebido /iniciar-balanceamento:', req.body); // Log para depuração
-
-      // Verifica se o ID do jogo foi enviado
       if (!id_jogo) {
         return res.status(400).json({
           error: 'O campo id_jogo é obrigatório.',
@@ -133,39 +122,40 @@ router.post(
 
       const { id_usuario: organizador_id, status } = jogoQuery.rows[0];
 
-      // Verifica se o jogo já está em andamento ou finalizado
-      if (status === 'encerrada' || status === 'equilibrando') {
+      // Se já estiver equilibrando ou "encerrado", impedimos (ajuste conforme regra de negócio).
+      if (status === 'equilibrando' || status === 'finalizado') {
         return res.status(400).json({
-          error: 'O jogo já está em andamento ou foi encerrado.',
+          error: 'O jogo já está em balanceamento ou foi finalizado.',
         });
       }
 
       // Atualiza o status do jogo para "equilibrando"
       const updateStatus = await db.query(
-        `UPDATE jogos SET status = 'equilibrando' WHERE id_jogo = $1 RETURNING *`,
+        `UPDATE jogos 
+            SET status = 'equilibrando' 
+          WHERE id_jogo = $1 
+          RETURNING *`,
         [id_jogo]
       );
-      
+
       if (updateStatus.rowCount === 0) {
-        throw new Error('Erro ao atualizar status do jogo: ID do jogo não encontrado ou inválido.');
+        throw new Error('Erro ao atualizar status do jogo: ID do jogo não encontrado.');
       }
-      
       console.log('[INFO] Status atualizado para "equilibrando":', updateStatus.rows[0]);
 
-      // Atualiza o status na tabela usuario_funcao
-      const expiraEm = new Date(Date.now() + 3 * 60 * 60 * 1000); // Expira em 3 horas
+      // Garantir que o papel "organizador" para este jogo está salvo, sem expiração.
       await db.query(
-        `INSERT INTO usuario_funcao (id_usuario, id_funcao, id_jogo, criado_em, expira_em)
-         VALUES ($1, 1, $2, NOW(), $3)
+        `INSERT INTO usuario_funcao (id_usuario, id_funcao, id_jogo, criado_em)
+         VALUES ($1, 1, $2, NOW())
          ON CONFLICT (id_usuario, id_funcao, id_jogo) 
-         DO UPDATE SET criado_em = NOW(), expira_em = $3`,
-        [organizador_id, id_jogo, expiraEm]
+         DO NOTHING`,
+        [organizador_id, id_jogo]
       );
 
       return res.status(200).json({
         message: 'O organizador iniciou o balanceamento.',
         status: 'equilibrando',
-        id_jogo: id_jogo, // Incluindo o id_jogo na resposta
+        id_jogo: id_jogo,
       });
     } catch (error) {
       console.error('Erro ao iniciar balanceamento:', error);
@@ -179,7 +169,7 @@ router.post(
 
 /**
  * POST /api/jogador/finalizar-balanceamento
- * Marca o status do jogo como 'concluido'
+ * Marca o status do jogo como 'finalizado'
  * Retorna times gerados (ou armazenados) para exibir ao usuário
  */
 router.post(
@@ -188,9 +178,9 @@ router.post(
   async (req, res) => {
     try {
       const { id_jogo, id_usuario_organizador, times } = req.body;
-      console.log('Recebido /finalizar-balanceamento:', req.body); // Log para depuração
+      console.log('Recebido /finalizar-balanceamento:', req.body);
 
-      // Validações iniciais
+      // Validações
       if (!id_jogo || !id_usuario_organizador || !times) {
         return res.status(400).json({
           error: 'id_jogo, id_usuario_organizador e times são obrigatórios.',
@@ -221,20 +211,16 @@ router.post(
         });
       }
 
-      // Atualiza o status do jogo para "concluido"
+      // Atualiza o status do jogo para "finalizado"
       await db.query(
-        `UPDATE jogos SET status = 'concluido' WHERE id_jogo = $1`,
+        `UPDATE jogos SET status = 'finalizado' WHERE id_jogo = $1`,
         [id_jogo]
       );
 
-      // Remove o papel de organizador na tabela usuario_funcao
-      await db.query(
-        `DELETE FROM usuario_funcao WHERE id_usuario = $1 AND id_jogo = $2 AND id_funcao = 1`,
-        [id_usuario_organizador, id_jogo]
-      );
+      // *** Removido trecho que excluía a função de organizador ***
+      // (Não queremos que ele perca o papel de organizador no jogo que criou.)
 
-      // (Opcional) Salvar os times no banco de dados
-      // Salva os times e seus jogadores no banco, se necessário
+      // (Opcional) Salvar os times no banco
       for (const [index, time] of times.entries()) {
         for (const jogador of time.jogadores) {
           await db.query(
@@ -242,7 +228,7 @@ router.post(
              VALUES ($1, $2, $3, $4, $5)`,
             [
               id_jogo,
-              index + 1, // Número do time (1, 2, ...)
+              index + 1, // número do time (1, 2, ...)
               jogador.id,
               time.totalScore,
               time.totalAltura,
@@ -253,8 +239,8 @@ router.post(
 
       return res.status(200).json({
         message: 'Balanceamento finalizado.',
-        status: 'concluido',
-        id_jogo, // Incluído para confirmar qual jogo foi atualizado
+        status: 'finalizado',
+        id_jogo,
         times,
       });
     } catch (error) {
@@ -268,7 +254,7 @@ router.post(
 );
 
 /* ===================================================================
-   ROTA ORIGINAL DE EQUILIBRAR TIMES
+   ROTA DE EQUILIBRAR TIMES (já existente)
 =================================================================== */
 router.post('/equilibrar-times', async (req, res) => {
   console.log('==== Requisição recebida em /equilibrar-times ====');
@@ -276,7 +262,6 @@ router.post('/equilibrar-times', async (req, res) => {
 
   const { organizador_id, id_jogo, tamanho_time, jogadores } = req.body;
 
-  // Validações iniciais
   if (!organizador_id || !tamanho_time) {
     return res.status(400).json({
       message: 'Organizador e tamanho do time são obrigatórios.',
@@ -292,7 +277,6 @@ router.post('/equilibrar-times', async (req, res) => {
   try {
     console.log('Consultando jogadores no banco de dados com base nos selecionados...');
 
-    // Monta os placeholders para o IN
     const baseIndex = id_jogo ? 3 : 2;
     const placeholders = jogadores.map((_, index) => `$${index + baseIndex}`).join(', ');
 
@@ -307,7 +291,7 @@ router.post('/equilibrar-times', async (req, res) => {
       AND a.usuario_id IN (${placeholders})
     ;`;
 
-    const params = id_jogo 
+    const params = id_jogo
       ? [organizador_id, id_jogo, ...jogadores]
       : [organizador_id, ...jogadores];
 
@@ -328,10 +312,9 @@ router.post('/equilibrar-times', async (req, res) => {
       total: jogador.passe + jogador.ataque + jogador.levantamento,
     }));
 
-    // Embaralhar a lista de jogadores para introduzir aleatoriedade
+    // Embaralha
     jogadoresComPontuacao = embaralharJogadores(jogadoresComPontuacao);
-
-    // Ordenar jogadores por total de habilidades (desc)
+    // Ordena desc
     jogadoresComPontuacao.sort((a, b) => b.total - a.total);
 
     const numero_times = Math.floor(jogadoresComPontuacao.length / tamanho_time);
@@ -344,18 +327,18 @@ router.post('/equilibrar-times', async (req, res) => {
 
     if (jogadoresComPontuacao.length < tamanho_time * 2) {
       return res.status(400).json({
-        message: `Jogadores insuficientes. Necessário no mínimo ${tamanho_time * 2} jogadores para formar pelo menos 2 times.`,
+        message: `Jogadores insuficientes. Necessário no mínimo ${tamanho_time * 2} jogadores para formar 2 times.`,
       });
     }
 
-    // Separar levantadores
+    // Separa levantadores
     let levantadores = jogadoresComPontuacao.filter(j => j.levantamento >= 4);
     let naoLevantadores = jogadoresComPontuacao.filter(j => j.levantamento < 4);
 
     console.log(`Total de levantadores: ${levantadores.length}`);
     console.log(`Total de não-levantadores: ${naoLevantadores.length}`);
 
-    // Se não houver levantadores suficientes, cria substitutos
+    // Ajustar levantadores se insuficientes
     if (levantadores.length < numero_times) {
       naoLevantadores.sort((a, b) => b.levantamento - a.levantamento);
       const needed = numero_times - levantadores.length;
@@ -365,7 +348,7 @@ router.post('/equilibrar-times', async (req, res) => {
 
       if (levantadores.length < numero_times) {
         return res.status(400).json({
-          message: 'Não foi possível garantir um levantador ou substituto adequado para cada time.'
+          message: 'Não foi possível garantir um levantador ou substituto para cada time.'
         });
       }
     }
@@ -386,17 +369,17 @@ router.post('/equilibrar-times', async (req, res) => {
       times[i].totalAltura += lev.altura;
     }
 
-    const jogadoresAlocados = times.flatMap(time => time.jogadores.map(j => j.id));
+    const jogadoresAlocados = times.flatMap(t => t.jogadores.map(j => j.id));
     let reservas = jogadoresComPontuacao.filter(j => !jogadoresAlocados.includes(j.id));
 
     let filtrados = reservas.slice();
     filtrados.sort((a, b) => b.total - a.total);
     filtrados = embaralharJogadores(filtrados);
 
-    const pesoPontuacao = 1; // Ajuste se necessário
-    const pesoAltura = 1;    // Ajuste se necessário
+    const pesoPontuacao = 1;
+    const pesoAltura = 1;
 
-    // Distribuir os demais jogadores minimizando o custo
+    // Distribuir os demais jogadores
     filtrados.forEach(jogador => {
       let melhorTime = -1;
       let melhorCusto = Infinity;
@@ -406,16 +389,20 @@ router.post('/equilibrar-times', async (req, res) => {
         if (times[t].jogadores.length >= tamanho_time) {
           continue;
         }
-        const custoFinal = calcularCusto([
-          ...times.slice(0, t),
-          {
-            jogadores: [...times[t].jogadores, jogador],
-            totalScore: times[t].totalScore + jogador.total,
-            totalAltura: times[t].totalAltura + jogador.altura,
-          },
-          ...times.slice(t + 1)
-        ], pesoPontuacao, pesoAltura);
-
+        const hipotetico = [...times[t].jogadores, jogador];
+        const custoFinal = calcularCusto(
+          [
+            ...times.slice(0, t),
+            {
+              jogadores: hipotetico,
+              totalScore: times[t].totalScore + jogador.total,
+              totalAltura: times[t].totalAltura + jogador.altura,
+            },
+            ...times.slice(t + 1),
+          ],
+          pesoPontuacao,
+          pesoAltura
+        );
         const delta = custoFinal - custoInicial;
         if (delta < melhorCusto) {
           melhorCusto = delta;
@@ -430,8 +417,8 @@ router.post('/equilibrar-times', async (req, res) => {
       }
     });
 
-    // Recalcular quem ficou de fora como reservas
-    const jogadoresAlocadosFinal = times.flatMap(time => time.jogadores.map(j => j.id));
+    // Reserva final
+    const jogadoresAlocadosFinal = times.flatMap(t => t.jogadores.map(j => j.id));
     let reservasFinal = jogadoresComPontuacao.filter(j => !jogadoresAlocadosFinal.includes(j.id));
     reservasFinal = embaralharJogadores(reservasFinal);
 
@@ -450,11 +437,10 @@ router.post('/equilibrar-times', async (req, res) => {
         });
       }
     }
-    console.log('Recebido no backend - id_jogo:', req.body.id_jogo || req.params?.id_jogo || 'undefined');
 
     return res.json({
-      id_jogo: id_jogo || req.body.id_jogo,         // Certifique-se de que o ID do jogo esteja disponível no backend
-      times,            // Times balanceados
+      id_jogo: id_jogo || req.body.id_jogo,
+      times,
       reservas: reservasFinal,
       rotacoes
     });
@@ -463,97 +449,5 @@ router.post('/equilibrar-times', async (req, res) => {
     return res.status(500).json({ message: 'Erro ao equilibrar times.', error: error.message });
   }
 });
-
-/* ===================================================================
-   NOVAS ROTAS PARA GERENCIAR HABILIDADES (OFFLINE)
-   /jogos/:jogoId/habilidades [GET, POST]
-=================================================================== */
-
-// // GET - Retorna habilidades dos jogadores (baseado em avaliacoes do ORGANIZADOR do jogo)
-// router.get('/:jogoId/habilidades', async (req, res) => {
-//   try {
-//     const { jogoId } = req.params;
-
-//     // Primeiro, obter o organizador do jogo
-//     const queryJogo = await db.query('SELECT id_usuario FROM jogos WHERE id_jogo = $1', [jogoId]);
-//     if (queryJogo.rowCount === 0) {
-//       return res.status(404).json({ message: 'Jogo não encontrado.' });
-//     }
-//     const organizador_id= queryJogo.rows[0].id_usuario;
-
-//     // Buscar participantes e suas habilidades (avaliacoes)
-//     const result = await db.query(
-//       `SELECT 
-//          pj.id_usuario AS id,
-//          u.nome,
-//          COALESCE(a.passe, 0) AS passe,
-//          COALESCE(a.ataque, 0) AS ataque,
-//          COALESCE(a.levantamento, 0) AS levantamento
-//        FROM participacao_jogos pj
-//          JOIN usuario u ON pj.id_usuario = u.id_usuario
-//          LEFT JOIN avaliacoes a 
-//                 ON a.usuario_id = pj.id_usuario
-//                AND a.organizador_id = $1
-//        WHERE pj.id_jogo = $2
-//       `,
-//       [organizador_id, jogoId]
-//     );
-
-//     if (result.rows.length === 0) {
-//       return res.status(404).json({ message: 'Nenhum jogador encontrado para este jogo.' });
-//     }
-
-//     return res.status(200).json(result.rows);
-//   } catch (error) {
-//     console.error('Erro ao buscar habilidades dos jogadores:', error);
-//     return res.status(500).json({ message: 'Erro ao buscar habilidades dos jogadores.', error });
-//   }
-// });
-
-// // POST - Salva ou atualiza habilidades dos jogadores (UP-SERT em avaliacoes)
-// router.post('/:jogoId/habilidades', async (req, res) => {
-//   try {
-//     const { jogoId } = req.params;
-//     const { habilidades } = req.body;
-
-//     console.log("Recebido /jogos/:jogoId/habilidades POST:", req.body); // Log para depuração
-
-//     if (!habilidades || !Array.isArray(habilidades) || habilidades.length === 0) {
-//       return res.status(400).json({ message: 'Nenhuma habilidade fornecida.' });
-//     }
-
-//     // Obter organizador (para usar como organizador_id em avaliacoes)
-//     const queryJogo = await db.query('SELECT id_usuario FROM jogos WHERE id_jogo = $1', [jogoId]);
-//     if (queryJogo.rowCount === 0) {
-//       return res.status(404).json({ message: 'Jogo não encontrado.' });
-//     }
-//     const organizador_id= queryJogo.rows[0].id_usuario;
-
-//     // Percorrer as habilidades e fazer upsert
-//     for (const jogador of habilidades) {
-//       const { id, passe, ataque, levantamento } = jogador;
-//       if (!id) {
-//         return res.status(400).json({ message: 'ID do jogador é obrigatório em cada habilidade.' });
-//       }
-
-//       await db.query(
-//         `INSERT INTO avaliacoes (usuario_id, organizador_id, passe, ataque, levantamento)
-//          VALUES ($1, $2, $3, $4, $5)
-//          ON CONFLICT (usuario_id, organizador_id)
-//          DO UPDATE SET 
-//            passe = EXCLUDED.passe,
-//            ataque = EXCLUDED.ataque,
-//            levantamento = EXCLUDED.levantamento
-//         `,
-//         [id, organizador_id, passe || 0, ataque || 0, levantamento || 0]
-//       );
-//     }
-
-//     return res.status(200).json({ message: 'Habilidades atualizadas com sucesso.' });
-//   } catch (error) {
-//     console.error('Erro ao salvar habilidades dos jogadores:', error);
-//     return res.status(500).json({ message: 'Erro ao salvar habilidades dos jogadores.', error });
-//   }
-// });
 
 module.exports = router;
