@@ -63,7 +63,7 @@ router.post(
 router.get(
   '/organizador/:organizador_id',
   authMiddleware,
-  roleMiddleware(['organizador', 'jogador']),
+  roleMiddleware(['organizador', 'jogador'], { skipIdJogo: true }),
   async (req, res) => {
     const { organizador_id } = req.params;
 
