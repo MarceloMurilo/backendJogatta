@@ -500,13 +500,19 @@ router.post(
         });
       }
 
-      // Atualiza os times no banco de dados (formato JSON armazenado no campo `times`)
-      await db.query(
-        `UPDATE jogos 
-         SET times = $1 
-         WHERE id_jogo = $2`,
-        [JSON.stringify(times), id_jogo]
-      );
+      // Remove times antigos associados ao jogo
+      await db.query(`DELETE FROM times WHERE id_jogo = $1`, [id_jogo]);
+
+      // Insere os novos times na tabela `times`
+      for (const time of times) {
+        for (const jogador of time.jogadores) {
+          await db.query(
+            `INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [id_jogo, time.numero_time, jogador.id_usuario, time.totalScore, time.totalAltura]
+          );
+        }
+      }
 
       console.log(`[INFO] Times atualizados para o jogo ID: ${id_jogo}`);
 
@@ -525,5 +531,6 @@ router.post(
 );
 
 // DANTAS
+
 
 module.exports = router;
