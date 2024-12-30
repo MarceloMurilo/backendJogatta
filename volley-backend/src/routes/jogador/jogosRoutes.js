@@ -95,11 +95,13 @@ router.post('/criar', authMiddleware, async (req, res) => {
     console.log('[INFO] Jogo criado com ID:', id_jogo);
 
     // Inserir o organizador na tabela 'participacao_jogos'
-    console.log('[INFO] Inserindo participação do organizador na tabela `participacao_jogos`.');
-    await client.query(
-      `INSERT INTO participacao_jogos (id_jogo, id_usuario, data_participacao, status)
-       VALUES ($1, $2, NOW(), 'ativo')`,
-      [id_jogo, id_usuario]
+      // Após criar o jogo, insere o organizador na tabela 'usuario_funcao'
+      console.log('[INFO] Inserindo função de organizador na tabela `usuario_funcao`.');
+      await client.query(
+        `INSERT INTO usuario_funcao (id_usuario, id_funcao, id_jogo, criado_em)
+        VALUES ($1, $2, $3, NOW())
+        ON CONFLICT (id_usuario, id_funcao, id_jogo) DO NOTHING`,
+        [id_usuario, 1, id_jogo] // 1 = ID da função "Organizador"
     );
 
     await client.query('COMMIT'); // Finaliza a transação
