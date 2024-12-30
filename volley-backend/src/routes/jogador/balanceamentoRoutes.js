@@ -141,10 +141,16 @@ router.post(
       }
 
       // Atualiza o status do jogo para "equilibrando"
-      await db.query(
-        `UPDATE jogos SET status = 'equilibrando' WHERE id_jogo = $1`,
+      const updateStatus = await db.query(
+        `UPDATE jogos SET status = 'equilibrando' WHERE id_jogo = $1 RETURNING *`,
         [id_jogo]
       );
+      
+      if (updateStatus.rowCount === 0) {
+        throw new Error('Erro ao atualizar status do jogo: ID do jogo não encontrado ou inválido.');
+      }
+      
+      console.log('[INFO] Status atualizado para "equilibrando":', updateStatus.rows[0]);
 
       // Atualiza o status na tabela usuario_funcao
       const expiraEm = new Date(Date.now() + 3 * 60 * 60 * 1000); // Expira em 3 horas
