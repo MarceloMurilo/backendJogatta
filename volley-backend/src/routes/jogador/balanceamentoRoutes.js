@@ -281,15 +281,20 @@ router.post('/equilibrar-times', async (req, res) => {
     const placeholders = jogadores.map((_, index) => `$${index + baseIndex}`).join(', ');
 
     const query = `
-      SELECT u.nome, u.id_usuario AS usuario_id, u.altura, 
-             a.passe, a.ataque, a.levantamento
+      SELECT 
+        u.nome, 
+        u.id_usuario AS usuario_id, 
+        u.altura, 
+        COALESCE(a.passe, 0) AS passe, 
+        COALESCE(a.ataque, 0) AS ataque, 
+        COALESCE(a.levantamento, 0) AS levantamento
       FROM avaliacoes a
       JOIN usuario u ON a.usuario_id = u.id_usuario
       ${id_jogo ? 'JOIN participacao_jogos pj ON pj.id_usuario = a.usuario_id' : ''}
       WHERE a.organizador_id = $1
       ${id_jogo ? 'AND pj.id_jogo = $2' : ''}
       AND a.usuario_id IN (${placeholders})
-    ;`;
+    `;
 
     const params = id_jogo
       ? [organizador_id, id_jogo, ...jogadores]
@@ -303,7 +308,7 @@ router.post('/equilibrar-times', async (req, res) => {
     }
 
     let jogadoresComPontuacao = jogadoresResult.rows.map((jogador) => ({
-      id: jogador.usuario_id,
+      id: jogador.usuario_id, // Mapeia para o campo correto
       nome: jogador.nome,
       altura: parseFloat(jogador.altura) || 0,
       passe: jogador.passe,
@@ -440,9 +445,26 @@ router.post('/equilibrar-times', async (req, res) => {
 
     return res.json({
       id_jogo: id_jogo || req.body.id_jogo,
-      times,
-      reservas: reservasFinal,
-      rotacoes
+      times: times.map((time, index) => ({
+        numero_time: index + 1,
+        jogadores: time.jogadores.map((jogador) => ({
+          id_usuario: jogador.id, // Garantindo que o campo seja `id_usuario`
+          nome: jogador.nome,
+          passe: jogador.passe,
+          ataque: jogador.ataque,
+          levantamento: jogador.levantamento,
+        })),
+        totalScore: time.totalScore,
+        totalAltura: time.totalAltura,
+      })),
+      reservas: reservasFinal.map((reserva) => ({
+        id_usuario: reserva.id, // Incluindo também no formato `id_usuario`
+        nome: reserva.nome,
+        passe: reserva.passe,
+        ataque: reserva.ataque,
+        levantamento: reserva.levantamento,
+      })),
+      rotacoes,
     });
   } catch (error) {
     console.error('Erro ao equilibrar times:', error);
