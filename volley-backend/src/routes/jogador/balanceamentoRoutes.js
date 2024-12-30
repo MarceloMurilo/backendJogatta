@@ -278,7 +278,8 @@ router.post('/equilibrar-times', async (req, res) => {
     console.log('Consultando jogadores no banco de dados com base nos selecionados...');
 
     const baseIndex = id_jogo ? 3 : 2;
-    const placeholders = jogadores.map((_, index) => `$${index + baseIndex}`).join(', ');
+    const playerIds = jogadores.map(jogador => jogador.id_usuario); // Extrai apenas os IDs
+    const placeholders = playerIds.map((_, index) => `$${index + baseIndex}`).join(', ');
 
     const query = `
       SELECT 
@@ -297,8 +298,8 @@ router.post('/equilibrar-times', async (req, res) => {
     `;
 
     const params = id_jogo
-      ? [organizador_id, id_jogo, ...jogadores]
-      : [organizador_id, ...jogadores];
+      ? [organizador_id, id_jogo, ...playerIds]
+      : [organizador_id, ...playerIds];
 
     console.log('Executando consulta SQL:', query, '| Parâmetros:', params);
     const jogadoresResult = await db.query(query, params);
