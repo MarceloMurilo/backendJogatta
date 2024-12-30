@@ -32,10 +32,10 @@ const roleMiddleware = (allowedRoles, options = {}) => {
 
     // Temporariamente ignorando a validação de id_jogo
     console.log('[roleMiddleware] Ignorando validação de ID do jogo.');
-    // if (!id_jogo && !optionalIdJogo) {
-    //   console.log('[roleMiddleware] Falha: ID do jogo é obrigatório.(1)');
-    //   return res.status(400).json({ message: 'ID do jogo é obrigatório.(2)' });
-    // }
+    if (!id_jogo && !optionalIdJogo) {
+      console.log('[roleMiddleware] Falha: ID do jogo é obrigatório.(1)');
+      return res.status(400).json({ message: 'ID do jogo é obrigatório.(2)' });
+    }
 
     const { id } = req.user;
     console.log(
