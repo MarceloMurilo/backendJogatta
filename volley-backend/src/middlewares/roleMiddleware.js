@@ -51,7 +51,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
     }
 
     // 3) Se "optionalIdJogo" = true E não vier id_jogo, apenas verifica o papel do usuário
-    if (optionalIdJogo && !id_jogo) {
+    if (!optionalIdJogo && id_jogo) {
       const userRole = req.user?.papel_usuario;
       if (!allowedRoles.includes(userRole)) {
         console.log(
