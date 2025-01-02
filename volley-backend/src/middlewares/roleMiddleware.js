@@ -44,14 +44,14 @@ const roleMiddleware = (allowedRoles, options = {}) => {
       return next();
     }
 
-    // 2) Se não for "skipIdJogo", mas "optionalIdJogo" = false E id_jogo não existe -> erro
+    // 2) Se não for "skipIdJogo" e "optionalIdJogo" = false E id_jogo não existe -> erro
     if (!id_jogo && !optionalIdJogo) {
       console.log('[roleMiddleware] Falha: ID do jogo é obrigatório.');
       return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
     }
 
     // 3) Se "optionalIdJogo" = true E não vier id_jogo, apenas verifica o papel do usuário
-    if (!optionalIdJogo && id_jogo) {
+    if (!id_jogo && optionalIdJogo) {
       const userRole = req.user?.papel_usuario;
       if (!allowedRoles.includes(userRole)) {
         console.log(
@@ -67,8 +67,10 @@ const roleMiddleware = (allowedRoles, options = {}) => {
       return next();
     }
 
-    // 4) Se chegou até aqui, quer dizer que (optionalIdJogo = true e veio id_jogo)
-    //    ou (optionalIdJogo = false e veio id_jogo). Então verificamos se o user tem papel no jogo
+    // 4) Se chegou até aqui, quer dizer que:
+    //    - optionalIdJogo = true e veio id_jogo
+    //    - optionalIdJogo = false e veio id_jogo
+    //    Então, verifica se o usuário tem papel no jogo
 
     const { id } = req.user;
     console.log(
@@ -93,7 +95,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
 
       const result = await db.query(query, queryParams);
 
-      // Se não tiver NENHUMA função nesse jogo, barra
+      // Se não tiver NENHUMA função nesse jogo, nega acesso
       if (result.rowCount === 0) {
         console.log(
           `[roleMiddleware] Usuário não possui função válida no jogo ${id_jogo}`
@@ -103,13 +105,16 @@ const roleMiddleware = (allowedRoles, options = {}) => {
         });
       }
 
-      // Tenta pegar a primeira função associada
-      const userRole = result.rows[0]?.nome_funcao || 'sem função';
+      // Pega todas as funções associadas ao usuário no jogo
+      const userRoles = result.rows.map(row => row.nome_funcao);
+      console.log(`[roleMiddleware] Funções do usuário no jogo: ${userRoles.join(', ')}`);
 
-      // Verifica se a função do banco consta em allowedRoles
-      if (!allowedRoles.includes(userRole)) {
+      // Verifica se pelo menos uma das funções do usuário está nas allowedRoles
+      const hasPermission = userRoles.some(role => allowedRoles.includes(role));
+
+      if (!hasPermission) {
         console.log(
-          `[roleMiddleware] Função ${userRole} não autorizada para este endpoint.`
+          `[roleMiddleware] Nenhuma das funções do usuário (${userRoles.join(', ')}) está autorizada para este endpoint.`
         );
         return res.status(403).json({
           message: 'Acesso negado - Papel do usuário não autorizado neste jogo.',
@@ -117,7 +122,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
       }
 
       console.log(
-        `[roleMiddleware] Permissão concedida para o papel ${userRole} no jogo ${id_jogo}.`
+        `[roleMiddleware] Permissão concedida para o(s) papel(is) ${userRoles.join(', ')} no jogo ${id_jogo}.`
       );
       next();
     } catch (error) {
