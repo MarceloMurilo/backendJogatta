@@ -1,3 +1,5 @@
+// /routes/avaliacoes/avaliacoesRoutes.js
+
 const express = require('express');
 const router = express.Router();
 const db = require('../../db'); // Conexão com o banco de dados
@@ -14,8 +16,6 @@ router.use((req, res, next) => {
   console.log(`==============================`);
   next();
 });
-
-
 
 // Rota para salvar ou atualizar avaliações
 router.post(
@@ -57,7 +57,6 @@ router.post(
     }
   }
 );
-
 
 // Rota para buscar avaliações feitas pelo organizador
 router.get(

@@ -183,7 +183,8 @@ router.post(
 router.post(
   '/equilibrar-times',
   authMiddleware,
-  roleMiddleware(['jogador', 'organizador'], { optionalIdJogo: true }), // Passa a opção optionalIdJogo: true
+  // **Aqui está a rota que aceita tanto "jogador" como "organizador"** 
+  roleMiddleware(['jogador', 'organizador'], { optionalIdJogo: true }), 
   async (req, res) => {
     try {
       const { organizador_id, id_jogo, tamanho_time, jogadores } = req.body;
