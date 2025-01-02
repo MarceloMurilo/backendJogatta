@@ -1,10 +1,13 @@
 // /middlewares/roleMiddleware.js
+
 const db = require('../db');
 
 /**
  * Middleware para verificar as permissões do usuário.
- * @param {Array} allowedRoles - Lista de papéis permitidos.
+ * @param {Array} allowedRoles - Lista de papéis permitidos (ex.: ['jogador', 'organizador']).
  * @param {Object} options - Opções adicionais (ex.: { skipIdJogo: true, optionalIdJogo: true }).
+ *   - skipIdJogo: Se true, não verifica nenhum id_jogo (e ignora qualquer checagem de jogo).
+ *   - optionalIdJogo: Se true, não é obrigatório fornecer id_jogo; mas se vier, será checado.
  */
 const roleMiddleware = (allowedRoles, options = {}) => {
   return async (req, res, next) => {
@@ -13,36 +16,41 @@ const roleMiddleware = (allowedRoles, options = {}) => {
     console.log('Parâmetros da rota:', req.params);
     console.log('Corpo da requisição:', req.body);
 
+    // Lê as opções
     const skipIdJogo = options.skipIdJogo || false;
     const optionalIdJogo = options.optionalIdJogo || false;
 
-    // Captura o ID do jogo nos parâmetros ou no corpo da requisição
+    // Captura o ID do jogo nos parâmetros ou no body
     const id_jogo = req.body?.id_jogo || req.params?.jogoId || null;
 
-    console.log('[roleMiddleware] Status:', { skipIdJogo, optionalIdJogo, id_jogo });
+    console.log('[roleMiddleware] Status:', {
+      skipIdJogo,
+      optionalIdJogo,
+      id_jogo,
+    });
 
-    // Caso `skipIdJogo` esteja ativado, apenas verifica o papel do usuário
+    // 1) Se "skipIdJogo" for true, NÃO validamos nenhum id_jogo, só papel do usuário
     if (skipIdJogo) {
       const userRole = req.user?.papel_usuario;
       if (!allowedRoles.includes(userRole)) {
         console.log(
           `[roleMiddleware] Função ${userRole} não autorizada para este endpoint.`
         );
-        return res
-          .status(403)
-          .json({ message: 'Acesso negado - Papel do usuário não autorizado.' });
+        return res.status(403).json({
+          message: 'Acesso negado - Papel do usuário não autorizado.',
+        });
       }
       console.log('[roleMiddleware] Permissão concedida (skipIdJogo ativado).');
       return next();
     }
 
-    // Se `optionalIdJogo` for falso e não houver `id_jogo`, retorna erro
+    // 2) Se não for "skipIdJogo", mas "optionalIdJogo" = false E id_jogo não existe -> erro
     if (!id_jogo && !optionalIdJogo) {
       console.log('[roleMiddleware] Falha: ID do jogo é obrigatório.');
       return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
     }
 
-    // Se `optionalIdJogo` for true e `id_jogo` não for fornecido, apenas verifica o papel do usuário
+    // 3) Se "optionalIdJogo" = true E não vier id_jogo, apenas verifica o papel do usuário
     if (optionalIdJogo && !id_jogo) {
       const userRole = req.user?.papel_usuario;
       if (!allowedRoles.includes(userRole)) {
@@ -53,36 +61,40 @@ const roleMiddleware = (allowedRoles, options = {}) => {
           message: 'Acesso negado - Papel do usuário não autorizado.',
         });
       }
-      console.log('[roleMiddleware] Permissão concedida (id_jogo opcional não fornecido).');
+      console.log(
+        '[roleMiddleware] Permissão concedida (id_jogo opcional não fornecido).'
+      );
       return next();
     }
 
+    // 4) Se chegou até aqui, quer dizer que (optionalIdJogo = true e veio id_jogo)
+    //    ou (optionalIdJogo = false e veio id_jogo). Então verificamos se o user tem papel no jogo
+
     const { id } = req.user;
     console.log(
-      `[roleMiddleware] Verificando papel do usuário (ID: ${id}) no jogo (ID: ${id_jogo || 'N/A'})`
+      `[roleMiddleware] Verificando papel do usuário (ID: ${id}) no jogo (ID: ${id_jogo})`
     );
 
     try {
-      // Define a query SQL com ou sem o `id_jogo`
+      // Monta query para verificar se o usuário tem alguma função associada àquele jogo
       const query = `
         SELECT uf.id_funcao, f.nome_funcao
           FROM usuario_funcao uf
           JOIN funcao f ON uf.id_funcao = f.id_funcao
          WHERE uf.id_usuario = $1
-           ${id_jogo ? 'AND uf.id_jogo = $2' : ''}
+           AND uf.id_jogo = $2
       `;
+      const queryParams = [id, id_jogo];
 
-      const queryParams = id_jogo ? [id, id_jogo] : [id];
-
-      console.log('[roleMiddleware] Executando query para verificar função do usuário:', {
-        query,
-        queryParams,
-      });
+      console.log(
+        '[roleMiddleware] Executando query para verificar função do usuário:',
+        { query, queryParams }
+      );
 
       const result = await db.query(query, queryParams);
 
-      // Caso `id_jogo` seja fornecido, verifica se o usuário tem função válida no jogo
-      if (id_jogo && result.rowCount === 0) {
+      // Se não tiver NENHUMA função nesse jogo, barra
+      if (result.rowCount === 0) {
         console.log(
           `[roleMiddleware] Usuário não possui função válida no jogo ${id_jogo}`
         );
@@ -91,9 +103,10 @@ const roleMiddleware = (allowedRoles, options = {}) => {
         });
       }
 
+      // Tenta pegar a primeira função associada
       const userRole = result.rows[0]?.nome_funcao || 'sem função';
 
-      // Verifica se o papel do usuário está na lista de permitidos
+      // Verifica se a função do banco consta em allowedRoles
       if (!allowedRoles.includes(userRole)) {
         console.log(
           `[roleMiddleware] Função ${userRole} não autorizada para este endpoint.`
@@ -103,13 +116,15 @@ const roleMiddleware = (allowedRoles, options = {}) => {
         });
       }
 
-      console.log(`[roleMiddleware] Permissão concedida para o papel ${userRole}`);
+      console.log(
+        `[roleMiddleware] Permissão concedida para o papel ${userRole} no jogo ${id_jogo}.`
+      );
       next();
     } catch (error) {
-      console.error(`[roleMiddleware] Erro ao verificar função do usuário:`, error);
-      return res
-        .status(500)
-        .json({ message: 'Erro interno no servidor ao validar permissões.' });
+      console.error('[roleMiddleware] Erro ao verificar função do usuário:', error);
+      return res.status(500).json({
+        message: 'Erro interno no servidor ao validar permissões.',
+      });
     }
   };
 };
