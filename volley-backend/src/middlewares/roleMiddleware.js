@@ -45,7 +45,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
     }
 
     // 2) Se não for "skipIdJogo", mas "optionalIdJogo" = false E id_jogo não existe -> erro
-    if (!id_jogo && !optionalIdJogo) {
+    if (id_jogo && optionalIdJogo) {
       console.log('[roleMiddleware] Falha: ID do jogo é obrigatório.');
       return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
     }
