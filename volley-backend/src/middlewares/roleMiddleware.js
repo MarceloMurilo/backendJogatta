@@ -16,8 +16,12 @@ const roleMiddleware = (allowedRoles, options = {}) => {
     console.log('Parâmetros da rota:', req.params);
     console.log('Corpo da requisição:', req.body);
 
-    // Lê as opções
-    const skipIdJogo = options.skipIdJogo || false;
+    // Determinar o fluxo
+    const fluxo = req.body?.fluxo || req.params?.fluxo || 'offline';
+    console.log('[roleMiddleware] Fluxo:', fluxo);
+
+    // Ajustar opções com base no fluxo
+    const skipIdJogo = options.skipIdJogo || fluxo === 'offline';
     const optionalIdJogo = options.optionalIdJogo || false;
 
     // Captura o ID do jogo nos parâmetros ou no body
