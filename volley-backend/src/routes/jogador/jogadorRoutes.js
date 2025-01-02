@@ -183,8 +183,7 @@ router.post(
 router.post(
   '/equilibrar-times',
   authMiddleware,
-  // **Aqui está a rota que aceita tanto "jogador" como "organizador"** 
-  roleMiddleware(['jogador', 'organizador'], { optionalIdJogo: true }), 
+  roleMiddleware(['jogador', 'organizador'], { optionalIdJogo: true }),
   async (req, res) => {
     try {
       const { organizador_id, id_jogo, tamanho_time, jogadores } = req.body;
@@ -197,13 +196,46 @@ router.post(
       }
 
       // Lógica para equilibrar times
-      // Aqui você implementa a lógica de equilíbrio de times conforme sua necessidade
       const timesEquilibrados = equilibrarJogadores(jogadores, tamanho_time);
+
+      // Pegar os IDs de todos os jogadores para buscar detalhes
+      const jogadorIds = jogadores.map((j) => j.id_usuario);
+      
+      const jogadoresDetalhes = await db.query(
+        `SELECT id_usuario, nome, 
+                COALESCE(passe, 0) AS passe, 
+                COALESCE(ataque, 0) AS ataque, 
+                COALESCE(levantamento, 0) AS levantamento
+         FROM usuario
+         LEFT JOIN avaliacoes 
+         ON usuario.id_usuario = avaliacoes.usuario_id
+         WHERE id_usuario = ANY($1::int[])`,
+        [jogadorIds]
+      );
+
+      // Criar um mapa de detalhes dos jogadores
+      const detalhesMap = jogadoresDetalhes.rows.reduce((acc, jogador) => {
+        acc[jogador.id_usuario] = jogador;
+        return acc;
+      }, {});
+
+      // Adicionar detalhes aos times e reservas
+      const timesComDetalhes = timesEquilibrados.times.map((time) =>
+        time.map((jogador) => ({
+          ...jogador,
+          ...detalhesMap[jogador.id_usuario],
+        }))
+      );
+
+      const reservasComDetalhes = timesEquilibrados.reservas.map((reserva) => ({
+        ...reserva,
+        ...detalhesMap[reserva.id_usuario],
+      }));
 
       res.status(200).json({
         message: 'Times equilibrados com sucesso.',
-        times: timesEquilibrados.times,
-        reservas: timesEquilibrados.reservas,
+        times: timesComDetalhes,
+        reservas: reservasComDetalhes,
         rotacoes: timesEquilibrados.rotacoes,
       });
     } catch (error) {
@@ -212,6 +244,7 @@ router.post(
     }
   }
 );
+
 
 /**
  * Função fictícia para equilibrar jogadores em times.
