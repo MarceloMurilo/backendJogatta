@@ -283,7 +283,9 @@ router.post(
  * POST /api/jogador/equilibrar-times
  * Equilibra os times com base nos jogadores fornecidos
  */
-router.post('/equilibrar-times', authMiddleware, roleMiddleware(['organizador']), async (req, res) => {
+router.post('/equilibrar-times', authMiddleware, roleMiddleware(['organizador'], { optionalIdJogo: true }),
+
+async (req, res) => {
   console.log('==== Requisição recebida em /equilibrar-times ====');
   console.log('Payload recebido:', JSON.stringify(req.body, null, 2));
 
@@ -507,7 +509,7 @@ router.post('/equilibrar-times', authMiddleware, roleMiddleware(['organizador'])
 router.post(
   '/atualizar-times',
   authMiddleware,
-  roleMiddleware(['organizador']),
+  roleMiddleware(['organizador', 'jogador']),
   async (req, res) => {
     try {
       const { id_jogo, times } = req.body;
