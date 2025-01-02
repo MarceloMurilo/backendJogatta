@@ -1,4 +1,3 @@
-// middlewares/roleMiddleware.js
 const db = require('../db');
 
 /**
@@ -16,11 +15,12 @@ const roleMiddleware = (allowedRoles, options = {}) => {
     const skipIdJogo = options.skipIdJogo || false;
     const optionalIdJogo = options.optionalIdJogo || false;
 
+    // Verifica o ID do jogo nos parâmetros ou no corpo da requisição
     const id_jogo = req.body?.id_jogo || req.params?.id_jogo || null;
 
     console.log('[roleMiddleware] Status:', { skipIdJogo, optionalIdJogo, id_jogo });
 
-    // Se for para ignorar verificação de id_jogo, basta checar se o papel do usuário está na lista
+    // Caso `skipIdJogo` esteja ativado, apenas verifica o papel do usuário
     if (skipIdJogo) {
       const userRole = req.user?.papel_usuario;
       if (!allowedRoles.includes(userRole)) {
@@ -35,7 +35,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
       return next();
     }
 
-    // Se não for opcional, precisa ter o id_jogo
+    // Se `optionalIdJogo` for falso e não houver `id_jogo`, retorna erro
     if (!id_jogo && !optionalIdJogo) {
       console.log('[roleMiddleware] Falha: ID do jogo é obrigatório.');
       return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
@@ -47,7 +47,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
     );
 
     try {
-      // Removido "AND (uf.expira_em IS NULL OR uf.expira_em > NOW())", pois não queremos mais expiração
+      // Define a query SQL com ou sem o `id_jogo`
       const query = `
         SELECT uf.id_funcao, f.nome_funcao
           FROM usuario_funcao uf
@@ -55,6 +55,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
          WHERE uf.id_usuario = $1
            ${id_jogo ? 'AND uf.id_jogo = $2' : ''}
       `;
+
       const queryParams = id_jogo ? [id, id_jogo] : [id];
 
       console.log('[roleMiddleware] Executando query para verificar função do usuário:', {
@@ -64,6 +65,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
 
       const result = await db.query(query, queryParams);
 
+      // Caso `id_jogo` seja fornecido, verifica se o usuário tem função válida no jogo
       if (id_jogo && result.rowCount === 0) {
         console.log(
           `[roleMiddleware] Usuário não possui função válida no jogo ${id_jogo}`
@@ -74,6 +76,8 @@ const roleMiddleware = (allowedRoles, options = {}) => {
       }
 
       const userRole = result.rows[0]?.nome_funcao || 'sem função';
+
+      // Verifica se o papel do usuário está na lista de permitidos
       if (!allowedRoles.includes(userRole)) {
         console.log(
           `[roleMiddleware] Função ${userRole} não autorizada para este endpoint.`

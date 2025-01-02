@@ -283,14 +283,14 @@ router.post(
  * POST /api/jogador/equilibrar-times
  * Equilibra os times com base nos jogadores fornecidos
  */
-router.post('/equilibrar-times', authMiddleware, roleMiddleware(['organizador'], { optionalIdJogo: true }),
-
+router.post('/equilibrar-times', authMiddleware, roleMiddleware(['organizador'], { optionalIdJogo: true }), 
 async (req, res) => {
   console.log('==== Requisição recebida em /equilibrar-times ====');
   console.log('Payload recebido:', JSON.stringify(req.body, null, 2));
 
   const { organizador_id, id_jogo, tamanho_time, jogadores } = req.body;
 
+  // Validações iniciais
   if (!organizador_id || !tamanho_time) {
     return res.status(400).json({
       message: 'Organizador e tamanho do time são obrigatórios.',
@@ -306,9 +306,10 @@ async (req, res) => {
   try {
     console.log('Consultando jogadores no banco de dados com base nos selecionados...');
 
-    const baseIndex = id_jogo ? 3 : 2;
-    const playerIds = jogadores.map(jogador => jogador.id_usuario); // Extrai apenas os IDs
-    const placeholders = playerIds.map((_, index) => `$${index + baseIndex}`).join(', ');
+    // Configurações da consulta
+    const baseIndex = id_jogo ? 3 : 2; // Índice inicial dos parâmetros após organizador_id e id_jogo (se presente)
+    const playerIds = jogadores.map(jogador => jogador.id_usuario); // Extrai apenas os IDs dos jogadores
+    const placeholders = playerIds.map((_, index) => `$${index + baseIndex}`).join(', '); // Gera placeholders SQL
 
     const query = `
       SELECT 
