@@ -1,3 +1,4 @@
+// /middlewares/roleMiddleware.js
 const db = require('../db');
 
 /**
@@ -15,8 +16,8 @@ const roleMiddleware = (allowedRoles, options = {}) => {
     const skipIdJogo = options.skipIdJogo || false;
     const optionalIdJogo = options.optionalIdJogo || false;
 
-    // Verifica o ID do jogo nos parâmetros ou no corpo da requisição
-    const id_jogo = req.body?.id_jogo || req.params?.id_jogo || null;
+    // Captura o ID do jogo nos parâmetros ou no corpo da requisição
+    const id_jogo = req.body?.id_jogo || req.params?.jogoId || null;
 
     console.log('[roleMiddleware] Status:', { skipIdJogo, optionalIdJogo, id_jogo });
 
@@ -39,6 +40,21 @@ const roleMiddleware = (allowedRoles, options = {}) => {
     if (!id_jogo && !optionalIdJogo) {
       console.log('[roleMiddleware] Falha: ID do jogo é obrigatório.');
       return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
+    }
+
+    // Se `optionalIdJogo` for true e `id_jogo` não for fornecido, apenas verifica o papel do usuário
+    if (optionalIdJogo && !id_jogo) {
+      const userRole = req.user?.papel_usuario;
+      if (!allowedRoles.includes(userRole)) {
+        console.log(
+          `[roleMiddleware] Função ${userRole} não autorizada para este endpoint.`
+        );
+        return res.status(403).json({
+          message: 'Acesso negado - Papel do usuário não autorizado.',
+        });
+      }
+      console.log('[roleMiddleware] Permissão concedida (id_jogo opcional não fornecido).');
+      return next();
     }
 
     const { id } = req.user;

@@ -1,16 +1,15 @@
-// routes/jogador/jogadorRoutes.js
+// /routes/jogador/jogadorRoutes.js
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
 const authMiddleware = require('../../middlewares/authMiddleware');
 const roleMiddleware = require('../../middlewares/roleMiddleware');
 
-
 // Rota para atualizar a imagem de perfil
 router.put(
   '/imagem_perfil',
   authMiddleware,
-  roleMiddleware(['jogador', 'organizador']), // Aqui ainda exige id_jogo? Ajuste conforme sua regra
+  roleMiddleware(['jogador', 'organizador'], { optionalIdJogo: true }), // Ajuste conforme a regra de negócio
   async (req, res) => {
     try {
       const { id_usuario, imagem_perfil } = req.body;
@@ -71,12 +70,12 @@ router.get(
 router.get(
   '/listar/:jogoId',
   authMiddleware,
-  roleMiddleware(['jogador', 'organizador']),
+  roleMiddleware(['jogador', 'organizador'], { optionalIdJogo: false }), // `id_jogo` é obrigatório aqui
   async (req, res) => {
     const { jogoId } = req.params;
 
     if (!jogoId) {
-      return res.status(400).json({ message: 'ID do jogo é obrigatório4.' });
+      return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
     }
 
     try {
@@ -114,10 +113,10 @@ router.get(
 router.get(
   '/avaliacoes/organizador/:organizador_id',
   authMiddleware,
-  roleMiddleware(['jogador', 'organizador']),
+  roleMiddleware(['jogador', 'organizador'], { optionalIdJogo: true }), // `id_jogo` opcional
   async (req, res) => {
     try {
-      const { organizador_id} = req.params;
+      const { organizador_id } = req.params;
 
       const result = await db.query(
         `SELECT usuario_id, passe, ataque, levantamento
@@ -139,13 +138,25 @@ router.get(
 router.post(
   '/avaliacoes/salvar',
   authMiddleware,
-  roleMiddleware(['jogador', 'organizador']),
+  roleMiddleware(['jogador', 'organizador'], { optionalIdJogo: true }), // `id_jogo` opcional
   async (req, res) => {
     try {
-      const { organizador_id, usuario_id, passe, ataque, levantamento } = req.body;
+      const { organizador_id, usuario_id, passe, ataque, levantamento, id_jogo } = req.body;
 
       if (!organizador_id || !usuario_id) {
         return res.status(400).json({ message: 'organizador_id e usuario_id são obrigatórios.' });
+      }
+
+      // Validação adicional: se `id_jogo` for fornecido, validar que o usuário pertence ao jogo
+      if (id_jogo) {
+        const verificaParticipacao = await db.query(
+          'SELECT * FROM participacao_jogos WHERE id_jogo = $1 AND id_usuario = $2',
+          [id_jogo, usuario_id]
+        );
+
+        if (verificaParticipacao.rowCount === 0) {
+          return res.status(400).json({ message: 'Usuário não participa deste jogo.' });
+        }
       }
 
       await db.query(
@@ -167,5 +178,63 @@ router.post(
     }
   }
 );
+
+// Rota para equilibrar times
+router.post(
+  '/equilibrar-times',
+  authMiddleware,
+  roleMiddleware(['jogador', 'organizador'], { optionalIdJogo: true }), // Passa a opção optionalIdJogo: true
+  async (req, res) => {
+    try {
+      const { organizador_id, id_jogo, tamanho_time, jogadores } = req.body;
+
+      // Validações básicas
+      if (!organizador_id || !tamanho_time || !jogadores || !Array.isArray(jogadores)) {
+        return res.status(400).json({
+          message: 'organizador_id, tamanho_time e jogadores são obrigatórios.',
+        });
+      }
+
+      // Lógica para equilibrar times
+      // Aqui você implementa a lógica de equilíbrio de times conforme sua necessidade
+      const timesEquilibrados = equilibrarJogadores(jogadores, tamanho_time);
+
+      res.status(200).json({
+        message: 'Times equilibrados com sucesso.',
+        times: timesEquilibrados.times,
+        reservas: timesEquilibrados.reservas,
+        rotacoes: timesEquilibrados.rotacoes,
+      });
+    } catch (error) {
+      console.error('Erro ao equilibrar times:', error);
+      res.status(500).json({ message: 'Erro interno ao equilibrar times.' });
+    }
+  }
+);
+
+/**
+ * Função fictícia para equilibrar jogadores em times.
+ * Você deve implementar a lógica real conforme seus requisitos.
+ */
+const equilibrarJogadores = (jogadores, tamanho_time) => {
+  // Implementação fictícia
+  const times = [];
+  const reservas = [];
+  const rotacoes = [];
+
+  // Embaralhar jogadores para distribuição aleatória
+  const shuffled = jogadores.sort(() => 0.5 - Math.random());
+
+  for (let i = 0; i < shuffled.length; i += tamanho_time) {
+    const time = shuffled.slice(i, i + tamanho_time);
+    if (time.length === tamanho_time) {
+      times.push(time);
+    } else {
+      reservas.push(...time);
+    }
+  }
+
+  return { times, reservas, rotacoes };
+};
 
 module.exports = router;
