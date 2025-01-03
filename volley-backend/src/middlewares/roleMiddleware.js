@@ -20,6 +20,12 @@ const roleMiddleware = (allowedRoles, options = {}) => {
     const fluxo = req.body?.fluxo || req.params?.fluxo || 'offline';
     console.log('[roleMiddleware] Fluxo:', fluxo);
 
+    // Validar valores aceitáveis para fluxo
+    if (!['online', 'offline'].includes(fluxo)) {
+      console.log(`[roleMiddleware] Fluxo inválido recebido: ${fluxo}`);
+      return res.status(400).json({ message: 'Fluxo inválido.' });
+    }
+
     // Ajustar opções com base no fluxo
     const skipIdJogo = options.skipIdJogo || fluxo === 'offline';
     const optionalIdJogo = options.optionalIdJogo || false;
