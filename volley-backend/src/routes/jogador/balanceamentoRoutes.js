@@ -254,10 +254,10 @@ router.post(
              VALUES ($1, $2, $3, $4, $5)`,
             [
               id_jogo,
-              index + 1, // número do time (1, 2, ...)
+              numeroTime,
               jogador.id_usuario,
-              time.totalScore,
-              time.totalAltura,
+              time.totalScore || 0,
+              time.totalAltura || 0,
             ]
           );
         }
