@@ -248,6 +248,7 @@ router.post(
           });
         }
       }
+      console.log('Verificando jogadores para o organizador:', req.user.id, 'e jogo:', id_jogo);
 
       // Agora buscamos jogadores
       const jogadoresQuery = await client.query(
@@ -277,16 +278,24 @@ router.post(
           error: 'Nenhum jogador encontrado para balanceamento.',
         });
       }
+      console.log('Jogadores encontrados para balanceamento:', jogadoresQuery.rows);
 
       const jogadores = jogadoresQuery.rows;
 
       // Faz o balanceamento usando a função que respeita o tamanho_time
       const { times, reservas } = balancearJogadores(jogadores, tamanhoTimeFinal);
-
+      console.log('Times gerados pelo balanceamento:', JSON.stringify(times, null, 2));
+      console.log('Reservas geradas pelo balanceamento:', JSON.stringify(reservas, null, 2));
+      
       // Calcula o custo do balanceamento (opcional)
       const custo = calcularCusto(times);
       console.log(`Custo do balanceamento: ${custo}`);
-
+      console.log('Preparando resposta para o cliente:', {
+        status: 'andamento',
+        times,
+        reservas,
+      });
+      
       // Inicia transação
       await client.query('BEGIN');
 
