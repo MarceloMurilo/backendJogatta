@@ -10,78 +10,86 @@ const db = require('../db');
  *   - optionalIdJogo: Se true, não é obrigatório fornecer id_jogo; mas se vier, será checado.
  */
 const roleMiddleware = (allowedRoles, options = {}) => {
+  // Função para determinar o fluxo com base na presença de id_jogo
+  const determinarFluxo = (req) => {
+    if (req.body?.id_jogo || req.params?.jogoId) {
+      return 'online';
+    }
+    return req.body?.fluxo || req.params?.fluxo || 'offline';
+  };
+
   return async (req, res, next) => {
     console.log('=== [roleMiddleware] Início da Verificação ===');
     console.log('Usuário autenticado:', req.user);
     console.log('Parâmetros da rota:', req.params);
     console.log('Corpo da requisição:', req.body);
 
-    // Determinar o fluxo
-    const fluxo = req.body?.fluxo || req.params?.fluxo || 'offline';
-    console.log('[roleMiddleware] Fluxo:', fluxo);
-
-    // Validar valores aceitáveis para fluxo
-    if (!['online', 'offline'].includes(fluxo)) {
-      console.log(`[roleMiddleware] Fluxo inválido recebido: ${fluxo}`);
-      return res.status(400).json({ message: 'Fluxo inválido.' });
-    }
-
-    // Ajustar opções com base no fluxo
-    const skipIdJogo = options.skipIdJogo || fluxo === 'offline';
-    const optionalIdJogo = options.optionalIdJogo || false;
-
-    // Captura o ID do jogo nos parâmetros ou no body
-    const id_jogo = req.body?.id_jogo || req.params?.jogoId || null;
-
-    console.log('[roleMiddleware] Status:', {
-      skipIdJogo,
-      optionalIdJogo,
-      id_jogo,
-    });
-
-    // 1) Verificar se o usuário é o organizador do jogo (caso permitido)
-    if (req.body.id_usuario_organizador && req.body.id_usuario_organizador === req.user.id) {
-      console.log('[roleMiddleware] Usuário é o organizador do jogo. Permissão concedida.');
-      return next();
-    }
-
-    // 2) Se "skipIdJogo" for true, NÃO validamos nenhum id_jogo, só papel do usuário
-    if (skipIdJogo) {
-      const userRole = req.user?.papel_usuario;
-      if (!allowedRoles.includes(userRole)) {
-        console.log(`[roleMiddleware] Função ${userRole} não autorizada para este endpoint.`);
-        return res.status(403).json({
-          message: 'Acesso negado - Papel do usuário não autorizado.',
-        });
-      }
-      console.log('[roleMiddleware] Permissão concedida (skipIdJogo ativado).');
-      return next();
-    }
-
-    // 3) Se não for "skipIdJogo" e "optionalIdJogo" = false E id_jogo não existe -> erro
-    if (!id_jogo && !optionalIdJogo) {
-      console.log('[roleMiddleware] Falha: ID do jogo é obrigatório.');
-      return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
-    }
-
-    // 4) Se "optionalIdJogo" = true E não vier id_jogo, apenas verifica o papel do usuário
-    if (!id_jogo && optionalIdJogo) {
-      const userRole = req.user?.papel_usuario;
-      if (!allowedRoles.includes(userRole)) {
-        console.log(`[roleMiddleware] Função ${userRole} não autorizada para este endpoint.`);
-        return res.status(403).json({
-          message: 'Acesso negado - Papel do usuário não autorizado.',
-        });
-      }
-      console.log('[roleMiddleware] Permissão concedida (id_jogo opcional não fornecido).');
-      return next();
-    }
-
-    // 5) Se chegou até aqui, verifica se o usuário tem papel no jogo
-    const { id } = req.user;
-    console.log(`[roleMiddleware] Verificando papel do usuário (ID: ${id}) no jogo (ID: ${id_jogo})`);
-
     try {
+      // Determinar o fluxo
+      const fluxo = determinarFluxo(req);
+      console.log('[roleMiddleware] Fluxo:', fluxo);
+
+      // Validar valores aceitáveis para fluxo
+      if (!['online', 'offline'].includes(fluxo)) {
+        console.log(`[roleMiddleware] Fluxo inválido recebido: ${fluxo}`);
+        return res.status(400).json({ message: 'Fluxo inválido.' });
+      }
+
+      // Ajustar opções com base no fluxo
+      const skipIdJogo = options.skipIdJogo || fluxo === 'offline';
+      const optionalIdJogo = options.optionalIdJogo || false;
+
+      // Captura o ID do jogo nos parâmetros ou no body
+      const id_jogo = req.body?.id_jogo || req.params?.jogoId || null;
+
+      console.log('[roleMiddleware] Status:', {
+        skipIdJogo,
+        optionalIdJogo,
+        id_jogo,
+      });
+
+      // 1) Verificar se o usuário é o organizador do jogo (caso permitido)
+      if (req.body.id_usuario_organizador && req.body.id_usuario_organizador === req.user.id) {
+        console.log('[roleMiddleware] Usuário é o organizador do jogo. Permissão concedida.');
+        return next();
+      }
+
+      // 2) Se "skipIdJogo" for true, NÃO validamos nenhum id_jogo, só papel do usuário
+      if (skipIdJogo) {
+        const userRole = req.user?.papel_usuario;
+        if (!allowedRoles.includes(userRole)) {
+          console.log(`[roleMiddleware] Função ${userRole} não autorizada para este endpoint.`);
+          return res.status(403).json({
+            message: 'Acesso negado - Papel do usuário não autorizado.',
+          });
+        }
+        console.log('[roleMiddleware] Permissão concedida (skipIdJogo ativado).');
+        return next();
+      }
+
+      // 3) Se não for "skipIdJogo" e "optionalIdJogo" = false E id_jogo não existe -> erro
+      if (!id_jogo && !optionalIdJogo) {
+        console.log('[roleMiddleware] Falha: ID do jogo é obrigatório.');
+        return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
+      }
+
+      // 4) Se "optionalIdJogo" = true E não vier id_jogo, apenas verifica o papel do usuário
+      if (!id_jogo && optionalIdJogo) {
+        const userRole = req.user?.papel_usuario;
+        if (!allowedRoles.includes(userRole)) {
+          console.log(`[roleMiddleware] Função ${userRole} não autorizada para este endpoint.`);
+          return res.status(403).json({
+            message: 'Acesso negado - Papel do usuário não autorizado.',
+          });
+        }
+        console.log('[roleMiddleware] Permissão concedida (id_jogo opcional não fornecido).');
+        return next();
+      }
+
+      // 5) Se chegou até aqui, verifica se o usuário tem papel no jogo
+      const { id } = req.user;
+      console.log(`[roleMiddleware] Verificando papel do usuário (ID: ${id}) no jogo (ID: ${id_jogo})`);
+
       // Monta query para verificar se o usuário tem função associada ao jogo ou é o organizador
       const query = `
         SELECT uf.id_funcao, f.nome_funcao
@@ -127,10 +135,8 @@ const roleMiddleware = (allowedRoles, options = {}) => {
       console.log(`[roleMiddleware] Permissão concedida para o(s) papel(is) ${userRoles.join(', ')} no jogo ${id_jogo}.`);
       next();
     } catch (error) {
-      console.error('[roleMiddleware] Erro ao verificar função do usuário:', error);
-      return res.status(500).json({
-        message: 'Erro interno no servidor ao validar permissões.',
-      });
+      console.log(`[roleMiddleware] Erro: ${error.message}`);
+      return res.status(400).json({ message: error.message });
     }
   };
 };
