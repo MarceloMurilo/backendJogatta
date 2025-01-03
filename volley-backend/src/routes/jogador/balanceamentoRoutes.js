@@ -139,7 +139,12 @@ router.post(
 
       // Verifica se o jogo existe
       const jogoQuery = await db.query(
-        `SELECT id_jogo, id_usuario, status FROM jogos WHERE id_jogo = $1 LIMIT 1`,
+        `
+        SELECT id_jogo, id_usuario, status 
+        FROM jogos 
+        WHERE id_jogo = $1 
+        LIMIT 1
+        `,
         [id_jogo]
       );
 
@@ -149,7 +154,7 @@ router.post(
         });
       }
 
-      const { status } = jogoQuery.rows[0];
+      const { status, id_usuario: organizador_id } = jogoQuery.rows[0];
 
       // Se o jogo já estiver em finalizado, bloqueia o balanceamento
       if (status === 'finalizado') {
@@ -158,22 +163,34 @@ router.post(
         });
       }
 
-      // Simula o balanceamento (substitua com sua lógica de balanceamento real)
+      // Verifica se o usuário é o organizador do jogo
+      if (organizador_id !== req.user.id) {
+        return res.status(403).json({
+          error: 'Apenas o organizador do jogo pode iniciar o balanceamento.',
+        });
+      }
+
+      // Busca os jogadores participantes do jogo
       const jogadoresQuery = await db.query(
-        `SELECT 
-            u.id_usuario, 
-            u.nome, 
-            a.passe, 
-            a.ataque, 
-            a.levantamento, 
-            u.altura 
-         FROM usuario u
-         INNER JOIN avaliacoes a 
-            ON a.usuario_id = u.id_usuario
-         WHERE a.organizador_id = $1 AND a.usuario_id IN (
-            SELECT id_usuario FROM participacao_jogos WHERE id_jogo = $2
-         )`,
-        [req.user.id_usuario, id_jogo]
+        `
+        SELECT 
+          u.id_usuario, 
+          u.nome, 
+          a.passe, 
+          a.ataque, 
+          a.levantamento, 
+          u.altura 
+        FROM usuario u
+        INNER JOIN avaliacoes a 
+          ON a.usuario_id = u.id_usuario
+        WHERE a.organizador_id = $1 
+          AND a.usuario_id IN (
+            SELECT id_usuario 
+            FROM participacao_jogos 
+            WHERE id_jogo = $2
+          )
+        `,
+        [req.user.id, id_jogo]
       );
 
       if (jogadoresQuery.rowCount === 0) {
@@ -184,15 +201,26 @@ router.post(
 
       const jogadores = jogadoresQuery.rows;
 
-      // Balanceia os jogadores em dois times (exemplo)
+      // Balanceia os jogadores em dois times (exemplo simples)
       const embaralhados = embaralharJogadores(jogadores);
-      const time1 = embaralhados.slice(0, Math.ceil(embaralhados.length / 2));
-      const time2 = embaralhados.slice(Math.ceil(embaralhados.length / 2));
+      const meio = Math.ceil(embaralhados.length / 2);
+      const time1 = embaralhados.slice(0, meio);
+      const time2 = embaralhados.slice(meio);
 
       const times = [
-        { nome: 'Time 1', jogadores: time1 },
-        { nome: 'Time 2', jogadores: time2 },
+        { nome: 'Time 1', jogadores: time1, totalScore: 0, totalAltura: 0 },
+        { nome: 'Time 2', jogadores: time2, totalScore: 0, totalAltura: 0 },
       ];
+
+      // Calcula totalScore e totalAltura para cada time
+      times.forEach(time => {
+        time.totalScore = time.jogadores.reduce((sum, jogador) => sum + (jogador.passe + jogador.ataque + jogador.levantamento), 0);
+        time.totalAltura = time.jogadores.reduce((sum, jogador) => sum + jogador.altura, 0);
+      });
+
+      // Calcula o custo do balanceamento
+      const custo = calcularCusto(times);
+      console.log(`Custo do balanceamento: ${custo}`);
 
       // Inicia uma transação para atualizar os times no banco
       await db.query('BEGIN');
@@ -205,9 +233,11 @@ router.post(
         const numeroTime = index + 1;
         for (const jogador of time.jogadores) {
           await db.query(
-            `INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [id_jogo, numeroTime, jogador.id_usuario, 0, jogador.altura]
+            `
+            INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
+            VALUES ($1, $2, $3, $4, $5)
+            `,
+            [id_jogo, numeroTime, jogador.id_usuario, time.totalScore, jogador.altura]
           );
         }
       }
@@ -215,7 +245,11 @@ router.post(
       // Atualiza o status para 'andamento' (se ainda não for)
       if (status !== 'andamento') {
         await db.query(
-          `UPDATE jogos SET status = 'andamento' WHERE id_jogo = $1`,
+          `
+          UPDATE jogos 
+          SET status = 'andamento' 
+          WHERE id_jogo = $1
+          `,
           [id_jogo]
         );
       }
@@ -263,7 +297,12 @@ router.post(
 
       // Verifica se o jogo existe e se o solicitante é o organizador
       const jogoQuery = await db.query(
-        `SELECT id_usuario, status FROM jogos WHERE id_jogo = $1 LIMIT 1`,
+        `
+        SELECT id_usuario, status 
+        FROM jogos 
+        WHERE id_jogo = $1 
+        LIMIT 1
+        `,
         [id_jogo]
       );
 
@@ -287,11 +326,15 @@ router.post(
 
       // Atualiza o status do jogo para "finalizado"
       await db.query(
-        `UPDATE jogos SET status = 'finalizado' WHERE id_jogo = $1`,
+        `
+        UPDATE jogos 
+        SET status = 'finalizado' 
+        WHERE id_jogo = $1
+        `,
         [id_jogo]
       );
 
-      // Salvar os times no banco
+      // Inicia uma transação para salvar os times
       await db.query('BEGIN');
       console.log('Transação iniciada para finalizar balanceamento.');
 
@@ -319,8 +362,10 @@ router.post(
 
           // Inserir o jogador no time
           await db.query(
-            `INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
-             VALUES ($1, $2, $3, $4, $5)`,
+            `
+            INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
+            VALUES ($1, $2, $3, $4, $5)
+            `,
             [
               id_jogo,
               numeroTime, // Use o número do time aqui
@@ -390,7 +435,12 @@ router.post(
 
       // Verificar se o jogo existe
       const jogoQuery = await db.query(
-        `SELECT id_jogo FROM jogos WHERE id_jogo = $1 LIMIT 1`,
+        `
+        SELECT id_jogo 
+        FROM jogos 
+        WHERE id_jogo = $1 
+        LIMIT 1
+        `,
         [id_jogo]
       );
       if (jogoQuery.rowCount === 0) {
@@ -422,8 +472,10 @@ router.post(
 
           // Inserir o jogador no time
           await db.query(
-            `INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
-             VALUES ($1, $2, $3, $4, $5)`,
+            `
+            INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
+            VALUES ($1, $2, $3, $4, $5)
+            `,
             [
               id_jogo,
               numeroTime, // Use o número do time aqui
