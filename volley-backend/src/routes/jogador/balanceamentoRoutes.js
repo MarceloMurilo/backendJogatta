@@ -161,16 +161,19 @@ router.post(
       // Simula o balanceamento (substitua com sua lógica de balanceamento real)
       const jogadoresQuery = await db.query(
         `SELECT 
-           pj.id_usuario, 
-           u.nome, 
-           pj.passe, 
-           pj.ataque, 
-           pj.levantamento, 
-           pj.altura 
-         FROM participacao_jogos pj
-         JOIN usuario u ON pj.id_usuario = u.id_usuario
-         WHERE pj.id_jogo = $1`,
-        [id_jogo]
+            u.id_usuario, 
+            u.nome, 
+            a.passe, 
+            a.ataque, 
+            a.levantamento, 
+            u.altura 
+         FROM usuario u
+         INNER JOIN avaliacoes a 
+            ON a.usuario_id = u.id_usuario
+         WHERE a.organizador_id = $1 AND a.usuario_id IN (
+            SELECT id_usuario FROM participacao_jogos WHERE id_jogo = $2
+         )`,
+        [req.user.id_usuario, id_jogo]
       );
 
       if (jogadoresQuery.rowCount === 0) {
