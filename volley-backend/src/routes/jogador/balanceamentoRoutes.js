@@ -253,9 +253,10 @@ router.post(
       let tamanhoTimeFinal = tamanhoTimeDB;
       if (status === 'aberto') {
         if (!tamanho_time && !tamanhoTimeDB) {
-          console.warn('Aviso: tamanho_time ainda não foi definido. Balanceamento não pode ser iniciado.');
-          return res.status(400).json({
-            error: 'O tamanho_time precisa ser definido antes de iniciar o balanceamento.',
+          console.warn('Aviso: tamanho_time ainda não foi definido. Configuração do tamanho será adiada.');
+          return res.status(200).json({
+            message: 'O tamanho_time ainda não foi definido. Configure-o na tela do jogo.',
+            status: 'pendente',
           });
         }
         if (tamanho_time) {
