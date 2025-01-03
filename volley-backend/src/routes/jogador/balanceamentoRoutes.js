@@ -176,7 +176,7 @@ router.post(
   authMiddleware,
   roleMiddleware(['organizador']),
   async (req, res) => {
-    const client = await db.connect();
+    const client = await db.getClient();
     try {
       const { id_jogo, tamanho_time } = req.body; // tamanho_time pode vir ou não
 
@@ -366,7 +366,7 @@ router.post(
   authMiddleware,
   roleMiddleware(['organizador']),
   async (req, res) => {
-    const client = await db.connect();
+    const client = await db.getClient();
     try {
       const { id_jogo, id_usuario_organizador, times } = req.body;
       console.log('Recebido /finalizar-balanceamento:', req.body);
@@ -494,7 +494,7 @@ router.post(
   authMiddleware,
   roleMiddleware(['organizador', 'jogador'], { skipIdJogo: false, optionalIdJogo: false }),
   async (req, res) => {
-    const client = await db.connect();
+    const client = await db.getClient();
     try {
       const { id_jogo, times } = req.body;
 
