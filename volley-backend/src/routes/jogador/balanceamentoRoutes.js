@@ -252,19 +252,22 @@ router.post(
       // Se o jogo estiver 'aberto', podemos atualizar o tamanho_time no BD
       let tamanhoTimeFinal = tamanhoTimeDB;
       if (status === 'aberto') {
-        if (!tamanho_time) {
-          console.error('Erro: tamanho_time é obrigatório quando o jogo ainda está em aberto.');
+        if (!tamanho_time && !tamanhoTimeDB) {
+          console.warn('Aviso: tamanho_time ainda não foi definido. Balanceamento não pode ser iniciado.');
           return res.status(400).json({
-            error: 'tamanho_time é obrigatório quando o jogo ainda está em aberto.',
+            error: 'O tamanho_time precisa ser definido antes de iniciar o balanceamento.',
           });
         }
-        // Atualiza o tamanho_time na tabela jogos
-        console.log(`Atualizando tamanho_time para ${tamanho_time}`);
-        await client.query(
-          `UPDATE jogos SET tamanho_time = $1 WHERE id_jogo = $2`,
-          [tamanho_time, id_jogo]
-        );
-        tamanhoTimeFinal = tamanho_time;
+        if (tamanho_time) {
+          console.log(`Atualizando tamanho_time para ${tamanho_time}`);
+          await client.query(
+            `UPDATE jogos SET tamanho_time = $1 WHERE id_jogo = $2`,
+            [tamanho_time, id_jogo]
+          );
+          tamanhoTimeFinal = tamanho_time;
+        } else {
+          tamanhoTimeFinal = tamanhoTimeDB;
+        }
       }
 
       // Se o jogo está 'andamento', pegamos do DB
