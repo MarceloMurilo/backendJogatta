@@ -120,7 +120,7 @@ const gerarSugerirRotacoes = (times, reservas, topN = 2) => {
 
 /**
  * POST /api/jogador/iniciar-balanceamento
- * Marca o status do jogo como 'equilibrando'
+ * Atualiza os times e mantém o jogo no estado 'andamento'.
  */
 router.post(
   '/iniciar-balanceamento',
@@ -149,44 +149,77 @@ router.post(
         });
       }
 
-      const { id_usuario: organizador_id, status } = jogoQuery.rows[0];
+      const { status } = jogoQuery.rows[0];
 
-      // Se já estiver equilibrando ou "encerrado", impedimos (ajuste conforme regra de negócio).
-      if (status === 'equilibrando' || status === 'finalizado') {
+      // Se o jogo já estiver em finalizado, bloqueia o balanceamento
+      if (status === 'finalizado') {
         return res.status(400).json({
-          error: 'O jogo já está em balanceamento ou foi finalizado.',
+          error: 'O jogo já foi finalizado.',
         });
       }
 
-      // Atualiza o status do jogo para "equilibrando"
-      const updateStatus = await db.query(
-        `UPDATE jogos 
-            SET status = 'equilibrando' 
-          WHERE id_jogo = $1 
-          RETURNING *`,
+      // Simula o balanceamento (substitua com sua lógica de balanceamento real)
+      const jogadoresQuery = await db.query(
+        `SELECT id_usuario, nome, passe, ataque, levantamento, altura 
+         FROM jogadores WHERE id_jogo = $1`,
         [id_jogo]
       );
 
-      if (updateStatus.rowCount === 0) {
-        throw new Error('Erro ao atualizar status do jogo: ID do jogo não encontrado.');
+      if (jogadoresQuery.rowCount === 0) {
+        return res.status(400).json({
+          error: 'Nenhum jogador encontrado para balanceamento.',
+        });
       }
-      console.log('[INFO] Status atualizado para "equilibrando":', updateStatus.rows[0]);
 
-      // Garantir que o papel "organizador" para este jogo está salvo, sem expiração.
-      await db.query(
-        `INSERT INTO usuario_funcao (id_usuario, id_funcao, id_jogo, criado_em)
-         VALUES ($1, 1, $2, NOW())
-         ON CONFLICT (id_usuario, id_funcao, id_jogo) 
-         DO NOTHING`,
-        [organizador_id, id_jogo]
-      );
+      const jogadores = jogadoresQuery.rows;
+
+      // Balanceia os jogadores em dois times (exemplo)
+      const embaralhados = embaralharJogadores(jogadores);
+      const time1 = embaralhados.slice(0, Math.ceil(embaralhados.length / 2));
+      const time2 = embaralhados.slice(Math.ceil(embaralhados.length / 2));
+
+      const times = [
+        { nome: 'Time 1', jogadores: time1 },
+        { nome: 'Time 2', jogadores: time2 },
+      ];
+
+      // Inicia uma transação para atualizar os times no banco
+      await db.query('BEGIN');
+
+      // Remove times antigos
+      await db.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
+
+      // Insere os novos times
+      for (const [index, time] of times.entries()) {
+        const numeroTime = index + 1;
+        for (const jogador of time.jogadores) {
+          await db.query(
+            `INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [id_jogo, numeroTime, jogador.id_usuario, 0, jogador.altura]
+          );
+        }
+      }
+
+      // Atualiza o status para 'andamento' (se ainda não for)
+      if (status !== 'andamento') {
+        await db.query(
+          `UPDATE jogos SET status = 'andamento' WHERE id_jogo = $1`,
+          [id_jogo]
+        );
+      }
+
+      await db.query('COMMIT');
+
+      console.log('Times balanceados com sucesso:', JSON.stringify(times, null, 2));
 
       return res.status(200).json({
-        message: 'O organizador iniciou o balanceamento.',
-        status: 'equilibrando',
-        id_jogo: id_jogo,
+        message: 'Balanceamento realizado com sucesso!',
+        status: 'andamento',
+        times,
       });
     } catch (error) {
+      await db.query('ROLLBACK');
       console.error('Erro ao iniciar balanceamento:', error);
       return res.status(500).json({
         error: 'Erro ao iniciar balanceamento.',
@@ -235,7 +268,7 @@ router.post(
         });
       }
 
-      if (status !== 'equilibrando') {
+      if (status !== 'andamento') {
         return res.status(400).json({
           error: 'O jogo não está em estado de balanceamento.',
         });
