@@ -355,7 +355,8 @@ router.post(
         for (const jogador of time.jogadores) {
           // Validar se 'id_usuario' está presente e é um número
           if (!jogador.id_usuario || typeof jogador.id_usuario !== 'number') {
-            throw new Error(`id_usuario inválido para um dos jogadores no Time ${numeroTime}.`);
+            console.error(`Erro: Jogador inválido no Time ${numeroTime}:`, jogador);
+            throw new Error(`id_usuario inválido ou ausente para um dos jogadores no Time ${numeroTime}.`);
           }
 
           console.log(`Inserindo Jogador ID: ${jogador.id_usuario}, Time: ${numeroTime}`);
@@ -371,7 +372,7 @@ router.post(
               numeroTime, // Use o número do time aqui
               jogador.id_usuario,
               time.totalScore || 0,
-              time.totalAltura || 0,
+              jogador.altura || 0, // Garantindo altura válida
             ]
           );
 
