@@ -1,5 +1,3 @@
-// /routes/balanceamentoRoutes.js
-
 const express = require('express');
 const router = express.Router();
 const db = require('../../db'); // Conexão com o banco de dados
@@ -66,9 +64,9 @@ const calcularDistancia = (jogador1, jogador2) => {
 
   return Math.sqrt(
     Math.pow(alturaDiff, 2) +
-    Math.pow(passeDiff, 2) +
-    Math.pow(ataqueDiff, 2) +
-    Math.pow(levantamentoDiff, 2)
+      Math.pow(passeDiff, 2) +
+      Math.pow(ataqueDiff, 2) +
+      Math.pow(levantamentoDiff, 2)
   );
 };
 
@@ -115,21 +113,72 @@ const gerarSugerirRotacoes = (times, reservas, topN = 2) => {
 };
 
 /**
+ * Função principal de balanceamento respeitando o tamanho_time
+ * Retorna um objeto com { times, reservas }.
+ */
+function balancearJogadores(jogadores, tamanhoTime) {
+  // Embaralha jogadores
+  const embaralhados = embaralharJogadores([...jogadores]);
+
+  // Calcula quantos times teremos
+  // Se quisermos "lotar" cada time até 'tamanhoTime', calculamos:
+  const numTimes = Math.floor(embaralhados.length / tamanhoTime);
+
+  const times = [];
+  for (let i = 0; i < numTimes; i++) {
+    times.push({
+      nome: `Time ${i + 1}`,
+      jogadores: [],
+      totalScore: 0,
+      totalAltura: 0,
+    });
+  }
+
+  // Caso sobrem jogadores (reservas)
+  let reservas = [];
+
+  // Distribui jogadores
+  let index = 0;
+  for (let j of embaralhados) {
+    const timeIndex = Math.floor(index / tamanhoTime);
+    if (timeIndex < numTimes) {
+      times[timeIndex].jogadores.push(j);
+    } else {
+      reservas.push(j);
+    }
+    index++;
+  }
+
+  // Calcula totalScore e totalAltura de cada time
+  times.forEach(time => {
+    time.totalScore = time.jogadores.reduce(
+      (sum, jogador) => sum + (jogador.passe + jogador.ataque + jogador.levantamento),
+      0
+    );
+    time.totalAltura = time.jogadores.reduce((sum, jogador) => sum + jogador.altura, 0);
+  });
+
+  return { times, reservas };
+}
+
+/**
  * Rotas de Balanceamento
  */
 
 /**
  * POST /api/jogador/iniciar-balanceamento
  * Atualiza os times e mantém o jogo no estado 'andamento'.
+ * Se for a primeira vez (status 'aberto'), recebemos e salvamos tamanho_time no jogo.
+ * Se já estiver em andamento, apenas reutilizamos o tamanho_time do banco.
  */
 router.post(
   '/iniciar-balanceamento',
   authMiddleware,
   roleMiddleware(['organizador']),
   async (req, res) => {
+    const client = await db.connect();
     try {
-      const { id_jogo } = req.body;
-      console.log('Recebido /iniciar-balanceamento:', req.body);
+      const { id_jogo, tamanho_time } = req.body; // tamanho_time pode vir ou não
 
       if (!id_jogo) {
         return res.status(400).json({
@@ -138,12 +187,12 @@ router.post(
       }
 
       // Verifica se o jogo existe
-      const jogoQuery = await db.query(
+      const jogoQuery = await client.query(
         `
-        SELECT id_jogo, id_usuario, status 
-        FROM jogos 
-        WHERE id_jogo = $1 
-        LIMIT 1
+          SELECT id_jogo, id_usuario, status, tamanho_time
+          FROM jogos 
+          WHERE id_jogo = $1 
+          LIMIT 1
         `,
         [id_jogo]
       );
@@ -154,41 +203,71 @@ router.post(
         });
       }
 
-      const { status, id_usuario: organizador_id } = jogoQuery.rows[0];
+      const {
+        status,
+        id_usuario: organizador_id,
+        tamanho_time: tamanhoTimeDB,
+      } = jogoQuery.rows[0];
 
-      // Se o jogo já estiver em finalizado, bloqueia o balanceamento
+      // Se o jogo já estiver finalizado, bloqueia
       if (status === 'finalizado') {
         return res.status(400).json({
           error: 'O jogo já foi finalizado.',
         });
       }
 
-      // Verifica se o usuário é o organizador do jogo
+      // Verifica se o usuário é o organizador
       if (organizador_id !== req.user.id) {
         return res.status(403).json({
           error: 'Apenas o organizador do jogo pode iniciar o balanceamento.',
         });
       }
 
-      // Busca os jogadores participantes do jogo
-      const jogadoresQuery = await db.query(
+      // Se o jogo estiver 'aberto', podemos atualizar o tamanho_time no BD
+      let tamanhoTimeFinal = tamanhoTimeDB;
+      if (status === 'aberto') {
+        if (!tamanho_time) {
+          return res.status(400).json({
+            error: 'tamanho_time é obrigatório quando o jogo ainda está em aberto.',
+          });
+        }
+        // Atualiza o tamanho_time na tabela jogos
+        await client.query(
+          `UPDATE jogos SET tamanho_time = $1 WHERE id_jogo = $2`,
+          [tamanho_time, id_jogo]
+        );
+        tamanhoTimeFinal = tamanho_time;
+      }
+
+      // Se o jogo está 'andamento' (ou acabou de mudar), pegamos do DB
+      // porque para "rebalancear" não queremos mudar o tamanho_time
+      if (status === 'andamento') {
+        if (!tamanhoTimeFinal) {
+          return res.status(400).json({
+            error: 'O jogo está em andamento, mas não há tamanho_time definido no BD.',
+          });
+        }
+      }
+
+      // Agora buscamos jogadores
+      const jogadoresQuery = await client.query(
         `
-        SELECT 
-          u.id_usuario, 
-          u.nome, 
-          a.passe, 
-          a.ataque, 
-          a.levantamento, 
-          u.altura 
-        FROM usuario u
-        INNER JOIN avaliacoes a 
-          ON a.usuario_id = u.id_usuario
-        WHERE a.organizador_id = $1 
-          AND a.usuario_id IN (
-            SELECT id_usuario 
-            FROM participacao_jogos 
-            WHERE id_jogo = $2
-          )
+          SELECT 
+            u.id_usuario, 
+            u.nome, 
+            a.passe, 
+            a.ataque, 
+            a.levantamento, 
+            u.altura 
+          FROM usuario u
+          INNER JOIN avaliacoes a 
+            ON a.usuario_id = u.id_usuario
+          WHERE a.organizador_id = $1 
+            AND a.usuario_id IN (
+              SELECT id_usuario 
+              FROM participacao_jogos 
+              WHERE id_jogo = $2
+            )
         `,
         [req.user.id, id_jogo]
       );
@@ -201,60 +280,60 @@ router.post(
 
       const jogadores = jogadoresQuery.rows;
 
-      // Balanceia os jogadores em dois times (exemplo simples)
-      const embaralhados = embaralharJogadores(jogadores);
-      const meio = Math.ceil(embaralhados.length / 2);
-      const time1 = embaralhados.slice(0, meio);
-      const time2 = embaralhados.slice(meio);
+      // Faz o balanceamento usando a função que respeita o tamanho_time
+      const { times, reservas } = balancearJogadores(jogadores, tamanhoTimeFinal);
 
-      const times = [
-        { nome: 'Time 1', jogadores: time1, totalScore: 0, totalAltura: 0 },
-        { nome: 'Time 2', jogadores: time2, totalScore: 0, totalAltura: 0 },
-      ];
-
-      // Calcula totalScore e totalAltura para cada time
-      times.forEach(time => {
-        time.totalScore = time.jogadores.reduce((sum, jogador) => sum + (jogador.passe + jogador.ataque + jogador.levantamento), 0);
-        time.totalAltura = time.jogadores.reduce((sum, jogador) => sum + jogador.altura, 0);
-      });
-
-      // Calcula o custo do balanceamento
+      // Calcula o custo do balanceamento (opcional)
       const custo = calcularCusto(times);
       console.log(`Custo do balanceamento: ${custo}`);
 
-      // Inicia uma transação para atualizar os times no banco
-      await db.query('BEGIN');
+      // Inicia transação
+      await client.query('BEGIN');
 
       // Remove times antigos
-      await db.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
+      await client.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
 
       // Insere os novos times
       for (const [index, time] of times.entries()) {
         const numeroTime = index + 1;
         for (const jogador of time.jogadores) {
-          await db.query(
+          await client.query(
             `
-            INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
-            VALUES ($1, $2, $3, $4, $5)
+              INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
+              VALUES ($1, $2, $3, $4, $5)
             `,
-            [id_jogo, numeroTime, jogador.id_usuario, time.totalScore, jogador.altura]
+            [
+              id_jogo,
+              numeroTime,
+              jogador.id_usuario,
+              time.totalScore,
+              jogador.altura
+            ]
           );
         }
       }
 
-      // Atualiza o status para 'andamento' (se ainda não for)
-      if (status !== 'andamento') {
-        await db.query(
+      // Insere reservas (se quiser armazenar em outro local ou com numero_time = 0, por exemplo)
+      // Exemplo: numero_time = 99 (ou 0) só para indicar reservas
+      for (const reserva of reservas) {
+        await client.query(
           `
-          UPDATE jogos 
-          SET status = 'andamento' 
-          WHERE id_jogo = $1
+            INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
+            VALUES ($1, $2, $3, 0, $4)
           `,
+          [id_jogo, 99, reserva.id_usuario, reserva.altura]
+        );
+      }
+
+      // Se o jogo ainda estiver 'aberto', mude pra 'andamento'
+      if (status === 'aberto') {
+        await client.query(
+          `UPDATE jogos SET status = 'andamento' WHERE id_jogo = $1`,
           [id_jogo]
         );
       }
 
-      await db.query('COMMIT');
+      await client.query('COMMIT');
 
       console.log('Times balanceados com sucesso:', JSON.stringify(times, null, 2));
 
@@ -262,14 +341,17 @@ router.post(
         message: 'Balanceamento realizado com sucesso!',
         status: 'andamento',
         times,
+        reservas,
       });
     } catch (error) {
-      await db.query('ROLLBACK');
+      await client.query('ROLLBACK');
       console.error('Erro ao iniciar balanceamento:', error);
       return res.status(500).json({
         error: 'Erro ao iniciar balanceamento.',
         details: error.message,
       });
+    } finally {
+      client.release();
     }
   }
 );
@@ -284,6 +366,7 @@ router.post(
   authMiddleware,
   roleMiddleware(['organizador']),
   async (req, res) => {
+    const client = await db.connect();
     try {
       const { id_jogo, id_usuario_organizador, times } = req.body;
       console.log('Recebido /finalizar-balanceamento:', req.body);
@@ -296,12 +379,12 @@ router.post(
       }
 
       // Verifica se o jogo existe e se o solicitante é o organizador
-      const jogoQuery = await db.query(
+      const jogoQuery = await client.query(
         `
-        SELECT id_usuario, status 
-        FROM jogos 
-        WHERE id_jogo = $1 
-        LIMIT 1
+          SELECT id_usuario, status 
+          FROM jogos 
+          WHERE id_jogo = $1 
+          LIMIT 1
         `,
         [id_jogo]
       );
@@ -325,21 +408,21 @@ router.post(
       }
 
       // Atualiza o status do jogo para "finalizado"
-      await db.query(
+      await client.query(
         `
-        UPDATE jogos 
-        SET status = 'finalizado' 
-        WHERE id_jogo = $1
+          UPDATE jogos 
+          SET status = 'finalizado' 
+          WHERE id_jogo = $1
         `,
         [id_jogo]
       );
 
       // Inicia uma transação para salvar os times
-      await db.query('BEGIN');
+      await client.query('BEGIN');
       console.log('Transação iniciada para finalizar balanceamento.');
 
       // Remover times existentes (caso existam)
-      await db.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
+      await client.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
       console.log(`Times antigos removidos para o jogo ID: ${id_jogo}`);
 
       // Inserir os novos times com numero_time corretamente atribuído
@@ -347,32 +430,31 @@ router.post(
         const numeroTime = index + 1; // Define o número do time (1, 2, 3, ...)
         console.log(`\nInserindo Time ${numeroTime}:`, JSON.stringify(time, null, 2));
 
-        // Verificar se 'jogadores' é um array válido
         if (!Array.isArray(time.jogadores) || time.jogadores.length === 0) {
           throw new Error(`"jogadores" deve ser um array não vazio no Time ${numeroTime}.`);
         }
 
         for (const jogador of time.jogadores) {
-          // Validar se 'id_usuario' está presente e é um número
           if (!jogador.id_usuario || typeof jogador.id_usuario !== 'number') {
             console.error(`Erro: Jogador inválido no Time ${numeroTime}:`, jogador);
-            throw new Error(`id_usuario inválido ou ausente para um dos jogadores no Time ${numeroTime}.`);
+            throw new Error(
+              `id_usuario inválido ou ausente para um dos jogadores no Time ${numeroTime}.`
+            );
           }
 
           console.log(`Inserindo Jogador ID: ${jogador.id_usuario}, Time: ${numeroTime}`);
 
-          // Inserir o jogador no time
-          await db.query(
+          await client.query(
             `
-            INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
-            VALUES ($1, $2, $3, $4, $5)
+              INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
+              VALUES ($1, $2, $3, $4, $5)
             `,
             [
               id_jogo,
-              numeroTime, // Use o número do time aqui
+              numeroTime,
               jogador.id_usuario,
               time.totalScore || 0,
-              jogador.altura || 0, // Garantindo altura válida
+              jogador.altura || 0,
             ]
           );
 
@@ -381,7 +463,7 @@ router.post(
       }
 
       // Commit da transação
-      await db.query('COMMIT');
+      await client.query('COMMIT');
       console.log('Transação comitada com sucesso.');
 
       return res.status(200).json({
@@ -391,13 +473,14 @@ router.post(
         times,
       });
     } catch (error) {
-      // Rollback em caso de erro
-      await db.query('ROLLBACK');
+      await client.query('ROLLBACK');
       console.error('Erro ao finalizar balanceamento:', error);
       return res.status(500).json({
         error: 'Erro ao finalizar balanceamento.',
         details: error.message,
       });
+    } finally {
+      client.release();
     }
   }
 );
@@ -411,6 +494,7 @@ router.post(
   authMiddleware,
   roleMiddleware(['organizador', 'jogador'], { skipIdJogo: false, optionalIdJogo: false }),
   async (req, res) => {
+    const client = await db.connect();
     try {
       const { id_jogo, times } = req.body;
 
@@ -420,7 +504,6 @@ router.post(
       console.log('Body:', JSON.stringify(req.body, null, 2));
       console.log('===============================');
 
-      // Validação dos parâmetros
       if (!id_jogo || !times || !Array.isArray(times)) {
         console.error('Erro: id_jogo e times são obrigatórios, e times deve ser uma lista.');
         return res.status(400).json({
@@ -431,16 +514,16 @@ router.post(
       console.log('Times recebidos para inserção:', JSON.stringify(times, null, 2));
 
       // Iniciar uma transação
-      await db.query('BEGIN');
+      await client.query('BEGIN');
       console.log('Transação iniciada.');
 
       // Verificar se o jogo existe
-      const jogoQuery = await db.query(
+      const jogoQuery = await client.query(
         `
-        SELECT id_jogo 
-        FROM jogos 
-        WHERE id_jogo = $1 
-        LIMIT 1
+          SELECT id_jogo 
+          FROM jogos 
+          WHERE id_jogo = $1 
+          LIMIT 1
         `,
         [id_jogo]
       );
@@ -450,36 +533,33 @@ router.post(
       console.log('Resultado da consulta de jogo:', JSON.stringify(jogoQuery.rows, null, 2));
 
       // Remover times existentes para o jogo
-      const deleteResult = await db.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
+      const deleteResult = await client.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
       console.log(`Resultado da consulta de DELETE: ${deleteResult.rowCount} linha(s) deletada(s).`);
 
       // Inserir novos times com numero_time corretamente atribuído
       for (const [index, time] of times.entries()) {
-        const numeroTime = index + 1; // Define o número do time (1, 2, 3, ...)
+        const numeroTime = index + 1;
         console.log(`\nInserindo Time ${numeroTime}:`, JSON.stringify(time, null, 2));
 
-        // Verificar se 'jogadores' é um array válido
         if (!Array.isArray(time.jogadores) || time.jogadores.length === 0) {
           throw new Error(`"jogadores" deve ser um array não vazio no Time ${numeroTime}.`);
         }
 
         for (const jogador of time.jogadores) {
-          // Validar se 'id_usuario' está presente e é um número
           if (!jogador.id_usuario || typeof jogador.id_usuario !== 'number') {
             throw new Error(`id_usuario inválido para um dos jogadores no Time ${numeroTime}.`);
           }
 
           console.log(`Inserindo Jogador ID: ${jogador.id_usuario}, Time: ${numeroTime}`);
 
-          // Inserir o jogador no time
-          await db.query(
+          await client.query(
             `
-            INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
-            VALUES ($1, $2, $3, $4, $5)
+              INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
+              VALUES ($1, $2, $3, $4, $5)
             `,
             [
               id_jogo,
-              numeroTime, // Use o número do time aqui
+              numeroTime,
               jogador.id_usuario,
               time.totalScore || 0,
               time.totalAltura || 0,
@@ -490,8 +570,7 @@ router.post(
         }
       }
 
-      // Commit da transação
-      await db.query('COMMIT');
+      await client.query('COMMIT');
       console.log('Transação comitada com sucesso.');
 
       return res.status(200).json({
@@ -499,20 +578,18 @@ router.post(
         times,
       });
     } catch (error) {
-      // Rollback em caso de erro
-      await db.query('ROLLBACK');
+      await client.query('ROLLBACK');
       console.error('Erro ao atualizar times:', error);
       return res.status(500).json({
         error: 'Erro ao atualizar os times.',
         details: error.message,
       });
+    } finally {
+      client.release();
     }
   }
 );
 
-/**
- * OBSERVAÇÃO:
- * A rota POST /equilibrar-times foi removida para evitar duplicações.
- */
+// OBSERVAÇÃO: Rota POST /equilibrar-times removida do seu exemplo original.
 
 module.exports = router;
