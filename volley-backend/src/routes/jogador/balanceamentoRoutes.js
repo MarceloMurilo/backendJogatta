@@ -120,7 +120,7 @@ const gerarSugerirRotacoes = (times, reservas, topN = 2) => {
 
 /**
  * POST /api/jogador/iniciar-balanceamento
- * Atualiza os times e mantém o jogo no estado 'andamento'.
+ * Inicia o balanceamento com base no número de times fornecido.
  */
 router.post(
   '/iniciar-balanceamento',
@@ -128,12 +128,19 @@ router.post(
   roleMiddleware(['organizador']),
   async (req, res) => {
     try {
-      const { id_jogo } = req.body;
+      const { id_jogo, numero_times } = req.body; // Adiciona numero_times aqui
       console.log('Recebido /iniciar-balanceamento:', req.body);
 
-      if (!id_jogo) {
+      if (!id_jogo || !numero_times) {
         return res.status(400).json({
-          error: 'O campo id_jogo é obrigatório.',
+          error: 'Os campos id_jogo e numero_times são obrigatórios.',
+        });
+      }
+
+      // Validação: numero_times deve ser um número inteiro positivo
+      if (!Number.isInteger(numero_times) || numero_times < 1) {
+        return res.status(400).json({
+          error: 'numero_times deve ser um número inteiro positivo.',
         });
       }
 
@@ -201,20 +208,33 @@ router.post(
 
       const jogadores = jogadoresQuery.rows;
 
-      // Balanceia os jogadores em dois times (exemplo simples)
-      const embaralhados = embaralharJogadores(jogadores);
-      const meio = Math.ceil(embaralhados.length / 2);
-      const time1 = embaralhados.slice(0, meio);
-      const time2 = embaralhados.slice(meio);
+      // Verifica se há jogadores suficientes para o número de times
+      if (jogadores.length < numero_times) {
+        return res.status(400).json({
+          error: `É necessário pelo menos ${numero_times} jogadores para formar ${numero_times} times.`,
+        });
+      }
 
-      const times = [
-        { nome: 'Time 1', jogadores: time1, totalScore: 0, totalAltura: 0 },
-        { nome: 'Time 2', jogadores: time2, totalScore: 0, totalAltura: 0 },
-      ];
+      // Balanceia os jogadores em `numero_times`
+      const embaralhados = embaralharJogadores(jogadores);
+      const times = Array.from({ length: numero_times }, (_, index) => ({
+        nome: `Time ${index + 1}`,
+        jogadores: [],
+        totalScore: 0,
+        totalAltura: 0,
+      }));
+
+      embaralhados.forEach((jogador, index) => {
+        const timeIndex = index % numero_times;
+        times[timeIndex].jogadores.push(jogador);
+      });
 
       // Calcula totalScore e totalAltura para cada time
-      times.forEach(time => {
-        time.totalScore = time.jogadores.reduce((sum, jogador) => sum + (jogador.passe + jogador.ataque + jogador.levantamento), 0);
+      times.forEach((time) => {
+        time.totalScore = time.jogadores.reduce(
+          (sum, jogador) => sum + (jogador.passe + jogador.ataque + jogador.levantamento),
+          0
+        );
         time.totalAltura = time.jogadores.reduce((sum, jogador) => sum + jogador.altura, 0);
       });
 
