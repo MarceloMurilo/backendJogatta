@@ -160,8 +160,16 @@ router.post(
 
       // Simula o balanceamento (substitua com sua lógica de balanceamento real)
       const jogadoresQuery = await db.query(
-        `SELECT id_usuario, nome, passe, ataque, levantamento, altura 
-         FROM jogadores WHERE id_jogo = $1`,
+        `SELECT 
+           pj.id_usuario, 
+           u.nome, 
+           pj.passe, 
+           pj.ataque, 
+           pj.levantamento, 
+           pj.altura 
+         FROM participacao_jogos pj
+         JOIN usuario u ON pj.id_usuario = u.id_usuario
+         WHERE pj.id_jogo = $1`,
         [id_jogo]
       );
 
