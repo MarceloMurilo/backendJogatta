@@ -20,9 +20,9 @@ const roleMiddleware = (allowedRoles, options = {}) => {
 
   return async (req, res, next) => {
     console.log('=== [roleMiddleware] Início da Verificação ===');
-    console.log('Usuário autenticado:', req.user);
-    console.log('Parâmetros da rota:', req.params);
-    console.log('Corpo da requisição:', req.body);
+    console.log(`[roleMiddleware] Usuário: ${req.user?.nome || 'Desconhecido'} (ID: ${req.user?.id || 'N/A'}), Papel: ${req.user?.papel_usuario || 'N/A'}`);
+    console.log(`[roleMiddleware] Parâmetros da rota: ${JSON.stringify(req.params)}`);
+    console.log(`[roleMiddleware] Corpo da requisição: ${JSON.stringify(req.body)}`);
 
     try {
       // Determinar o fluxo
@@ -48,45 +48,41 @@ const roleMiddleware = (allowedRoles, options = {}) => {
         id_jogo,
       });
 
-      // 1) Verificar se o usuário é o organizador do jogo (caso permitido)
-      if (req.body.id_usuario_organizador && req.body.id_usuario_organizador === req.user.id) {
-        console.log('[roleMiddleware] Usuário é o organizador do jogo. Permissão concedida.');
-        return next();
-      }
-
-      // 2) Se "skipIdJogo" for true, NÃO validamos nenhum id_jogo, só papel do usuário
+      // 1) Se "skipIdJogo" for true, NÃO validamos nenhum id_jogo, só papel do usuário
       if (skipIdJogo) {
         const userRole = req.user?.papel_usuario;
         if (!allowedRoles.includes(userRole)) {
-          console.log(`[roleMiddleware] Função ${userRole} não autorizada para este endpoint.`);
-          return res.status(403).json({
-            message: 'Acesso negado - Papel do usuário não autorizado.',
-          });
+          console.log(`[roleMiddleware] Papel '${userRole}' não autorizado com skipIdJogo.`);
+          return res.status(403).json({ message: 'Acesso negado - Papel do usuário não autorizado.' });
         }
-        console.log('[roleMiddleware] Permissão concedida (skipIdJogo ativado).');
+        console.log('[roleMiddleware] Permissão concedida (skipIdJogo ativo).');
         return next();
       }
 
-      // 3) Se não for "skipIdJogo" e "optionalIdJogo" = false E id_jogo não existe -> erro
-      if (!id_jogo && !optionalIdJogo) {
-        console.log('[roleMiddleware] Falha: ID do jogo é obrigatório.');
-        return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
-      }
-
-      // 4) Se "optionalIdJogo" = true E não vier id_jogo, apenas verifica o papel do usuário
+      // 2) Se "optionalIdJogo" = true E não veio id_jogo, apenas verifica o papel do usuário
       if (!id_jogo && optionalIdJogo) {
         const userRole = req.user?.papel_usuario;
         if (!allowedRoles.includes(userRole)) {
-          console.log(`[roleMiddleware] Função ${userRole} não autorizada para este endpoint.`);
-          return res.status(403).json({
-            message: 'Acesso negado - Papel do usuário não autorizado.',
-          });
+          console.log(`[roleMiddleware] Papel '${userRole}' não autorizado sem id_jogo.`);
+          return res.status(403).json({ message: 'Acesso negado - Papel do usuário não autorizado.' });
         }
         console.log('[roleMiddleware] Permissão concedida (id_jogo opcional não fornecido).');
         return next();
       }
 
-      // 5) Se chegou até aqui, verifica se o usuário tem papel no jogo
+      // 3) Se id_jogo é obrigatório e não foi fornecido, retorne erro
+      if (!id_jogo) {
+        console.log('[roleMiddleware] Falha: ID do jogo é obrigatório.');
+        return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
+      }
+
+      // 4) Verificar se o usuário é o organizador do jogo
+      if (req.body.id_usuario_organizador && req.body.id_usuario_organizador === req.user.id) {
+        console.log('[roleMiddleware] Usuário é o organizador do jogo. Permissão concedida.');
+        return next();
+      }
+
+      // 5) Verifica se o usuário tem papel no jogo
       const { id } = req.user;
       console.log(`[roleMiddleware] Verificando papel do usuário (ID: ${id}) no jogo (ID: ${id_jogo})`);
 
@@ -135,8 +131,15 @@ const roleMiddleware = (allowedRoles, options = {}) => {
       console.log(`[roleMiddleware] Permissão concedida para o(s) papel(is) ${userRoles.join(', ')} no jogo ${id_jogo}.`);
       next();
     } catch (error) {
-      console.log(`[roleMiddleware] Erro: ${error.message}`);
-      return res.status(400).json({ message: error.message });
+      console.error(`[roleMiddleware] Erro ao processar middleware: ${error.message}`);
+      
+      // Verificar se o erro é relacionado ao banco de dados
+      if (error.code && error.code.startsWith('DB')) { // Supondo que erros de banco de dados começam com 'DB'
+        return res.status(500).json({ message: 'Erro no banco de dados.' });
+      }
+
+      // Erro genérico
+      return res.status(500).json({ message: 'Erro interno no middleware.' });
     }
   };
 };
