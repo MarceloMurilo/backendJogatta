@@ -164,13 +164,11 @@ function balancearJogadores(jogadores, tamanhoTime) {
 
   console.log(`Jogadores distribuídos nos times. Total de reservas: ${reservas.length}`);
 
-  // Calcula totalScore e totalAltura de cada time
+  // Calcula totalScore e totalAltura de cada time usando calcularTotais
   times.forEach(time => {
-    time.totalScore = time.jogadores.reduce(
-      (sum, jogador) => sum + (jogador.passe + jogador.ataque + jogador.levantamento),
-      0
-    );
-    time.totalAltura = time.jogadores.reduce((sum, jogador) => sum + jogador.altura, 0);
+    const { totalScore, totalAltura } = calcularTotais(time);
+    time.totalScore = totalScore;
+    time.totalAltura = totalAltura;
   });
 
   console.log('Times após cálculo de pontuação e altura:', JSON.stringify(times, null, 2));
@@ -366,9 +364,12 @@ router.post(
       await client.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
       console.log('Times antigos removidos.');
 
-      // Insere times novos
+      // Insere times novos usando calcularTotais
       for (const [index, time] of times.entries()) {
         const numeroTime = index + 1;
+        const { totalScore, totalAltura } = calcularTotais(time);
+        console.log(`Inserindo Time ${numeroTime} com jogadores:`, JSON.stringify(time.jogadores, null, 2));
+
         for (const jogador of time.jogadores) {
           await client.query(`
             INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
@@ -377,8 +378,8 @@ router.post(
             id_jogo,
             numeroTime,
             jogador.id_usuario,
-            time.totalScore,
-            jogador.altura
+            totalScore,
+            totalAltura,
           ]);
           console.log(`Jogador ${jogador.id_usuario} inserido no Time ${numeroTime}.`);
         }
@@ -397,8 +398,8 @@ router.post(
       if (status === 'aberto') {
         await client.query(`
           UPDATE jogos
-          SET status = 'andamento'
-          WHERE id_jogo = $1
+             SET status = 'andamento'
+           WHERE id_jogo = $1
         `, [id_jogo]);
         console.log('Status do jogo atualizado para "andamento".');
       }
@@ -515,6 +516,8 @@ router.post(
           throw new Error(`"jogadores" deve ser um array não vazio no Time ${numeroTime}.`);
         }
 
+        const { totalScore, totalAltura } = calcularTotais(time);
+
         for (const jogador of time.jogadores) {
           if (!jogador.id_usuario || typeof jogador.id_usuario !== 'number') {
             console.error(`Erro: Jogador inválido no Time ${numeroTime}:`, jogador);
@@ -532,13 +535,14 @@ router.post(
             id_jogo,
             numeroTime,
             jogador.id_usuario,
-            time.totalScore || 0,
-            jogador.altura || 0,
+            totalScore || 0,
+            totalAltura || 0,
           ]);
           console.log(`Jogador ${jogador.id_usuario} inserido no Time ${numeroTime}.`);
         }
       }
 
+      // Commit da transação
       await client.query('COMMIT');
       console.log('Transação comitada com sucesso.');
       client.release();
@@ -615,7 +619,7 @@ router.post(
       const deleteResult = await client.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
       console.log(`Resultado da consulta de DELETE: ${deleteResult.rowCount} linha(s) deletada(s).`);
 
-      // Inserir novos times com numero_time corretamente atribuído
+      // Inserir novos times com numero_time corretamente atribuído usando calcularTotais
       console.log('Inserindo novos times no banco de dados.');
       for (const [index, time] of times.entries()) {
         const numeroTime = index + 1;
@@ -624,6 +628,8 @@ router.post(
         if (!Array.isArray(time.jogadores) || time.jogadores.length === 0) {
           throw new Error(`"jogadores" deve ser um array não vazio no Time ${numeroTime}.`);
         }
+
+        const { totalScore, totalAltura } = calcularTotais(time);
 
         for (const jogador of time.jogadores) {
           if (!jogador.id_usuario || typeof jogador.id_usuario !== 'number') {
@@ -640,8 +646,8 @@ router.post(
             id_jogo,
             numeroTime,
             jogador.id_usuario,
-            time.totalScore || 0,
-            time.totalAltura || 0,
+            totalScore || 0,
+            totalAltura || 0,
           ]);
           console.log(`Jogador ${jogador.id_usuario} inserido no Time ${numeroTime}.`);
         }
