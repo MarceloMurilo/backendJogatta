@@ -28,7 +28,7 @@ const groupRoutes = require('./routes/groupRoutes');
 const amigosRoutes = require('./routes/amigosRoutes');
 const avaliacoesRoutes = require('./routes/jogador/AvaliacoesRoutes');
 const lobbyRoutes = require('./routes/invites/lobbyRoutes');
-
+const chatRoutes = require('./routes/chatRoutes');
 // === Adicione a importação das rotas de balanceamento ===
 const balanceamentoRoutes = require('./routes/jogador/balanceamentoRoutes');
 
@@ -93,6 +93,10 @@ app.use('/api/balanceamento', balanceamentoRoutes);
 app.get('/api/test', (req, res) => {
   res.json({ message: 'Rota de teste funcionando!' });
 });
+
+// chatRoutes
+app.use('/api/chat', authMiddleware, chatRoutes);
+
 
 // Cron job para encerrar jogos automaticamente
 cron.schedule('*/5 * * * *', async () => {
