@@ -14,7 +14,7 @@ const roleMiddleware = require('./middlewares/roleMiddleware'); // se precisar e
 // Rotas
 const jogadorRoutes = require('./routes/jogador/jogadorRoutes');
 const reservationRoutes = require('./routes/jogador/reservationRoutes');
-const gameRoutes = require('./routes/jogador/gameRoutes');
+const gameRoutes = require('./routes/jogador/jogosRoutes');
 const jogosRoutes = require('./routes/jogador/jogosRoutes');
 const courtManagementRoutes = require('./routes/owner/courtManagementRoutes');
 const ownerReservationsRoutes = require('./routes/owner/ownerReservationsRoutes');
