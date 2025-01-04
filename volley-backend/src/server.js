@@ -32,6 +32,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
+// Middleware para logar todas as requisições
 app.use((req, res, next) => {
   console.log(`\n=== Nova requisição recebida ===`);
   console.log(`Método: ${req.method}`);
@@ -41,12 +42,11 @@ app.use((req, res, next) => {
   next();
 });
 
-// Rotas
+// Rotas organizadas sem sobreposição de prefixos
 app.use('/api/chat', authMiddleware, chatRoutes);
-app.use('/api/jogador', authMiddleware, roleMiddleware(['jogador', 'organizador']), jogadorRoutes);
+app.use('/api/jogador', authMiddleware, jogadorRoutes);
 app.use('/api/jogador/reservas', authMiddleware, reservationRoutes);
-app.use('/api/jogador', authMiddleware, balanceamentoRoutes);
-app.use('/api/usuario', userRoutes);
+app.use('/api/balanceamento', authMiddleware, roleMiddleware(['jogador']), balanceamentoRoutes);
 app.use('/api/jogos', authMiddleware, jogosRoutes);
 app.use('/api/owner/quadras', authMiddleware, roleMiddleware(['owner']), courtManagementRoutes);
 app.use('/api/owner/reservas', authMiddleware, ownerReservationsRoutes);
@@ -61,11 +61,12 @@ app.use('/api/groups', groupRoutes);
 app.use('/api/lobby', authMiddleware, lobbyRoutes);
 app.use('/api/cep', authMiddleware, cepRoutes);
 
-// Incluindo endpoints de balanceamento diretamente de balanceamentoRoutes
-app.use('/api/times', authMiddleware, balanceamentoRoutes);
-
-app.get('/api/test', (req, res) => {
-  res.json({ message: 'Rota de teste funcionando!' });
+// Exibindo rotas registradas para verificação
+app._router.stack.forEach(function (r) {
+  if (r.route && r.route.path) {
+    const methods = Object.keys(r.route.methods).map(method => method.toUpperCase()).join(', ');
+    console.log(`Rota registrada: ${r.route.path} [${methods}]`);
+  }
 });
 
 // Cron job para encerrar jogos automaticamente
@@ -89,11 +90,9 @@ cron.schedule('*/5 * * * *', async () => {
   }
 });
 
-// Exibindo rotas registradas
-app._router.stack.forEach(function (r) {
-  if (r.route && r.route.path) {
-    console.log(`Rota registrada: ${r.route.path} [${Object.keys(r.route.methods)}]`);
-  }
+// Rota de teste
+app.get('/api/test', (req, res) => {
+  res.json({ message: 'Rota de teste funcionando!' });
 });
 
 const PORT = process.env.PORT || 3000;
