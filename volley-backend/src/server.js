@@ -46,7 +46,7 @@ app.use((req, res, next) => {
 app.use('/api/chat', authMiddleware, chatRoutes);
 app.use('/api/jogador', authMiddleware, jogadorRoutes);
 app.use('/api/jogador/reservas', authMiddleware, reservationRoutes);
-app.use('/api/balanceamento', authMiddleware, roleMiddleware(['jogador']), balanceamentoRoutes);
+app.use('/api/balanceamento', authMiddleware,  balanceamentoRoutes);
 app.use('/api/jogos', authMiddleware, jogosRoutes);
 app.use('/api/owner/quadras', authMiddleware, roleMiddleware(['owner']), courtManagementRoutes);
 app.use('/api/owner/reservas', authMiddleware, ownerReservationsRoutes);
