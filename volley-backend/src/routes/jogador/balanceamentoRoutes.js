@@ -160,7 +160,7 @@ function balancearJogadores(jogadores, tamanhoTime) {
   const embaralhados = embaralharJogadores([...jogadoresUnicos]);
 
   // Calcula quantos times teremos
-  const numTimes = Math.floor(embaralhados.length / tamanhoTime);
+  const numTimes = Math.max(2, Math.floor(embaralhados.length / tamanhoTime));
   console.log(`Número de times a serem criados: ${numTimes}`);
 
   const times = [];
