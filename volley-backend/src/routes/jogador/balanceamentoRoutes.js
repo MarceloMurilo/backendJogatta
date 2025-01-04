@@ -4,6 +4,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../../db');
 const authMiddleware = require('../../middlewares/authMiddleware');
+const roleMiddleware = require('../../middlewares/roleMiddleware');
 
 /**
  * Funções Utilitárias
@@ -180,20 +181,21 @@ function balancearJogadores(jogadores, tamanhoTime) {
  */
 
 /**
- * POST /api/balanceamento/iniciar-balanceamento
+ * POST /api/jogador/iniciar-balanceamento
  * Atualiza os times e mantém o jogo no estado 'andamento'.
  * Se for a primeira vez (status 'aberto'), recebemos e salvamos tamanho_time no jogo.
  * Se já estiver em andamento, apenas reutilizamos o tamanho_time do banco.
  */
 router.post(
   '/iniciar-balanceamento',
-  authMiddleware, // Apenas autenticação
+  authMiddleware,
+  roleMiddleware(['organizador']),
   async (req, res) => {
     const client = await db.pool.connect();
     try {
       console.log('=== Nova requisição recebida ===');
       console.log('Método: POST');
-      console.log('URL: /api/balanceamento/iniciar-balanceamento');
+      console.log('URL: /api/jogador/iniciar-balanceamento');
       console.log('Body:', JSON.stringify(req.body, null, 2));
       console.log('===============================');
 
@@ -208,13 +210,12 @@ router.post(
 
       // Verifica se o jogo existe
       console.log(`Verificando existência do jogo com id_jogo: ${id_jogo}`);
-      const jogoResp = await client.query(
-        `SELECT id_jogo, id_usuario, status, tamanho_time
-         FROM jogos
-         WHERE id_jogo = $1
-         LIMIT 1`,
-        [id_jogo]
-      );
+      const jogoResp = await client.query(`
+        SELECT id_jogo, id_usuario, status, tamanho_time
+        FROM jogos
+        WHERE id_jogo = $1
+        LIMIT 1
+      `, [id_jogo]);
 
       if (jogoResp.rowCount === 0) {
         console.error(`Erro: Jogo com id_jogo ${id_jogo} não encontrado.`);
@@ -258,12 +259,11 @@ router.post(
         // Se aberto e tamanho_time vem do front, atualiza
         if (tamanho_time) {
           console.log(`Atualizando tamanho_time para ${tamanho_time}`);
-          await client.query(
-            `UPDATE jogos
-             SET tamanho_time = $1
-             WHERE id_jogo = $2`,
-            [tamanho_time, id_jogo]
-          );
+          await client.query(`
+            UPDATE jogos
+            SET tamanho_time = $1
+            WHERE id_jogo = $2
+          `, [tamanho_time, id_jogo]);
           tamanhoTimeFinal = tamanho_time;
         }
       } else if (status === 'andamento') {
@@ -278,24 +278,23 @@ router.post(
 
       // Buscar jogadores
       console.log('Buscando jogadores para balanceamento.');
-      const jogadoresResp = await client.query(
-        `SELECT 
-           u.id_usuario,
-           u.nome,
-           a.passe,
-           a.ataque,
-           a.levantamento,
-           u.altura
-         FROM usuario u
-         INNER JOIN avaliacoes a ON a.usuario_id = u.id_usuario
-         WHERE a.organizador_id = $1
-           AND u.id_usuario IN (
-             SELECT id_usuario
-             FROM participacao_jogos
-             WHERE id_jogo = $2
-           )`,
-        [req.user.id, id_jogo]
-      );
+      const jogadoresResp = await client.query(`
+        SELECT 
+          u.id_usuario,
+          u.nome,
+          a.passe,
+          a.ataque,
+          a.levantamento,
+          u.altura
+        FROM usuario u
+        INNER JOIN avaliacoes a ON a.usuario_id = u.id_usuario
+        WHERE a.organizador_id = $1
+          AND u.id_usuario IN (
+            SELECT id_usuario
+            FROM participacao_jogos
+            WHERE id_jogo = $2
+          )
+      `, [req.user.id, id_jogo]);
 
       if (jogadoresResp.rowCount === 0) {
         console.error('Erro: Nenhum jogador encontrado para balanceamento.');
@@ -333,17 +332,16 @@ router.post(
       for (const [index, time] of times.entries()) {
         const numeroTime = index + 1;
         for (const jogador of time.jogadores) {
-          await client.query(
-            `INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [
-              id_jogo,
-              numeroTime,
-              jogador.id_usuario,
-              time.totalScore,
-              jogador.altura
-            ]
-          );
+          await client.query(`
+            INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
+            VALUES ($1, $2, $3, $4, $5)
+          `, [
+            id_jogo,
+            numeroTime,
+            jogador.id_usuario,
+            time.totalScore,
+            jogador.altura
+          ]);
           console.log(`Jogador ${jogador.id_usuario} inserido no Time ${numeroTime}.`);
         }
       }
@@ -351,23 +349,21 @@ router.post(
       // Insere reservas
       console.log('Inserindo reservas no banco de dados.');
       for (const reserva of reservas) {
-        await client.query(
-          `INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
-           VALUES ($1, 99, $2, 0, $3)`,
-          [id_jogo, reserva.id_usuario, reserva.altura]
-        );
+        await client.query(`
+          INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
+          VALUES ($1, 99, $2, 0, $3)
+        `, [id_jogo, reserva.id_usuario, reserva.altura]);
         console.log(`Reserva ${reserva.id_usuario} inserida com numero_time 99.`);
       }
 
       // Muda status se ainda aberto
       if (status === 'aberto') {
         console.log('Atualizando status do jogo para "andamento".');
-        await client.query(
-          `UPDATE jogos
-           SET status = 'andamento'
-           WHERE id_jogo = $1`,
-          [id_jogo]
-        );
+        await client.query(`
+          UPDATE jogos
+          SET status = 'andamento'
+          WHERE id_jogo = $1
+        `, [id_jogo]);
       }
 
       // Commit da transação
@@ -395,19 +391,20 @@ router.post(
 );
 
 /**
- * POST /api/balanceamento/finalizar-balanceamento
+ * POST /api/jogador/finalizar-balanceamento
  * Marca o status do jogo como 'finalizado'
  * Retorna times gerados (ou armazenados) para exibir ao usuário
  */
 router.post(
   '/finalizar-balanceamento',
-  authMiddleware, // Apenas autenticação
+  authMiddleware,
+  roleMiddleware(['organizador']),
   async (req, res) => {
-    const client = await db.pool.connect();
+    const client = await db.getClient();
     try {
       console.log('=== Nova requisição recebida ===');
       console.log('Método: POST');
-      console.log('URL: /api/balanceamento/finalizar-balanceamento');
+      console.log('URL: /api/jogador/finalizar-balanceamento');
       console.log('Body:', JSON.stringify(req.body, null, 2));
       console.log('===============================');
 
@@ -424,13 +421,12 @@ router.post(
 
       // Verifica se o jogo existe e se o solicitante é o organizador
       console.log(`Verificando existência do jogo com id_jogo: ${id_jogo}`);
-      const jogoQuery = await client.query(
-        `SELECT id_usuario, status 
-         FROM jogos 
-         WHERE id_jogo = $1 
-         LIMIT 1`,
-        [id_jogo]
-      );
+      const jogoQuery = await client.query(`
+        SELECT id_usuario, status 
+        FROM jogos 
+        WHERE id_jogo = $1 
+        LIMIT 1
+      `, [id_jogo]);
 
       if (jogoQuery.rowCount === 0) {
         console.error('Erro: Jogo não encontrado.');
@@ -455,12 +451,11 @@ router.post(
 
       // Atualiza o status do jogo para "finalizado"
       console.log('Atualizando status do jogo para "finalizado".');
-      await client.query(
-        `UPDATE jogos 
-         SET status = 'finalizado' 
-         WHERE id_jogo = $1`,
-        [id_jogo]
-      );
+      await client.query(`
+        UPDATE jogos 
+        SET status = 'finalizado' 
+        WHERE id_jogo = $1
+      `, [id_jogo]);
 
       // Inicia uma transação para salvar os times
       await client.query('BEGIN');
@@ -483,22 +478,23 @@ router.post(
         for (const jogador of time.jogadores) {
           if (!jogador.id_usuario || typeof jogador.id_usuario !== 'number') {
             console.error(`Erro: Jogador inválido no Time ${numeroTime}:`, jogador);
-            throw new Error(`id_usuario inválido ou ausente para um dos jogadores no Time ${numeroTime}.`);
+            throw new Error(
+              `id_usuario inválido ou ausente para um dos jogadores no Time ${numeroTime}.`
+            );
           }
 
           console.log(`Inserindo Jogador ID: ${jogador.id_usuario}, Time: ${numeroTime}`);
 
-          await client.query(
-            `INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [
-              id_jogo,
-              numeroTime,
-              jogador.id_usuario,
-              time.totalScore || 0,
-              jogador.altura || 0,
-            ]
-          );
+          await client.query(`
+            INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
+            VALUES ($1, $2, $3, $4, $5)
+          `, [
+            id_jogo,
+            numeroTime,
+            jogador.id_usuario,
+            time.totalScore || 0,
+            jogador.altura || 0,
+          ]);
 
           console.log(`Jogador ${jogador.id_usuario} inserido no Time ${numeroTime}.`);
         }
@@ -529,18 +525,19 @@ router.post(
 );
 
 /**
- * POST /api/balanceamento/atualizar-times
+ * POST /api/jogador/atualizar-times
  * Salva/atualiza times no banco, SEM mudar status pra finalizado.
  */
 router.post(
   '/atualizar-times',
-  authMiddleware, // Apenas autenticação
+  authMiddleware,
+  roleMiddleware(['organizador', 'jogador'], { skipIdJogo: false, optionalIdJogo: false }),
   async (req, res) => {
-    const client = await db.pool.connect();
+    const client = await db.getClient();
     try {
       console.log('=== Nova requisição recebida ===');
       console.log('Método: POST');
-      console.log('URL: /api/balanceamento/atualizar-times');
+      console.log('URL: /api/jogador/atualizar-times');
       console.log('Body:', JSON.stringify(req.body, null, 2));
       console.log('===============================');
 
@@ -561,13 +558,12 @@ router.post(
 
       // Verificar se o jogo existe
       console.log(`Verificando existência do jogo com id_jogo: ${id_jogo}`);
-      const jogoQuery = await client.query(
-        `SELECT id_jogo 
-         FROM jogos 
-         WHERE id_jogo = $1 
-         LIMIT 1`,
-        [id_jogo]
-      );
+      const jogoQuery = await client.query(`
+        SELECT id_jogo 
+        FROM jogos 
+        WHERE id_jogo = $1 
+        LIMIT 1
+      `, [id_jogo]);
       if (jogoQuery.rowCount === 0) {
         throw new Error('Jogo não encontrado.');
       }
@@ -596,17 +592,16 @@ router.post(
 
           console.log(`Inserindo Jogador ID: ${jogador.id_usuario}, Time: ${numeroTime}`);
 
-          await client.query(
-            `INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [
-              id_jogo,
-              numeroTime,
-              jogador.id_usuario,
-              time.totalScore || 0,
-              time.totalAltura || 0,
-            ]
-          );
+          await client.query(`
+            INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
+            VALUES ($1, $2, $3, $4, $5)
+          `, [
+            id_jogo,
+            numeroTime,
+            jogador.id_usuario,
+            time.totalScore || 0,
+            time.totalAltura || 0,
+          ]);
 
           console.log(`Jogador ${jogador.id_usuario} inserido no Time ${numeroTime}.`);
         }
