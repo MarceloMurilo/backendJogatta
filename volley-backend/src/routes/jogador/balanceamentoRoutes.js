@@ -13,6 +13,23 @@ const roleMiddleware = require('../../middlewares/roleMiddleware');
  */
 
 /**
+ * Calcula o total de pontuação e altura de um time.
+ * @param {Object} time - Objeto do time com jogadores.
+ * @returns {Object} - Objeto contendo totalScore e totalAltura.
+ */
+const calcularTotais = (time) => {
+  const totalScore = time.jogadores.reduce(
+    (sum, jogador) => sum + (jogador.passe + jogador.ataque + jogador.levantamento),
+    0
+  );
+  const totalAltura = time.jogadores.reduce(
+    (sum, jogador) => sum + (parseFloat(jogador.altura) || 0), // Converte altura para número
+    0
+  );
+  return { totalScore, totalAltura };
+};
+
+/**
  * Embaralha uma lista de jogadores usando o algoritmo Fisher-Yates
  * @param {Array} jogadores - Lista de jogadores
  * @returns {Array} - Lista embaralhada
@@ -234,7 +251,10 @@ router.post(
           LEFT JOIN avaliacoes a ON a.usuario_id = u.id_usuario
           LIMIT 12
         `);
-        const jogadores = jogadoresResp.rows;
+        const jogadores = jogadoresResp.rows.map(jogador => ({
+          ...jogador,
+          altura: parseFloat(jogador.altura) || 0, // Converte altura para número
+        }));
 
         // Balancear jogadores
         const { times, reservas } = balancearJogadores(jogadores, tamanho_time || 4);
@@ -348,7 +368,7 @@ router.post(
 
       const jogadores = jogadoresResp.rows.map(jogador => ({
         ...jogador,
-        altura: parseFloat(jogador.altura) || 0,
+        altura: parseFloat(jogador.altura) || 0, // Converte altura para número
       }));
       console.log('Jogadores para balanceamento (online):', jogadores);
 
@@ -374,6 +394,11 @@ router.post(
         console.log(`Inserindo Time ${numeroTime} com jogadores:`, JSON.stringify(time.jogadores, null, 2));
 
         for (const jogador of time.jogadores) {
+          // Validação de id_usuario
+          if (!jogador.id_usuario || typeof jogador.id_usuario !== 'number') {
+            throw new Error(`id_usuario inválido ou ausente para o jogador no Time ${numeroTime}.`);
+          }
+
           await client.query(`
             INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
             VALUES ($1, $2, $3, $4, $5)
@@ -381,8 +406,8 @@ router.post(
             id_jogo,
             numeroTime,
             jogador.id_usuario,
-            totalScore,
-            totalAltura,
+            totalScore || 0,
+            totalAltura || 0,
           ]);
           console.log(`Jogador ${jogador.id_usuario} inserido no Time ${numeroTime}.`);
         }
@@ -529,8 +554,6 @@ router.post(
             );
           }
 
-          console.log(`Inserindo Jogador ID: ${jogador.id_usuario}, Time: ${numeroTime}`);
-
           await client.query(`
             INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
             VALUES ($1, $2, $3, $4, $5)
@@ -638,8 +661,6 @@ router.post(
             console.error(`Erro: id_usuario inválido para um dos jogadores no Time ${numeroTime}.`, jogador);
             throw new Error(`id_usuario inválido para um dos jogadores no Time ${numeroTime}.`);
           }
-
-          console.log(`Inserindo Jogador ID: ${jogador.id_usuario}, Time: ${numeroTime}`);
 
           await client.query(`
             INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
