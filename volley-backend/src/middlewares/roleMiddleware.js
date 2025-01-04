@@ -19,7 +19,14 @@ const roleMiddleware = (allowedRoles, options = {}) => {
   };
 
   return async (req, res, next) => {
-    console.log('=== [roleMiddleware] Início da Verificação ===');
+    // Adiciona um identificador único para cada requisição para rastrear execuções
+    if (!req._roleMiddlewareExecuted) {
+      req._roleMiddlewareExecuted = 1;
+    } else {
+      req._roleMiddlewareExecuted += 1;
+    }
+
+    console.log(`=== [roleMiddleware] Execução número ${req._roleMiddlewareExecuted} para usuário ID: ${req.user?.id || 'N/A'} ===`);
     console.log(`[roleMiddleware] Usuário: ${req.user?.nome || 'Desconhecido'} (ID: ${req.user?.id || 'N/A'}), Papel: ${req.user?.papel_usuario || 'N/A'}`);
     console.log(`[roleMiddleware] Parâmetros da rota: ${JSON.stringify(req.params)}`);
     console.log(`[roleMiddleware] Corpo da requisição: ${JSON.stringify(req.body)}`);
@@ -54,12 +61,12 @@ const roleMiddleware = (allowedRoles, options = {}) => {
         return next();
       }
 
-      // 2) Se "skipIdJogo" for true, NÃO validamos nenhum id_jogo, só papel do usuário
+      // 2) Se "skipIdJogo" for true, tratar especificamente o fluxo 'offline' para 'jogador'
       if (skipIdJogo) {
         const userRole = req.user?.papel_usuario;
 
-        // Permitir jogadores apenas no fluxo offline
-        if (fluxo === 'offline' && allowedRoles.includes('jogador')) {
+        // Permitir jogadores diretamente no fluxo offline
+        if (fluxo === 'offline' && userRole === 'jogador') {
           console.log('[roleMiddleware] Permissão concedida para jogador no fluxo offline.');
           return next();
         }
