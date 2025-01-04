@@ -27,6 +27,7 @@ const cepRoutes = require('./routes/cepRoutes/cepRoutes');
 const groupRoutes = require('./routes/groupRoutes');
 const amigosRoutes = require('./routes/amigosRoutes');
 const avaliacoesRoutes = require('./routes/jogador/AvaliacoesRoutes');
+const lobbyRoutes = require('./routes/invites/lobbyRoutes');
 
 // === Adicione a importação das rotas de balanceamento ===
 const balanceamentoRoutes = require('./routes/jogador/balanceamentoRoutes');
