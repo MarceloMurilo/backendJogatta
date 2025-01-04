@@ -56,31 +56,18 @@ const roleMiddleware = (allowedRoles, options = {}) => {
       }
 
       // 2) Se "skipIdJogo" for true, NÃO validamos nenhum id_jogo, só papel do usuário
-        if (skipIdJogo) {
-          const userRole = req.user?.papel_usuario;
+      if (skipIdJogo) {
+        const userRole = req.user?.papel_usuario;
 
-          // Fluxo offline: Verifica diretamente o papel do usuário
-          if (fluxo === 'offline' && allowedRoles.includes(userRole)) {
-            console.log(`[roleMiddleware] Permissão concedida para '${userRole}' no fluxo offline.`);
-            return next();
-          }
-
-          // Caso o papel do usuário não seja permitido
-          if (!allowedRoles.includes(userRole)) {
-            console.log(`[roleMiddleware] Papel '${userRole}' não autorizado no fluxo '${fluxo}' (skipIdJogo).`);
-            return res.status(403).json({
-              message: 'Acesso negado - Papel do usuário não autorizado.',
-            });
-          }
-
-          console.log('[roleMiddleware] Permissão concedida (skipIdJogo ativo).');
+        // Fluxo offline: Verifica diretamente o papel do usuário
+        if (fluxo === 'offline' && allowedRoles.includes(userRole)) {
+          console.log(`[roleMiddleware] Permissão concedida para '${userRole}' no fluxo offline.`);
           return next();
         }
 
-        // Se chegou aqui, significa que skipIdJogo=true, porém fluxo não é offline
-        // (ou seja, essa rota pode ter sido configurada manualmente com skipIdJogo = true)
+        // Caso o papel do usuário não seja permitido
         if (!allowedRoles.includes(userRole)) {
-          console.log(`[roleMiddleware] Papel '${userRole}' não autorizado com skipIdJogo.`);
+          console.log(`[roleMiddleware] Papel '${userRole}' não autorizado no fluxo '${fluxo}' (skipIdJogo).`);
           return res.status(403).json({
             message: 'Acesso negado - Papel do usuário não autorizado.',
           });
