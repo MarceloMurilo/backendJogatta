@@ -29,7 +29,7 @@ const amigosRoutes = require('./routes/amigosRoutes');
 const avaliacoesRoutes = require('./routes/jogador/AvaliacoesRoutes');
 
 // === Adicione a importação das rotas de balanceamento ===
-const balanceamentoRoutes = require('./routes/balanceamentoRoutes');
+const balanceamentoRoutes = require('./routes/jogador/balanceamentoRoutes');
 
 // Configurações globais
 app.use(express.json());
