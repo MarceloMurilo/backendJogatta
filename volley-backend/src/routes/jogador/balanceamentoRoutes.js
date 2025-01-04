@@ -194,7 +194,9 @@ function balancearRole(req, res, next) {
 }
 
 /**
- * Rotas de Balanceamento
+ * ======================================
+ * ROTAS DE BALANCEAMENTO
+ * ======================================
  */
 
 /**
@@ -217,9 +219,7 @@ router.post(
 
       const { id_jogo, tamanho_time } = req.body;
 
-      // =========================================
       // 1) FLUXO OFFLINE (id_jogo == null)
-      // =========================================
       if (!id_jogo) {
         console.log('Fluxo OFFLINE detectado: criando times com base no tamanho_time e jogadores fixos...');
 
@@ -241,6 +241,9 @@ router.post(
         // Balancear jogadores
         const { times, reservas } = balancearJogadores(jogadores, tamanho_time || 4);
 
+        client.release();
+        console.log('Cliente de transação liberado (OFFLINE).');
+
         // Retorna sem salvar no BD (fluxo offline)
         return res.status(200).json({
           message: 'Balanceamento (OFFLINE) realizado com sucesso!',
@@ -249,9 +252,7 @@ router.post(
         });
       }
 
-      // =========================================
       // 2) FLUXO ONLINE (id_jogo existe)
-      // =========================================
       console.log(`Verificando existência do jogo com id_jogo: ${id_jogo}`);
       const jogoResp = await client.query(`
         SELECT id_jogo, id_usuario, status, tamanho_time
@@ -261,6 +262,7 @@ router.post(
       `, [id_jogo]);
 
       if (jogoResp.rowCount === 0) {
+        client.release();
         console.error(`Erro: Jogo com id_jogo ${id_jogo} não encontrado.`);
         return res.status(404).json({
           error: 'Jogo não encontrado.',
@@ -270,16 +272,17 @@ router.post(
       const { status, id_usuario, tamanho_time: tamanhoTimeDB } = jogoResp.rows[0];
       console.log(`Status do jogo: ${status}, Organizador ID: ${id_usuario}, Tamanho Time no DB: ${tamanhoTimeDB}`);
 
-      // Se o jogo já estiver finalizado, bloqueia
       if (status === 'finalizado') {
+        client.release();
         console.error('Erro: O jogo já foi finalizado.');
         return res.status(400).json({
           error: 'O jogo já foi finalizado.',
         });
       }
 
-      // Verifica se é o organizador - redundante se roleMiddleware já garante isso
+      // Se roleMiddleware já garante "organizador", esse check é redundante, mas se quiser manter:
       if (id_usuario !== req.user.id) {
+        client.release();
         console.error('Erro: Apenas o organizador do jogo pode iniciar o balanceamento.');
         return res.status(403).json({
           error: 'Apenas o organizador do jogo pode iniciar o balanceamento.',
@@ -289,8 +292,8 @@ router.post(
       let tamanhoTimeFinal = tamanhoTimeDB;
 
       if (status === 'aberto') {
-        // Se aberto e não tem tamanho_time, verifica se foi passado no corpo da requisição
         if (!tamanhoTimeDB && !tamanho_time) {
+          client.release();
           console.warn('Aviso: tamanho_time ainda não foi definido. Configuração do tamanho será adiada.');
           return res.status(200).json({
             message: 'O tamanho_time ainda não foi definido. Configure-o na tela do jogo.',
@@ -298,7 +301,6 @@ router.post(
           });
         }
 
-        // Se aberto e tamanho_time vem do front, atualiza
         if (tamanho_time) {
           console.log(`Atualizando tamanho_time para ${tamanho_time}`);
           await client.query(`
@@ -309,8 +311,8 @@ router.post(
           tamanhoTimeFinal = tamanho_time;
         }
       } else if (status === 'andamento') {
-        // Se está em andamento, verifica se tamanho_time está definido
         if (!tamanhoTimeFinal) {
+          client.release();
           console.error('Erro: O jogo está em andamento, mas não há tamanho_time definido no BD.');
           return res.status(400).json({
             error: 'O jogo está em andamento, mas não há tamanho_time definido no BD.',
@@ -319,7 +321,7 @@ router.post(
       }
 
       // Buscar jogadores do DB
-      console.log('Buscando jogadores para balanceamento.');
+      console.log('Buscando jogadores para balanceamento (online).');
       const jogadoresResp = await client.query(`
         SELECT 
           u.id_usuario,
@@ -339,6 +341,7 @@ router.post(
       `, [req.user.id, id_jogo]);
 
       if (jogadoresResp.rowCount === 0) {
+        client.release();
         console.error('Erro: Nenhum jogador encontrado para balanceamento.');
         return res.status(400).json({
           error: 'Nenhum jogador encontrado para balanceamento.',
@@ -359,9 +362,11 @@ router.post(
       await client.query('BEGIN');
       console.log('Transação iniciada.');
 
+      // Apaga times antigos
       await client.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
       console.log('Times antigos removidos.');
 
+      // Insere times novos
       for (const [index, time] of times.entries()) {
         const numeroTime = index + 1;
         for (const jogador of time.jogadores) {
@@ -379,7 +384,7 @@ router.post(
         }
       }
 
-      // Reservas
+      // Insere reservas (numero_time = 99)
       for (const reserva of reservas) {
         await client.query(`
           INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
@@ -388,17 +393,20 @@ router.post(
         console.log(`Reserva ${reserva.id_usuario} inserida com numero_time 99.`);
       }
 
+      // Se jogo estava 'aberto', muda pra 'andamento'
       if (status === 'aberto') {
         await client.query(`
           UPDATE jogos
-             SET status = 'andamento'
-           WHERE id_jogo = $1
+          SET status = 'andamento'
+          WHERE id_jogo = $1
         `, [id_jogo]);
         console.log('Status do jogo atualizado para "andamento".');
       }
 
       await client.query('COMMIT');
       console.log('Transação comitada com sucesso.');
+      client.release();
+      console.log('Cliente de transação liberado (ONLINE).');
 
       return res.status(200).json({
         message: 'Balanceamento (ONLINE) realizado com sucesso!',
@@ -408,14 +416,12 @@ router.post(
       });
     } catch (err) {
       await client.query('ROLLBACK');
+      client.release();
       console.error('Erro ao iniciar balanceamento:', err);
       return res.status(500).json({
         error: 'Erro ao iniciar balanceamento',
         details: err.message,
       });
-    } finally {
-      client.release();
-      console.log('Cliente de transação liberado.');
     }
   }
 );
@@ -460,6 +466,7 @@ router.post(
 
       if (jogoQuery.rowCount === 0) {
         console.error('Erro: Jogo não encontrado.');
+        client.release();
         return res.status(404).json({ error: 'Jogo não encontrado.' });
       }
 
@@ -467,6 +474,7 @@ router.post(
 
       if (parseInt(organizador_id, 10) !== parseInt(id_usuario_organizador, 10)) {
         console.error('Erro: Somente o organizador pode finalizar o balanceamento.');
+        client.release();
         return res.status(403).json({
           error: 'Somente o organizador pode finalizar o balanceamento.',
         });
@@ -474,6 +482,7 @@ router.post(
 
       if (status !== 'andamento') {
         console.error('Erro: O jogo não está em estado de balanceamento.');
+        client.release();
         return res.status(400).json({
           error: 'O jogo não está em estado de balanceamento.',
         });
@@ -530,9 +539,10 @@ router.post(
         }
       }
 
-      // Commit da transação
       await client.query('COMMIT');
       console.log('Transação comitada com sucesso.');
+      client.release();
+      console.log('Cliente de transação liberado (finalizar-balanceamento).');
 
       return res.status(200).json({
         message: 'Balanceamento finalizado.',
@@ -542,14 +552,12 @@ router.post(
       });
     } catch (error) {
       await client.query('ROLLBACK');
+      client.release();
       console.error('Erro ao finalizar balanceamento:', error);
       return res.status(500).json({
         error: 'Erro ao finalizar balanceamento.',
         details: error.message,
       });
-    } finally {
-      client.release();
-      console.log('Cliente de transação liberado.');
     }
   }
 );
@@ -575,6 +583,7 @@ router.post(
 
       if (!id_jogo || !times || !Array.isArray(times)) {
         console.error('Erro: id_jogo e times são obrigatórios, e times deve ser uma lista.');
+        client.release();
         return res.status(400).json({
           error: 'id_jogo e times são obrigatórios, e times deve ser uma lista.',
         });
@@ -594,7 +603,9 @@ router.post(
         WHERE id_jogo = $1 
         LIMIT 1
       `, [id_jogo]);
+
       if (jogoQuery.rowCount === 0) {
+        console.error('Jogo não encontrado.');
         throw new Error('Jogo não encontrado.');
       }
       console.log('Jogo verificado com sucesso:', JSON.stringify(jogoQuery.rows, null, 2));
@@ -639,6 +650,8 @@ router.post(
       // Commit da transação
       await client.query('COMMIT');
       console.log('Transação comitada com sucesso.');
+      client.release();
+      console.log('Cliente de transação liberado (atualizar-times).');
 
       return res.status(200).json({
         message: 'Times atualizados com sucesso!',
@@ -646,14 +659,12 @@ router.post(
       });
     } catch (error) {
       await client.query('ROLLBACK');
+      client.release();
       console.error('Erro ao atualizar times:', error);
       return res.status(500).json({
         error: 'Erro ao atualizar os times.',
         details: error.message,
       });
-    } finally {
-      client.release();
-      console.log('Cliente de transação liberado.');
     }
   }
 );
