@@ -14,7 +14,7 @@ const roleMiddleware = require('./middlewares/roleMiddleware'); // se precisar e
 // Rotas
 const jogadorRoutes = require('./routes/jogador/jogadorRoutes');
 const reservationRoutes = require('./routes/jogador/reservationRoutes');
-const gameRoutes = require('./routes/jogador/jogosRoutes');
+// const gameRoutes = require('./routes/jogador/jogosRoutes');
 const jogosRoutes = require('./routes/jogador/jogosRoutes');
 const courtManagementRoutes = require('./routes/owner/courtManagementRoutes');
 const ownerReservationsRoutes = require('./routes/owner/ownerReservationsRoutes');
@@ -52,7 +52,7 @@ app.use((req, res, next) => {
 // (Exemplo) Rotas para jogador (estas ainda usam roleMiddleware se quiser)
 app.use('/api/jogador', authMiddleware, roleMiddleware(['jogador', 'organizador']), jogadorRoutes);
 app.use('/api/jogador/reservas', authMiddleware, reservationRoutes);
-app.use('/api/jogador/times', authMiddleware, gameRoutes);
+// app.use('/api/jogador/times', authMiddleware, gameRoutes);
 app.use('/api/jogos', authMiddleware, jogosRoutes);
 
 // (Exemplo) Rotas para owner
