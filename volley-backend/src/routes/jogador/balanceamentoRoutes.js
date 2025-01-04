@@ -147,8 +147,13 @@ const gerarSugerirRotacoes = (times, reservas, topN = 2) => {
  */
 function balancearJogadores(jogadores, tamanhoTime) {
   console.log('Iniciando função de balanceamento de jogadores.');
+  
+  // Filtra jogadores duplicados com base no id_usuario
+  const jogadoresUnicos = [...new Map(jogadores.map(j => [j.id_usuario, j])).values()];
+  console.log(`Total de jogadores únicos: ${jogadoresUnicos.length}`);
+
   // Embaralha jogadores
-  const embaralhados = embaralharJogadores([...jogadores]);
+  const embaralhados = embaralharJogadores([...jogadoresUnicos]);
 
   // Calcula quantos times teremos
   const numTimes = Math.floor(embaralhados.length / tamanhoTime);
@@ -238,9 +243,9 @@ router.post(
       if (!id_jogo) {
         console.log('Fluxo OFFLINE detectado: criando times com base no tamanho_time e jogadores fixos...');
 
-        // Buscar jogadores para o balanceamento offline
+        // Buscar jogadores para o balanceamento offline com DISTINCT para evitar duplicados
         const jogadoresResp = await client.query(`
-          SELECT 
+          SELECT DISTINCT
             u.id_usuario,
             u.nome,
             COALESCE(a.passe, 3) AS passe,
@@ -249,6 +254,7 @@ router.post(
             COALESCE(u.altura, 170) AS altura
           FROM usuario u
           LEFT JOIN avaliacoes a ON a.usuario_id = u.id_usuario
+          ORDER BY u.id_usuario
           LIMIT 12
         `);
         const jogadores = jogadoresResp.rows.map(jogador => ({
@@ -256,8 +262,12 @@ router.post(
           altura: parseFloat(jogador.altura) || 0, // Converte altura para número
         }));
 
+        // Filtra jogadores duplicados (caso ainda existam)
+        const jogadoresUnicos = [...new Map(jogadores.map(j => [j.id_usuario, j])).values()];
+        console.log(`Total de jogadores únicos (OFFLINE): ${jogadoresUnicos.length}`);
+
         // Balancear jogadores
-        const { times, reservas } = balancearJogadores(jogadores, tamanho_time || 4);
+        const { times, reservas } = balancearJogadores(jogadoresUnicos, tamanho_time || 4);
 
         client.release();
         console.log('Cliente de transação liberado (OFFLINE).');
@@ -338,10 +348,10 @@ router.post(
         }
       }
 
-      // Buscar jogadores do DB
+      // Buscar jogadores do DB sem duplicatas
       console.log('Buscando jogadores para balanceamento (online).');
       const jogadoresResp = await client.query(`
-        SELECT 
+        SELECT DISTINCT
           u.id_usuario,
           u.nome,
           a.passe,
@@ -356,6 +366,7 @@ router.post(
             FROM participacao_jogos
             WHERE id_jogo = $2
           )
+        ORDER BY u.id_usuario
       `, [req.user.id, id_jogo]);
 
       if (jogadoresResp.rowCount === 0) {
@@ -370,10 +381,13 @@ router.post(
         ...jogador,
         altura: parseFloat(jogador.altura) || 0, // Converte altura para número
       }));
-      console.log('Jogadores para balanceamento (online):', jogadores);
+
+      // Filtra jogadores duplicados (caso ainda existam)
+      const jogadoresUnicos = [...new Map(jogadores.map(j => [j.id_usuario, j])).values()];
+      console.log(`Total de jogadores únicos (ONLINE): ${jogadoresUnicos.length}`);
 
       // Balancear
-      const { times: balancedTimes, reservas } = balancearJogadores(jogadores, tamanhoTimeFinal);
+      const { times: balancedTimes, reservas } = balancearJogadores(jogadoresUnicos, tamanhoTimeFinal);
 
       // Exemplo: custo
       const custo = calcularCusto(balancedTimes);
@@ -443,17 +457,8 @@ router.post(
         times: balancedTimes,
         reservas,
       });
-    } catch (err) {
-      await client.query('ROLLBACK');
-      client.release();
-      console.error('Erro ao iniciar balanceamento:', err);
-      return res.status(500).json({
-        error: 'Erro ao iniciar balanceamento',
-        details: err.message,
-      });
     }
-  }
-);
+  );
 
 /**
  * POST /api/balanceamento/finalizar-balanceamento
@@ -579,17 +584,8 @@ router.post(
         id_jogo,
         times,
       });
-    } catch (error) {
-      await client.query('ROLLBACK');
-      client.release();
-      console.error('Erro ao finalizar balanceamento:', error);
-      return res.status(500).json({
-        error: 'Erro ao finalizar balanceamento.',
-        details: error.message,
-      });
     }
-  }
-);
+  );
 
 /**
  * POST /api/balanceamento/atualizar-times
@@ -644,6 +640,21 @@ router.post(
       const deleteResult = await client.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
       console.log(`Resultado da consulta de DELETE: ${deleteResult.rowCount} linha(s) deletada(s).`);
 
+      // Filtrar jogadores duplicados antes de inserir
+      const jogadoresUnicos = [];
+      const seenJogadores = new Set();
+
+      times.forEach(time => {
+        time.jogadores.forEach(jogador => {
+          if (!seenJogadores.has(jogador.id_usuario)) {
+            seenJogadores.add(jogador.id_usuario);
+            jogadoresUnicos.push(jogador);
+          } else {
+            console.warn(`Jogador duplicado encontrado: id_usuario ${jogador.id_usuario}. Ignorando duplicata.`);
+          }
+        });
+      });
+
       // Inserir novos times com numero_time corretamente atribuído usando calcularTotais
       console.log('Inserindo novos times no banco de dados.');
       for (const [index, time] of times.entries()) {
@@ -654,9 +665,11 @@ router.post(
           throw new Error(`"jogadores" deve ser um array não vazio no Time ${numeroTime}.`);
         }
 
-        const { totalScore, totalAltura } = calcularTotais(time);
+        // Filtra jogadores duplicados dentro do time
+        const jogadoresFiltrados = [...new Map(time.jogadores.map(j => [j.id_usuario, j])).values()];
+        const { totalScore, totalAltura } = calcularTotais({ ...time, jogadores: jogadoresFiltrados });
 
-        for (const jogador of time.jogadores) {
+        for (const jogador of jogadoresFiltrados) {
           if (!jogador.id_usuario || typeof jogador.id_usuario !== 'number') {
             console.error(`Erro: id_usuario inválido para um dos jogadores no Time ${numeroTime}.`, jogador);
             throw new Error(`id_usuario inválido para um dos jogadores no Time ${numeroTime}.`);
