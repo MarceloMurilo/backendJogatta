@@ -3,6 +3,8 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
+
+// Middlewares
 const authMiddleware = require('../../middlewares/authMiddleware');
 const roleMiddleware = require('../../middlewares/roleMiddleware');
 
@@ -177,38 +179,75 @@ function balancearJogadores(jogadores, tamanhoTime) {
 }
 
 /**
+ * Função que decide dinamicamente qual roleMiddleware chamar
+ * se offline (sem id_jogo) => 'jogador'
+ * se online (com id_jogo) => 'organizador'
+ */
+function balancearRole(req, res, next) {
+  if (req.body.id_jogo) {
+    // FLUXO ONLINE -> requer 'organizador'
+    return roleMiddleware(['organizador'])(req, res, next);
+  } else {
+    // FLUXO OFFLINE -> requer 'jogador', skipIdJogo = true
+    return roleMiddleware(['jogador'], { skipIdJogo: true })(req, res, next);
+  }
+}
+
+/**
  * Rotas de Balanceamento
  */
 
 /**
- * POST /api/jogador/iniciar-balanceamento
- * Atualiza os times e mantém o jogo no estado 'andamento'.
- * Se for a primeira vez (status 'aberto'), recebemos e salvamos tamanho_time no jogo.
- * Se já estiver em andamento, apenas reutilizamos o tamanho_time do banco.
+ * POST /api/balanceamento/iniciar-balanceamento
+ * - Se offline => autoriza jogador (id_jogo = null)
+ * - Se online => autoriza organizador (id_jogo != null)
  */
 router.post(
   '/iniciar-balanceamento',
   authMiddleware,
-  roleMiddleware(['organizador']),
+  balancearRole, // Chamada condicional ao roleMiddleware
   async (req, res) => {
     const client = await db.pool.connect();
     try {
       console.log('=== Nova requisição recebida ===');
       console.log('Método: POST');
-      console.log('URL: /api/jogador/iniciar-balanceamento');
+      console.log('URL: /api/balanceamento/iniciar-balanceamento');
       console.log('Body:', JSON.stringify(req.body, null, 2));
       console.log('===============================');
 
       const { id_jogo, tamanho_time } = req.body;
 
       if (!id_jogo) {
-        console.error('Erro: O campo id_jogo é obrigatório.');
-        return res.status(400).json({
-          error: 'O campo id_jogo é obrigatório.',
+        // Fluxo OFFLINE
+        console.log('Fluxo OFFLINE detectado: criando times com base no tamanho_time e jogadores fixos...');
+
+        // Buscar jogadores para o balanceamento offline
+        const jogadoresResp = await client.query(`
+          SELECT 
+            u.id_usuario,
+            u.nome,
+            COALESCE(a.passe, 3) AS passe,
+            COALESCE(a.ataque, 3) AS ataque,
+            COALESCE(a.levantamento, 3) AS levantamento,
+            COALESCE(u.altura, 170) AS altura
+          FROM usuario u
+          LEFT JOIN avaliacoes a ON a.usuario_id = u.id_usuario
+          LIMIT 12
+        `);
+        const jogadores = jogadoresResp.rows;
+
+        // Balancear jogadores
+        const { times, reservas } = balancearJogadores(jogadores, tamanho_time || 4);
+
+        // Retorna sem salvar no BD (fluxo offline)
+        return res.status(200).json({
+          message: 'Balanceamento (OFFLINE) realizado com sucesso!',
+          times,
+          reservas,
         });
       }
 
-      // Verifica se o jogo existe
+      // Fluxo ONLINE
       console.log(`Verificando existência do jogo com id_jogo: ${id_jogo}`);
       const jogoResp = await client.query(`
         SELECT id_jogo, id_usuario, status, tamanho_time
@@ -236,7 +275,7 @@ router.post(
         });
       }
 
-      // Verifica se é o organizador
+      // Verifica se é o organizador - redundante se roleMiddleware já garante isso
       if (id_usuario !== req.user.id) {
         console.error('Erro: Apenas o organizador do jogo pode iniciar o balanceamento.');
         return res.status(403).json({
@@ -247,7 +286,7 @@ router.post(
       let tamanhoTimeFinal = tamanhoTimeDB;
 
       if (status === 'aberto') {
-        // Se aberto e não tem nada no banco, precisamos do tamanho_time
+        // Se aberto e não tem tamanho_time, verifica se foi passado no corpo da requisição
         if (!tamanhoTimeDB && !tamanho_time) {
           console.warn('Aviso: tamanho_time ainda não foi definido. Configuração do tamanho será adiada.');
           return res.status(200).json({
@@ -304,10 +343,9 @@ router.post(
       }
 
       console.log('Jogadores encontrados para balanceamento:', jogadoresResp.rows);
-
       const jogadores = jogadoresResp.rows;
 
-      // Faz o balanceamento usando a função que respeita o tamanho_time
+      // Faz o balanceamento
       console.log('Iniciando balanceamento de jogadores.');
       const { times, reservas } = balancearJogadores(jogadores, tamanhoTimeFinal);
 
@@ -371,7 +409,7 @@ router.post(
       console.log('Transação comitada com sucesso.');
 
       return res.status(200).json({
-        message: 'Balanceamento realizado com sucesso!',
+        message: 'Balanceamento (ONLINE) realizado com sucesso!',
         status: 'andamento',
         times,
         reservas,
@@ -391,7 +429,7 @@ router.post(
 );
 
 /**
- * POST /api/jogador/finalizar-balanceamento
+ * POST /api/balanceamento/finalizar-balanceamento
  * Marca o status do jogo como 'finalizado'
  * Retorna times gerados (ou armazenados) para exibir ao usuário
  */
@@ -404,7 +442,7 @@ router.post(
     try {
       console.log('=== Nova requisição recebida ===');
       console.log('Método: POST');
-      console.log('URL: /api/jogador/finalizar-balanceamento');
+      console.log('URL: /api/balanceamento/finalizar-balanceamento');
       console.log('Body:', JSON.stringify(req.body, null, 2));
       console.log('===============================');
 
@@ -525,7 +563,7 @@ router.post(
 );
 
 /**
- * POST /api/jogador/atualizar-times
+ * POST /api/balanceamento/atualizar-times
  * Salva/atualiza times no banco, SEM mudar status pra finalizado.
  */
 router.post(
@@ -537,7 +575,7 @@ router.post(
     try {
       console.log('=== Nova requisição recebida ===');
       console.log('Método: POST');
-      console.log('URL: /api/jogador/atualizar-times');
+      console.log('URL: /api/balanceamento/atualizar-times');
       console.log('Body:', JSON.stringify(req.body, null, 2));
       console.log('===============================');
 
