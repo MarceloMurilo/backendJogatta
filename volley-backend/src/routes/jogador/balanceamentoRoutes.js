@@ -217,8 +217,10 @@ router.post(
 
       const { id_jogo, tamanho_time } = req.body;
 
+      // =========================================
+      // 1) FLUXO OFFLINE (id_jogo == null)
+      // =========================================
       if (!id_jogo) {
-        // Fluxo OFFLINE
         console.log('Fluxo OFFLINE detectado: criando times com base no tamanho_time e jogadores fixos...');
 
         // Buscar jogadores para o balanceamento offline
@@ -247,7 +249,9 @@ router.post(
         });
       }
 
-      // Fluxo ONLINE
+      // =========================================
+      // 2) FLUXO ONLINE (id_jogo existe)
+      // =========================================
       console.log(`Verificando existência do jogo com id_jogo: ${id_jogo}`);
       const jogoResp = await client.query(`
         SELECT id_jogo, id_usuario, status, tamanho_time
@@ -264,7 +268,6 @@ router.post(
       }
 
       const { status, id_usuario, tamanho_time: tamanhoTimeDB } = jogoResp.rows[0];
-
       console.log(`Status do jogo: ${status}, Organizador ID: ${id_usuario}, Tamanho Time no DB: ${tamanhoTimeDB}`);
 
       // Se o jogo já estiver finalizado, bloqueia
@@ -315,7 +318,7 @@ router.post(
         }
       }
 
-      // Buscar jogadores
+      // Buscar jogadores do DB
       console.log('Buscando jogadores para balanceamento.');
       const jogadoresResp = await client.query(`
         SELECT 
@@ -342,31 +345,23 @@ router.post(
         });
       }
 
-      console.log('Jogadores encontrados para balanceamento:', jogadoresResp.rows);
       const jogadores = jogadoresResp.rows;
+      console.log('Jogadores para balanceamento (online):', jogadores);
 
-      // Faz o balanceamento
-      console.log('Iniciando balanceamento de jogadores.');
+      // Balancear
       const { times, reservas } = balancearJogadores(jogadores, tamanhoTimeFinal);
 
-      console.log('Times gerados pelo balanceamento:', JSON.stringify(times, null, 2));
-      console.log('Reservas geradas pelo balanceamento:', JSON.stringify(reservas, null, 2));
-
-      // Calcula o custo do balanceamento (opcional)
+      // Exemplo: custo
       const custo = calcularCusto(times);
       console.log(`Custo do balanceamento: ${custo}`);
 
-      // Inicia transação
+      // Salvar no DB
       await client.query('BEGIN');
       console.log('Transação iniciada.');
 
-      // Remove times antigos
-      console.log('Removendo times antigos do jogo.');
       await client.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
       console.log('Times antigos removidos.');
 
-      // Insere os novos times
-      console.log('Inserindo novos times no banco de dados.');
       for (const [index, time] of times.entries()) {
         const numeroTime = index + 1;
         for (const jogador of time.jogadores) {
@@ -384,8 +379,7 @@ router.post(
         }
       }
 
-      // Insere reservas
-      console.log('Inserindo reservas no banco de dados.');
+      // Reservas
       for (const reserva of reservas) {
         await client.query(`
           INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
@@ -394,17 +388,15 @@ router.post(
         console.log(`Reserva ${reserva.id_usuario} inserida com numero_time 99.`);
       }
 
-      // Muda status se ainda aberto
       if (status === 'aberto') {
-        console.log('Atualizando status do jogo para "andamento".');
         await client.query(`
           UPDATE jogos
-          SET status = 'andamento'
-          WHERE id_jogo = $1
+             SET status = 'andamento'
+           WHERE id_jogo = $1
         `, [id_jogo]);
+        console.log('Status do jogo atualizado para "andamento".');
       }
 
-      // Commit da transação
       await client.query('COMMIT');
       console.log('Transação comitada com sucesso.');
 
@@ -438,7 +430,7 @@ router.post(
   authMiddleware,
   roleMiddleware(['organizador']),
   async (req, res) => {
-    const client = await db.getClient();
+    const client = await db.pool.connect();
     try {
       console.log('=== Nova requisição recebida ===');
       console.log('Método: POST');
@@ -494,6 +486,7 @@ router.post(
         SET status = 'finalizado' 
         WHERE id_jogo = $1
       `, [id_jogo]);
+      console.log('Status do jogo atualizado para "finalizado".');
 
       // Inicia uma transação para salvar os times
       await client.query('BEGIN');
@@ -533,7 +526,6 @@ router.post(
             time.totalScore || 0,
             jogador.altura || 0,
           ]);
-
           console.log(`Jogador ${jogador.id_usuario} inserido no Time ${numeroTime}.`);
         }
       }
@@ -571,7 +563,7 @@ router.post(
   authMiddleware,
   roleMiddleware(['organizador', 'jogador'], { skipIdJogo: false, optionalIdJogo: false }),
   async (req, res) => {
-    const client = await db.getClient();
+    const client = await db.pool.connect();
     try {
       console.log('=== Nova requisição recebida ===');
       console.log('Método: POST');
@@ -640,7 +632,6 @@ router.post(
             time.totalScore || 0,
             time.totalAltura || 0,
           ]);
-
           console.log(`Jogador ${jogador.id_usuario} inserido no Time ${numeroTime}.`);
         }
       }
