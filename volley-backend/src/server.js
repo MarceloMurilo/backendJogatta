@@ -64,7 +64,9 @@ app.use('/api/cep', authMiddleware, cepRoutes);
 // Exibindo rotas registradas para verificação
 app._router.stack.forEach(function (r) {
   if (r.route && r.route.path) {
-    const methods = Object.keys(r.route.methods).map(method => method.toUpperCase()).join(', ');
+    const methods = Object.keys(r.route.methods)
+      .map((method) => method.toUpperCase())
+      .join(', ');
     console.log(`Rota registrada: ${r.route.path} [${methods}]`);
   }
 });

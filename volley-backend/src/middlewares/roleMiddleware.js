@@ -20,8 +20,18 @@ const roleMiddleware = (allowedRoles, options = {}) => {
   };
 
   return async (req, res, next) => {
+    // Ignora requisições de pré-verificação (OPTIONS) para evitar erro duplo no offline
+    if (req.method === 'OPTIONS') {
+      console.log('[roleMiddleware] OPTIONS request, skipping...');
+      return next();
+    }
+
     console.log('=== [roleMiddleware] Início da Verificação ===');
-    console.log(`[roleMiddleware] Usuário: ${req.user?.nome || 'Desconhecido'} (ID: ${req.user?.id || 'N/A'}), Papel: ${req.user?.papel_usuario || 'N/A'}`);
+    console.log(
+      `[roleMiddleware] Usuário: ${req.user?.nome || 'Desconhecido'} (ID: ${
+        req.user?.id || 'N/A'
+      }), Papel: ${req.user?.papel_usuario || 'N/A'}`
+    );
     console.log(`[roleMiddleware] Parâmetros da rota: ${JSON.stringify(req.params)}`);
     console.log(`[roleMiddleware] Corpo da requisição: ${JSON.stringify(req.body)}`);
 
@@ -50,8 +60,13 @@ const roleMiddleware = (allowedRoles, options = {}) => {
       });
 
       // 1) Verificar se o usuário é o organizador do jogo (caso permitido)
-      if (req.body.id_usuario_organizador && req.body.id_usuario_organizador === req.user.id) {
-        console.log('[roleMiddleware] Usuário é o organizador do jogo. Permissão concedida.');
+      if (
+        req.body.id_usuario_organizador &&
+        req.body.id_usuario_organizador === req.user.id
+      ) {
+        console.log(
+          '[roleMiddleware] Usuário é o organizador do jogo. Permissão concedida.'
+        );
         return next();
       }
 
@@ -61,13 +76,17 @@ const roleMiddleware = (allowedRoles, options = {}) => {
 
         // Fluxo offline: Verifica diretamente o papel do usuário
         if (fluxo === 'offline' && allowedRoles.includes(userRole)) {
-          console.log(`[roleMiddleware] Permissão concedida para '${userRole}' no fluxo offline.`);
+          console.log(
+            `[roleMiddleware] Permissão concedida para '${userRole}' no fluxo offline.`
+          );
           return next();
         }
 
         // Caso o papel do usuário não seja permitido
         if (!allowedRoles.includes(userRole)) {
-          console.log(`[roleMiddleware] Papel '${userRole}' não autorizado no fluxo '${fluxo}' (skipIdJogo).`);
+          console.log(
+            `[roleMiddleware] Papel '${userRole}' não autorizado no fluxo '${fluxo}' (skipIdJogo).`
+          );
           return res.status(403).json({
             message: 'Acesso negado - Papel do usuário não autorizado.',
           });
@@ -81,8 +100,12 @@ const roleMiddleware = (allowedRoles, options = {}) => {
       if (!id_jogo && optionalIdJogo) {
         const userRole = req.user?.papel_usuario;
         if (!allowedRoles.includes(userRole)) {
-          console.log(`[roleMiddleware] Papel '${userRole}' não autorizado sem id_jogo.`);
-          return res.status(403).json({ message: 'Acesso negado - Papel do usuário não autorizado.' });
+          console.log(
+            `[roleMiddleware] Papel '${userRole}' não autorizado sem id_jogo.`
+          );
+          return res
+            .status(403)
+            .json({ message: 'Acesso negado - Papel do usuário não autorizado.' });
         }
         console.log('[roleMiddleware] Permissão concedida (id_jogo opcional não fornecido).');
         return next();
@@ -96,7 +119,9 @@ const roleMiddleware = (allowedRoles, options = {}) => {
 
       // 5) Verifica se o usuário tem papel no jogo (fluxo online)
       const { id } = req.user;
-      console.log(`[roleMiddleware] Verificando papel do usuário (ID: ${id}) no jogo (ID: ${id_jogo})`);
+      console.log(
+        `[roleMiddleware] Verificando papel do usuário (ID: ${id}) no jogo (ID: ${id_jogo})`
+      );
 
       // Monta query para verificar se o usuário tem função associada ao jogo ou é o organizador
       const query = `
@@ -114,7 +139,10 @@ const roleMiddleware = (allowedRoles, options = {}) => {
       `;
       const queryParams = [id, id_jogo];
 
-      console.log('[roleMiddleware] Executando query para verificar função do usuário:', { query, queryParams });
+      console.log('[roleMiddleware] Executando query para verificar função do usuário:', {
+        query,
+        queryParams,
+      });
 
       const result = await db.query(query, queryParams);
 
@@ -127,26 +155,34 @@ const roleMiddleware = (allowedRoles, options = {}) => {
       }
 
       // Pega todas as funções associadas ao usuário no jogo
-      const userRoles = result.rows.map(row => row.nome_funcao);
+      const userRoles = result.rows.map((row) => row.nome_funcao);
       console.log(`[roleMiddleware] Funções do usuário no jogo: ${userRoles.join(', ')}`);
 
       // Verifica se pelo menos uma das funções do usuário está nas allowedRoles
-      const hasPermission = userRoles.some(role => allowedRoles.includes(role));
+      const hasPermission = userRoles.some((role) => allowedRoles.includes(role));
 
       if (!hasPermission) {
-        console.log(`[roleMiddleware] Nenhuma das funções do usuário (${userRoles.join(', ')}) está autorizada para este endpoint.`);
+        console.log(
+          `[roleMiddleware] Nenhuma das funções do usuário (${userRoles.join(
+            ', '
+          )}) está autorizada para este endpoint.`
+        );
         return res.status(403).json({
           message: 'Acesso negado - Papel do usuário não autorizado neste jogo.',
         });
       }
 
-      console.log(`[roleMiddleware] Permissão concedida para o(s) papel(is) ${userRoles.join(', ')} no jogo ${id_jogo}.`);
+      console.log(
+        `[roleMiddleware] Permissão concedida para o(s) papel(is) ${userRoles.join(
+          ', '
+        )} no jogo ${id_jogo}.`
+      );
       next();
     } catch (error) {
       console.error(`[roleMiddleware] Erro ao processar middleware: ${error.message}`);
 
       // Verificar se o erro é relacionado ao banco de dados
-      if (error.code && error.code.startsWith('DB')) { 
+      if (error.code && error.code.startsWith('DB')) {
         // Supondo que erros de banco de dados começam com 'DB'
         return res.status(500).json({ message: 'Erro no banco de dados.' });
       }
