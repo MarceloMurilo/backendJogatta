@@ -15,18 +15,12 @@ const roleMiddleware = (allowedRoles, options = {}) => {
     if (req.body?.id_jogo || req.params?.jogoId) {
       return 'online';
     }
+    // Se quiser permitir setar explicitamente o fluxo no body ou params, manter essa linha
     return req.body?.fluxo || req.params?.fluxo || 'offline';
   };
 
   return async (req, res, next) => {
-    // Adiciona um identificador único para cada requisição para rastrear execuções
-    if (!req._roleMiddlewareExecuted) {
-      req._roleMiddlewareExecuted = 1;
-    } else {
-      req._roleMiddlewareExecuted += 1;
-    }
-
-    console.log(`=== [roleMiddleware] Execução número ${req._roleMiddlewareExecuted} para usuário ID: ${req.user?.id || 'N/A'} ===`);
+    console.log('=== [roleMiddleware] Início da Verificação ===');
     console.log(`[roleMiddleware] Usuário: ${req.user?.nome || 'Desconhecido'} (ID: ${req.user?.id || 'N/A'}), Papel: ${req.user?.papel_usuario || 'N/A'}`);
     console.log(`[roleMiddleware] Parâmetros da rota: ${JSON.stringify(req.params)}`);
     console.log(`[roleMiddleware] Corpo da requisição: ${JSON.stringify(req.body)}`);
@@ -61,16 +55,24 @@ const roleMiddleware = (allowedRoles, options = {}) => {
         return next();
       }
 
-      // 2) Se "skipIdJogo" for true, tratar especificamente o fluxo 'offline' para 'jogador'
+      // 2) Se "skipIdJogo" for true, NÃO validamos nenhum id_jogo, só papel do usuário
       if (skipIdJogo) {
         const userRole = req.user?.papel_usuario;
 
-        // Permitir jogadores diretamente no fluxo offline
-        if (fluxo === 'offline' && userRole === 'jogador') {
-          console.log('[roleMiddleware] Permissão concedida para jogador no fluxo offline.');
+        // Se o fluxo for offline, basta verificar se o papel do usuário (ex.: 'jogador') está em allowedRoles
+        if (fluxo === 'offline') {
+          if (!allowedRoles.includes(userRole)) {
+            console.log(`[roleMiddleware] Papel '${userRole}' não autorizado no fluxo offline (skipIdJogo).`);
+            return res.status(403).json({
+              message: 'Acesso negado - Papel do usuário não autorizado para fluxo offline.',
+            });
+          }
+          console.log(`[roleMiddleware] Permissão concedida para '${userRole}' no fluxo offline.`);
           return next();
         }
 
+        // Se chegou aqui, significa que skipIdJogo=true, porém fluxo não é offline
+        // (ou seja, essa rota pode ter sido configurada manualmente com skipIdJogo = true)
         if (!allowedRoles.includes(userRole)) {
           console.log(`[roleMiddleware] Papel '${userRole}' não autorizado com skipIdJogo.`);
           return res.status(403).json({
@@ -99,7 +101,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
         return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
       }
 
-      // 5) Verifica se o usuário tem papel no jogo
+      // 5) Verifica se o usuário tem papel no jogo (fluxo online)
       const { id } = req.user;
       console.log(`[roleMiddleware] Verificando papel do usuário (ID: ${id}) no jogo (ID: ${id_jogo})`);
 
@@ -151,7 +153,8 @@ const roleMiddleware = (allowedRoles, options = {}) => {
       console.error(`[roleMiddleware] Erro ao processar middleware: ${error.message}`);
 
       // Verificar se o erro é relacionado ao banco de dados
-      if (error.code && error.code.startsWith('DB')) { // Supondo que erros de banco de dados começam com 'DB'
+      if (error.code && error.code.startsWith('DB')) { 
+        // Supondo que erros de banco de dados começam com 'DB'
         return res.status(500).json({ message: 'Erro no banco de dados.' });
       }
 
