@@ -346,14 +346,17 @@ router.post(
         });
       }
 
-      const jogadores = jogadoresResp.rows;
+      const jogadores = jogadoresResp.rows.map(jogador => ({
+        ...jogador,
+        altura: parseFloat(jogador.altura) || 0,
+      }));
       console.log('Jogadores para balanceamento (online):', jogadores);
 
       // Balancear
-      const { times, reservas } = balancearJogadores(jogadores, tamanhoTimeFinal);
+      const { times: balancedTimes, reservas } = balancearJogadores(jogadores, tamanhoTimeFinal);
 
       // Exemplo: custo
-      const custo = calcularCusto(times);
+      const custo = calcularCusto(balancedTimes);
       console.log(`Custo do balanceamento: ${custo}`);
 
       // Salvar no DB
@@ -365,7 +368,7 @@ router.post(
       console.log('Times antigos removidos.');
 
       // Insere times novos usando calcularTotais
-      for (const [index, time] of times.entries()) {
+      for (const [index, time] of balancedTimes.entries()) {
         const numeroTime = index + 1;
         const { totalScore, totalAltura } = calcularTotais(time);
         console.log(`Inserindo Time ${numeroTime} com jogadores:`, JSON.stringify(time.jogadores, null, 2));
@@ -412,7 +415,7 @@ router.post(
       return res.status(200).json({
         message: 'Balanceamento (ONLINE) realizado com sucesso!',
         status: 'andamento',
-        times,
+        times: balancedTimes,
         reservas,
       });
     } catch (err) {
@@ -542,7 +545,6 @@ router.post(
         }
       }
 
-      // Commit da transação
       await client.query('COMMIT');
       console.log('Transação comitada com sucesso.');
       client.release();
