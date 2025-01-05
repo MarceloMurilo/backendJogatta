@@ -151,20 +151,29 @@ router.post('/entrar', async (req, res) => {
     let status_jogo;
 
     if (convite_uuid || id_numerico) {
+      // Se for convite_uuid, busca na tabela convites + status = 'aberto'
+      // Se for id_numerico, busca diretamente no jogos + status
       const query = convite_uuid
-        ? `SELECT c.id_jogo, j.status AS status_jogo
-             FROM convites c
-             JOIN jogos j ON c.id_jogo = j.id_jogo
-            WHERE c.convite_uuid = $1 AND c.status = 'aberto'
-            LIMIT 1`
-        : `SELECT id_jogo, status AS status_jogo
-             FROM jogos
-            WHERE id_numerico = $1 AND status IN ('aberto', 'balanceando times')
-            LIMIT 1`;
+        ? `
+          SELECT c.id_jogo, j.status AS status_jogo,
+                 c.id_usuario_convidado
+            FROM convites c
+            JOIN jogos j ON c.id_jogo = j.id_jogo
+           WHERE c.convite_uuid = $1
+             AND c.status = 'aberto'
+           LIMIT 1
+        `
+        : `
+          SELECT id_jogo, status AS status_jogo
+            FROM jogos
+           WHERE id_numerico = $1
+             AND status IN ('aberto', 'balanceando times')
+           LIMIT 1
+        `;
 
       const param = convite_uuid || id_numerico;
-
       const jogoQuery = await client.query(query, [param]);
+
       if (jogoQuery.rowCount === 0) {
         await client.query('ROLLBACK');
         return res.status(404).json({
@@ -172,6 +181,20 @@ router.post('/entrar', async (req, res) => {
             ? 'Convite inválido ou expirado.'
             : 'Sala não encontrada ou não disponível para entrada.',
         });
+      }
+
+      if (convite_uuid) {
+        // Se o convite for para um jogador específico:
+        const { id_usuario_convidado } = jogoQuery.rows[0];
+        if (
+          id_usuario_convidado &&
+          parseInt(id_usuario_convidado, 10) !== parseInt(id_usuario, 10)
+        ) {
+          await client.query('ROLLBACK');
+          return res.status(403).json({
+            error: 'Este convite é destinado a outro usuário.',
+          });
+        }
       }
 
       id_jogo = jogoQuery.rows[0].id_jogo;
@@ -200,9 +223,7 @@ router.post('/entrar', async (req, res) => {
 
       if (usuarioFilaQuery.rowCount > 0) {
         await client.query('ROLLBACK');
-        return res
-          .status(200)
-          .json({ message: 'Jogador já está na lista de espera.' });
+        return res.status(200).json({ message: 'Jogador já está na lista de espera.' });
       }
 
       // Adicionar à fila
@@ -222,7 +243,7 @@ router.post('/entrar', async (req, res) => {
       return res.status(200).json({ message: 'Jogador adicionado à lista de espera.' });
     }
 
-    // Adicionar como participante ativo
+    // Se couber no time, adiciona como participante ativo
     await client.query(
       `INSERT INTO participacao_jogos (id_jogo, id_usuario, status, confirmado, pago)
        VALUES ($1, $2, 'ativo', FALSE, FALSE)

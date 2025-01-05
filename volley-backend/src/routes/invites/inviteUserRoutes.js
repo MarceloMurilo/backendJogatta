@@ -21,7 +21,7 @@ router.post('/', authMiddleware, async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO convites (id_jogo, id_usuario_convidado, id_usuario, status, data_envio)
-       VALUES ($1, $2, $3, 'pendente', NOW())
+       VALUES ($1, $2, $3, 'aberto', NOW())
        RETURNING *`,
       [id_jogo, id_usuario_convidado, id_usuario]
     );

@@ -1,3 +1,5 @@
+// /routes/inviteRoutes.js
+
 const express = require('express');
 const router = express.Router();
 const pool = require('../../db'); // Conexão com o banco de dados
@@ -62,14 +64,16 @@ router.post('/gerar', authMiddleware, async (req, res) => {
     }
 
     const convite_uuid = uuidv4();
+    // Aqui, geramos um id_numerico de 6 dígitos
+    const id_numerico = Math.floor(100000 + Math.random() * 900000);
+
     const { rows: novoConvite } = await pool.query(
       `INSERT INTO convites (id_jogo, id_usuario, status, data_envio, id_numerico, convite_uuid)
-       VALUES ($1, $2, 'pendente', NOW(), floor(random() * 900000) + 100000, $3)
+       VALUES ($1, $2, 'aberto', NOW(), $3, $4)
        RETURNING convite_uuid, id_numerico`,
-      [id_jogo, id_usuario, convite_uuid]
+      [id_jogo, id_usuario, id_numerico, convite_uuid]
     );
 
-    const id_numerico = novoConvite[0].id_numerico;
     const linkConvite = `jogatta://convite/${convite_uuid}`;
 
     console.log("Novo convite criado:", { link: linkConvite, id_numerico, convite_uuid });
