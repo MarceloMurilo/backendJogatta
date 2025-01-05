@@ -268,22 +268,37 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
   }
 
   try {
-    // Busca os jogadores que estão participando do jogo
-    const jogadoresQuery = await db.query(
-      `SELECT pj.id_usuario, u.nome, pj.status, 
-              COALESCE(pj.confirmado, false) AS confirmado,
-              COALESCE(pj.pago, false) AS pago
-         FROM participacao_jogos pj
-         JOIN usuario u ON pj.id_usuario = u.id_usuario
-          WHERE pj.id_jogo = $1
-        AND pj.status IN ('ativo', 'na_espera')
-         ORDER BY u.nome ASC`,
-      [id_jogo]
-    );
+    // 1) Busca jogadores “ativos” ou “na_espera” em participacao_jogos
+    const jogadoresParticipacao = await db.query(`
+      SELECT pj.id_usuario, u.nome, pj.status,
+             COALESCE(pj.confirmado, false) AS confirmado,
+             COALESCE(pj.pago, false)       AS pago
+        FROM participacao_jogos pj
+        JOIN usuario u ON pj.id_usuario = u.id_usuario
+       WHERE pj.id_jogo = $1
+         AND pj.status IN ('ativo', 'na_espera')
+       ORDER BY u.nome ASC
+    `, [id_jogo]);
 
-    const jogadores = jogadoresQuery.rows;
+    // 2) Busca quem está na fila_jogos
+    const jogadoresFila = await db.query(`
+      SELECT f.id_usuario, u.nome,
+             'na_espera' AS status,
+             false       AS confirmado,
+             false       AS pago
+        FROM fila_jogos f
+        JOIN usuario u ON f.id_usuario = u.id_usuario
+       WHERE f.id_jogo = $1
+       ORDER BY u.nome ASC
+    `, [id_jogo]);
 
-    return res.status(200).json({ jogadores });
+    // 3) Combina tudo num array só
+    const todosJogadores = [
+      ...jogadoresParticipacao.rows,
+      ...jogadoresFila.rows
+    ];
+
+    return res.status(200).json({ jogadores: todosJogadores });
   } catch (error) {
     console.error('Erro ao carregar jogadores do lobby:', error.message);
     return res.status(500).json({ error: 'Erro ao carregar jogadores.' });
@@ -368,7 +383,9 @@ router.post('/confirmar-pagamento', async (req, res) => {
       .json({ message: 'Pagamento confirmado com sucesso.' });
   } catch (error) {
     console.error('Erro ao confirmar pagamento:', error.message);
-    return res.status(500).json({ error: 'Erro ao confirmar pagamento.' });
+    return res
+      .status(500)
+      .json({ error: 'Erro ao confirmar pagamento.' });
   }
 });
 
