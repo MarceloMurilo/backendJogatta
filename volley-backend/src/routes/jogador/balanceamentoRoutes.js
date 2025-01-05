@@ -1,5 +1,3 @@
-// /routes/balanceamentoRoutes.js
-
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
@@ -383,6 +381,7 @@ router.post(
 
 /**
  * POST /api/balanceamento/finalizar-balanceamento
+ * Ajustado para não "encerrar" a sala, mas sim passar para status 'andamento'.
  */
 router.post(
   '/finalizar-balanceamento',
@@ -424,23 +423,20 @@ router.post(
         });
       }
 
-      if (status === 'finalizado') {
-        client.release();
-        return res.status(400).json({
-          error: 'O jogo já está finalizado.',
-        });
-      }
-
-      // Atualiza o status do jogo para "finalizado"
-      await client.query(`
-        UPDATE jogos 
-           SET status = 'finalizado' 
-         WHERE id_jogo = $1
-      `, [id_jogo]);
+      // Em vez de "finalizado", passamos para "andamento".
+      // Se quiser outro nome, fique à vontade, ex: 'em_andamento'.
+      const novoStatus = 'andamento';
 
       await client.query('BEGIN');
 
-      // Remover times existentes
+      // Atualiza o status do jogo para 'andamento'
+      await client.query(`
+        UPDATE jogos 
+           SET status = $1 
+         WHERE id_jogo = $2
+      `, [novoStatus, id_jogo]);
+
+      // Remover times existentes para inserir os novos
       await client.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
 
       // Inserir os novos times
@@ -476,8 +472,8 @@ router.post(
       client.release();
 
       return res.status(200).json({
-        message: 'Balanceamento finalizado.',
-        status: 'finalizado',
+        message: 'Balanceamento finalizado. Status do jogo agora é "andamento".',
+        status: novoStatus,
         id_jogo,
         times,
       });
@@ -494,6 +490,7 @@ router.post(
 
 /**
  * POST /api/balanceamento/atualizar-times
+ * (Mantido igual ou ajuste se desejar)
  */
 router.post(
   '/atualizar-times',
@@ -521,7 +518,6 @@ router.post(
         SELECT id_jogo, status
         FROM jogos
         WHERE id_jogo = $1
-        LIMIT 1
       `, [id_jogo]);
 
       if (jogoQuery.rowCount === 0) {
