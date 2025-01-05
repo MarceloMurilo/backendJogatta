@@ -275,7 +275,8 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
               COALESCE(pj.pago, false) AS pago
          FROM participacao_jogos pj
          JOIN usuario u ON pj.id_usuario = u.id_usuario
-         WHERE pj.id_jogo = $1
+          WHERE pj.id_jogo = $1
+        AND pj.status IN ('ativo', 'na_espera')
          ORDER BY u.nome ASC`,
       [id_jogo]
     );

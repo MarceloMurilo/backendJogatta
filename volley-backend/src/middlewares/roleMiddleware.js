@@ -125,17 +125,17 @@ const roleMiddleware = (allowedRoles, options = {}) => {
 
       // Monta query para verificar se o usuário tem função associada ao jogo ou é o organizador
       const query = `
-        SELECT uf.id_funcao, f.nome_funcao
-          FROM usuario_funcao uf
-          JOIN funcao f ON uf.id_funcao = f.id_funcao
-         WHERE uf.id_usuario = $1
-           AND uf.id_jogo = $2
-        UNION
         SELECT f.id_funcao, f.nome_funcao
-          FROM jogos j
-          JOIN funcao f ON f.nome_funcao = 'organizador'
-         WHERE j.id_jogo = $2
-           AND j.id_usuario_organizador = $1
+  FROM usuario_funcao uf
+  JOIN funcao f ON uf.id_funcao = f.id_funcao
+ WHERE uf.id_usuario = $1
+   AND uf.id_jogo = $2
+UNION
+SELECT f.id_funcao, f.nome_funcao
+  FROM jogos j
+  LEFT JOIN funcao f ON f.nome_funcao = 'organizador'
+ WHERE j.id_jogo = $2
+   AND j.id_usuario_organizador = $1
       `;
       const queryParams = [id, id_jogo];
 
