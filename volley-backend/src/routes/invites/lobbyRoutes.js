@@ -10,6 +10,32 @@ const authMiddleware = require('../../middlewares/authMiddleware');
 router.use(authMiddleware);
 
 /**
+ * Função para gerar um id_numerico único
+ * Gera um número de 6 dígitos e verifica sua unicidade no banco de dados
+ */
+const generateUniqueIdNumerico = async (attempt = 1, maxAttempts = 5) => {
+  if (attempt > maxAttempts) {
+    throw new Error('Não foi possível gerar um id_numerico único.');
+  }
+
+  // Gera um número de 6 dígitos
+  const idNumerico = Math.floor(100000 + Math.random() * 900000);
+
+  // Verifica se já existe esse id_numerico no banco
+  const existing = await db.query(
+    `SELECT 1 FROM convites WHERE id_numerico = $1`,
+    [idNumerico]
+  );
+
+  if (existing.rowCount === 0) {
+    return idNumerico;
+  } else {
+    // Tenta novamente
+    return await generateUniqueIdNumerico(attempt + 1, maxAttempts);
+  }
+};
+
+/**
  * Rota para gerar link do convite
  * POST /api/lobby/convites/gerar
  */
@@ -39,16 +65,19 @@ router.post('/convites/gerar', async (req, res) => {
     // Gerar link baseado no convite_uuid
     const link = `https://jogatta.com/invite/${convite_uuid}`;
 
-    // Inserir o convite no banco de dados
+    // Gerar id_numerico único
+    const id_numerico = await generateUniqueIdNumerico();
+
+    // Inserir o convite no banco de dados com id_numerico
     await db.query(
-      `INSERT INTO convites (id_jogo, id_usuario, convite_uuid, status, data_envio)
-       VALUES ($1, $2, $3, 'aberto', NOW())`,
-      [id_jogo, id_usuario, convite_uuid]
+      `INSERT INTO convites (id_jogo, id_usuario, convite_uuid, status, data_envio, id_numerico)
+       VALUES ($1, $2, $3, 'aberto', NOW(), $4)`,
+      [id_jogo, id_usuario, convite_uuid, id_numerico]
     );
 
     return res.status(201).json({
       message: 'Convite gerado com sucesso.',
-      convite: { link, convite_uuid },
+      convite: { link, convite_uuid, id_numerico },
     });
   } catch (error) {
     console.error('Erro ao gerar convite:', error.message);
