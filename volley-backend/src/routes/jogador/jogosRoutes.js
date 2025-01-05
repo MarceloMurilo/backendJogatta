@@ -106,6 +106,15 @@ router.post('/criar', authMiddleware, async (req, res) => {
     }
     console.log('[INFO] Jogo criado com ID:', id_jogo);
 
+    // **Inserção na tabela convites**
+    console.log('[INFO] Inserindo convite na tabela `convites`.');
+    await client.query(
+      `INSERT INTO convites (id_jogo, id_numerico)
+       VALUES ($1, $2)`,
+      [id_jogo, idNumerico]
+    );
+    console.log('[INFO] Convite criado com sucesso.');
+
     // Inserir o organizador na tabela 'participacao_jogos'
     console.log('[INFO] Inserindo organizador na tabela `participacao_jogos`.');
     const participacaoResult = await client.query(
