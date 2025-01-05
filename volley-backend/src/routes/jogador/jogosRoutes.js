@@ -2,7 +2,6 @@
 
 const express = require('express');
 const router = express.Router();
-const { v4: uuidv4 } = require('uuid');
 const db = require('../../db');
 const authMiddleware = require('../../middlewares/authMiddleware');
 
@@ -26,8 +25,8 @@ router.post('/criar', authMiddleware, async (req, res) => {
     horario_fim,
     limite_jogadores,
     id_usuario,
-    descricao, // Opcional
-    chave_pix // Opcional
+    descricao,
+    chave_pix
   } = req.body;
 
   console.log('[INFO] Recebida solicitação para criar jogo:', {
@@ -122,7 +121,7 @@ router.post('/criar', authMiddleware, async (req, res) => {
       throw new Error('Erro ao adicionar o organizador como participante.');
     }
 
-    // **Inserção do Organizador na Tabela `usuario_funcao`**
+    // Inserção na tabela `usuario_funcao`
     console.log('[INFO] Inserindo organizador na tabela `usuario_funcao`.');
     const organizadorFuncao = await client.query(
       `SELECT id_funcao FROM funcao WHERE nome_funcao = 'organizador'`
