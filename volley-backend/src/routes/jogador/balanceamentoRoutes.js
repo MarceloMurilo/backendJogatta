@@ -9,7 +9,9 @@ const authMiddleware = require('../../middlewares/authMiddleware');
 const roleMiddleware = require('../../middlewares/roleMiddleware');
 
 /**
+ * ======================================
  * Funções Utilitárias
+ * ======================================
  */
 const calcularTotais = (time) => {
   const totalScore = time.jogadores.reduce(
@@ -152,15 +154,35 @@ router.post(
       console.log('=== Nova requisição: POST /api/balanceamento/iniciar-balanceamento ===');
       console.log('Body:', req.body);
 
-      const { id_jogo, tamanho_time } = req.body;
+      const { id_jogo, tamanho_time, amigos_offline = [] } = req.body;
 
       // =================
-      // 1) FLUXO OFFLINE
+      // FLUXO OFFLINE
       // =================
       if (!id_jogo) {
-        // Buscar jogadores para o balanceamento offline
-        const jogadoresResp = await client.query(`
-          SELECT 
+        // Se não recebeu nenhum jogador do front, retorna erro.
+        if (!amigos_offline.length) {
+          client.release();
+          return res.status(400).json({
+            error: 'Nenhum jogador recebido no fluxo OFFLINE.',
+          });
+        }
+
+        // 1) Extrair IDs para buscar avaliações no banco
+        const offlineIds = amigos_offline
+          .map(a => a.id_usuario)
+          .filter(id => typeof id === 'number');
+
+        if (!offlineIds.length) {
+          client.release();
+          return res.status(400).json({
+            error: 'IDs de jogadores inválidos no fluxo OFFLINE.',
+          });
+        }
+
+        // 2) Buscar habilidades no DB (enriquecer)
+        const { rows: rowsAval } = await client.query(`
+          SELECT
             u.id_usuario,
             u.nome,
             COALESCE(a.passe, 3) AS passe,
@@ -169,27 +191,41 @@ router.post(
             COALESCE(u.altura, 170) AS altura
           FROM usuario u
           LEFT JOIN avaliacoes a ON a.usuario_id = u.id_usuario
-          
-        `);
+          WHERE u.id_usuario = ANY($1)
+        `, [offlineIds]);
 
-        // Deduplicar (caso haja IDs repetidos)
-        const uniqueMap = new Map();
-        jogadoresResp.rows.forEach((row) => {
-          if (!uniqueMap.has(row.id_usuario)) {
-            uniqueMap.set(row.id_usuario, row);
+        // Montar map para acesso rápido
+        const mapAval = new Map(rowsAval.map(av => [av.id_usuario, av]));
+
+        // 3) Mesclar dados do front com BD
+        const jogadoresParaBalancear = amigos_offline.map(frontJog => {
+          const dbJog = mapAval.get(frontJog.id_usuario);
+          if (dbJog) {
+            // Merge: preferir dados do BD (passe, ataque, levantamento, altura)
+            return {
+              ...frontJog,
+              nome: dbJog.nome || frontJog.nome,
+              passe: dbJog.passe,
+              ataque: dbJog.ataque,
+              levantamento: dbJog.levantamento,
+              altura: parseFloat(dbJog.altura) || 170,
+            };
+          } else {
+            // Se não encontrou no BD, usar do front com defaults
+            return {
+              ...frontJog,
+              passe: parseInt(frontJog.passe, 10) || 3,
+              ataque: parseInt(frontJog.ataque, 10) || 3,
+              levantamento: parseInt(frontJog.levantamento, 10) || 3,
+              altura: parseFloat(frontJog.altura) || 170,
+            };
           }
         });
-        const jogadoresUnicos = [...uniqueMap.values()].map(j => ({
-          ...j,
-          altura: parseFloat(j.altura) || 0,
-        }));
 
-        // Balancear jogadores (sem gravar no DB)
-        const { times, reservas } = balancearJogadores(jogadoresUnicos, tamanho_time || 4);
+        // 4) Balancear jogadores (sem gravar no DB)
+        const { times, reservas } = balancearJogadores(jogadoresParaBalancear, tamanho_time || 4);
 
         client.release();
-
-        // Retorna sem salvar no BD (fluxo offline)
         return res.status(200).json({
           message: 'Balanceamento (OFFLINE) realizado com sucesso!',
           times,
@@ -198,7 +234,7 @@ router.post(
       }
 
       // =================
-      // 2) FLUXO ONLINE
+      // FLUXO ONLINE
       // =================
       console.log(`Verificando existência do jogo com id_jogo: ${id_jogo}`);
       const jogoResp = await client.query(`
@@ -233,10 +269,9 @@ router.post(
         });
       }
 
-      // A qualquer momento (aberto/andamento), atualiza `tamanho_time` se vier no body
+      // Atualiza tamanho_time se vier no body
       let tamanhoTimeFinal = tamanhoTimeDB;
       if (typeof tamanho_time === 'number') {
-        console.log(`Atualizando tamanho_time para ${tamanho_time} (jogo não finalizado)`);
         await client.query(`
           UPDATE jogos
              SET tamanho_time = $1
@@ -245,7 +280,6 @@ router.post(
         tamanhoTimeFinal = tamanho_time;
       }
 
-      // Se após tudo isso ainda não houver um tamanho definido, retorna aviso
       if (!tamanhoTimeFinal) {
         client.release();
         return res.status(200).json({
@@ -254,23 +288,22 @@ router.post(
         });
       }
 
-      // Busca jogadores do DB
+      // Buscar jogadores do DB (que participam do jogo e têm avaliação do organizador)
       const jogadoresResp = await client.query(`
         SELECT 
           u.id_usuario,
           u.nome,
-          a.passe,
-          a.ataque,
-          a.levantamento,
-          u.altura
+          COALESCE(a.passe, 3) AS passe,
+          COALESCE(a.ataque, 3) AS ataque,
+          COALESCE(a.levantamento, 3) AS levantamento,
+          COALESCE(u.altura, 170) AS altura
         FROM usuario u
-        INNER JOIN avaliacoes a ON a.usuario_id = u.id_usuario
-        WHERE a.organizador_id = $1
-          AND u.id_usuario IN (
-            SELECT id_usuario
-            FROM participacao_jogos
-            WHERE id_jogo = $2
-          )
+        LEFT JOIN avaliacoes a ON a.usuario_id = u.id_usuario AND a.organizador_id = $1
+        WHERE u.id_usuario IN (
+          SELECT id_usuario
+          FROM participacao_jogos
+          WHERE id_jogo = $2
+        )
       `, [req.user.id, id_jogo]);
 
       if (jogadoresResp.rowCount === 0) {
@@ -293,10 +326,10 @@ router.post(
       // Salvar no DB
       await client.query('BEGIN');
 
-      // Apagar times antigos
+      // Apaga times antigos
       await client.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
 
-      // Inserir times
+      // Insere times
       for (const [index, time] of balancedTimes.entries()) {
         const numeroTime = index + 1;
         const { totalScore, totalAltura } = calcularTotais(time);
@@ -319,7 +352,7 @@ router.post(
         }
       }
 
-      // Inserir reservas (numero_time = 99)
+      // Insere reservas (numero_time = 99)
       for (const reserva of reservas) {
         await client.query(`
           INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
@@ -327,23 +360,12 @@ router.post(
         `, [id_jogo, reserva.id_usuario, reserva.altura]);
       }
 
-      // NÃO altera mais o status para 'andamento' automaticamente
-      // Deixa o status como está, para que o usuário possa rebalancear várias vezes.
-      // Se quiser forçar a mudança, descomente:
-      // if (status === 'aberto') {
-      //   await client.query(`
-      //     UPDATE jogos
-      //        SET status = 'andamento'
-      //      WHERE id_jogo = $1
-      //   `, [id_jogo]);
-      // }
-
       await client.query('COMMIT');
       client.release();
 
       return res.status(200).json({
         message: 'Balanceamento (ONLINE) realizado com sucesso!',
-        status, // status atual do jogo no DB
+        status,
         times: balancedTimes,
         reservas,
       });
@@ -375,6 +397,7 @@ router.post(
       const { id_jogo, id_usuario_organizador, times } = req.body;
 
       if (!id_jogo || !id_usuario_organizador || !times) {
+        client.release();
         return res.status(400).json({
           error: 'id_jogo, id_usuario_organizador e times são obrigatórios.',
         });
