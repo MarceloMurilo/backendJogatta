@@ -111,7 +111,7 @@ router.post('/criar', authMiddleware, async (req, res) => {
     await client.query(
       `INSERT INTO convites (id_jogo, id_numerico, status, data_envio, id_usuario)
        VALUES ($1, $2, $3, NOW(), $4)`,
-      [id_jogo, idNumerico, 'pendente', id_usuario] // Inclui o id_usuario
+      [id_jogo, idNumerico, 'aberto', id_usuario] // Inclui o id_usuario
     );
     console.log('[INFO] Convite criado com sucesso.');
 
