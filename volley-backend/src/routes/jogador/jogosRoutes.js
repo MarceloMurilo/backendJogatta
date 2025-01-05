@@ -122,6 +122,25 @@ router.post('/criar', authMiddleware, async (req, res) => {
       throw new Error('Erro ao adicionar o organizador como participante.');
     }
 
+    // **Inserção do Organizador na Tabela `usuario_funcao`**
+    console.log('[INFO] Inserindo organizador na tabela `usuario_funcao`.');
+    const organizadorFuncao = await client.query(
+      `SELECT id_funcao FROM funcao WHERE nome_funcao = 'organizador'`
+    );
+
+    if (organizadorFuncao.rowCount === 0) {
+      throw new Error('Função "organizador" não encontrada no banco de dados.');
+    }
+
+    const id_funcao = organizadorFuncao.rows[0].id_funcao;
+
+    await client.query(
+      `INSERT INTO usuario_funcao (id_usuario, id_funcao, id_jogo)
+       VALUES ($1, $2, $3)`,
+      [id_usuario, id_funcao, id_jogo]
+    );
+    console.log('[INFO] Organizador associado à função "organizador" com sucesso.');
+
     await client.query('COMMIT'); // Finaliza a transação
     console.log('[INFO] Jogo criado com sucesso. Transação concluída.');
 
