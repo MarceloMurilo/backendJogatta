@@ -1,8 +1,10 @@
+// src/routes/jogosRoutes.js
+
 const express = require('express');
 const router = express.Router();
+const { v4: uuidv4 } = require('uuid');
 const db = require('../../db');
 const authMiddleware = require('../../middlewares/authMiddleware');
-const roleMiddleware = require('../../middlewares/roleMiddleware');
 
 // Middleware simples de log
 router.use((req, res, next) => {
@@ -70,11 +72,21 @@ router.post('/criar', authMiddleware, async (req, res) => {
     console.log('[INFO] Iniciando transação para criar jogo.');
     await client.query('BEGIN');
 
-    // Inserção do jogo na tabela 'jogos'
+    // Gerar id_numerico único
+    let idNumerico;
+    let isUnique = false;
+
+    while (!isUnique) {
+      idNumerico = Math.floor(100000 + Math.random() * 900000);
+      const existing = await client.query('SELECT 1 FROM jogos WHERE id_numerico = $1', [idNumerico]);
+      if (existing.rowCount === 0) isUnique = true;
+    }
+
+    // Inserção do jogo na tabela 'jogos' com id_numerico
     console.log('[INFO] Inserindo jogo na tabela `jogos`.');
     const result = await client.query(
-      `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, descricao, chave_pix, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'aberto')
+      `INSERT INTO jogos (nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, descricao, chave_pix, status, id_numerico)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'aberto', $9)
        RETURNING id_jogo`,
       [
         nome_jogo,
@@ -84,7 +96,8 @@ router.post('/criar', authMiddleware, async (req, res) => {
         limite_jogadores,
         id_usuario,
         descricao || null, // Preenche null se não enviado
-        chave_pix || null  // Preenche null se não enviado
+        chave_pix || null, // Preenche null se não enviado
+        idNumerico
       ]
     );
 
@@ -95,21 +108,26 @@ router.post('/criar', authMiddleware, async (req, res) => {
     console.log('[INFO] Jogo criado com ID:', id_jogo);
 
     // Inserir o organizador na tabela 'participacao_jogos'
-      // Após criar o jogo, insere o organizador na tabela 'usuario_funcao'
-      console.log('[INFO] Inserindo função de organizador na tabela `usuario_funcao`.');
-      await client.query(
-        `INSERT INTO usuario_funcao (id_usuario, id_funcao, id_jogo, criado_em)
-        VALUES ($1, $2, $3, NOW())
-        ON CONFLICT (id_usuario, id_funcao, id_jogo) DO NOTHING`,
-        [id_usuario, 1, id_jogo] // 1 = ID da função "Organizador"
+    console.log('[INFO] Inserindo organizador na tabela `participacao_jogos`.');
+    const participacaoResult = await client.query(
+      `INSERT INTO participacao_jogos (id_jogo, id_usuario, lider_time, status)
+       VALUES ($1, $2, $3, 'ativo')`,
+      [id_jogo, id_usuario, true]
     );
+
+    console.log('[DEBUG] Resultado da inserção na tabela `participacao_jogos`:', participacaoResult.rowCount);
+
+    if (participacaoResult.rowCount === 0) {
+      console.error('[ERROR] Falha ao inserir o organizador na tabela `participacao_jogos`.');
+      throw new Error('Erro ao adicionar o organizador como participante.');
+    }
 
     await client.query('COMMIT'); // Finaliza a transação
     console.log('[INFO] Jogo criado com sucesso. Transação concluída.');
 
     return res
       .status(201)
-      .json({ message: 'Jogo criado com sucesso.', id_jogo });
+      .json({ message: 'Jogo criado com sucesso.', id_jogo, id_numerico: idNumerico });
   } catch (error) {
     console.error('[ERROR] Erro ao criar jogo:', error.message);
     await client.query('ROLLBACK'); // Reverte alterações em caso de erro
@@ -131,7 +149,7 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
   try {
     const jogoResult = await db.query(
       `SELECT j.id_jogo, j.nome_jogo, j.data_jogo, j.horario_inicio, j.horario_fim,
-              j.limite_jogadores, j.descricao, j.chave_pix, j.status,
+              j.limite_jogadores, j.descricao, j.chave_pix, j.status, j.id_numerico,
               (CASE WHEN j.id_usuario = $1 THEN true ELSE false END) AS "isOrganizer"
          FROM jogos j
          WHERE j.id_jogo = $2
@@ -146,21 +164,18 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
     const jogo = jogoResult.rows[0];
 
     const participacaoResult = await db.query(
-      `SELECT pj.id_usuario, u.nome, pj.status AS status, 
-              COALESCE((pj.data_pagamento IS NOT NULL), false) AS pago,
-              COALESCE((pj.data_confirmacao IS NOT NULL), false) AS confirmado
+      `SELECT pj.id_usuario, u.nome, pj.status, 
+              COALESCE(pj.confirmado, false) AS confirmado,
+              COALESCE(pj.pago, false) AS pago
        FROM participacao_jogos pj
        JOIN usuario u ON pj.id_usuario = u.id_usuario
-       WHERE pj.id_jogo = $1`,
+       WHERE pj.id_jogo = $1
+       ORDER BY u.nome ASC`,
       [id_jogo]
     );
 
-    const ativos = [];
-    const espera = [];
-    participacaoResult.rows.forEach((row) => {
-      if (row.status === 'ativo') ativos.push(row);
-      else espera.push(row);
-    });
+    const ativos = participacaoResult.rows.filter(row => row.status === 'ativo');
+    const espera = participacaoResult.rows.filter(row => row.status === 'na_espera');
 
     return res.status(200).json({
       id_jogo: jogo.id_jogo,
@@ -172,6 +187,7 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
       descricao: jogo.descricao,
       chave_pix: jogo.chave_pix,
       status: jogo.status,
+      id_numerico: jogo.id_numerico,
       isOrganizer: jogo.isOrganizer,
       jogadoresAtivos: ativos,
       jogadoresEspera: espera,
@@ -179,31 +195,6 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Erro ao buscar detalhes do jogo:', error.message);
     return res.status(500).json({ message: 'Erro interno ao buscar detalhes do jogo.' });
-  }
-});
-
-// Rota para gerar convite
-router.post('/convites/gerar', authMiddleware, async (req, res) => {
-  const { id_jogo, id_usuario } = req.body;
-  try {
-    const idNumerico = Math.floor(100000 + Math.random() * 900000);
-    const link = `https://seusite.com/sala/${idNumerico}`;
-
-    await db.query(
-      `INSERT INTO convites (id_jogo, id_usuario, id_numerico, link)
-       VALUES ($1, $2, $3, $4)`,
-      [id_jogo, id_usuario, idNumerico, link]
-    );
-
-    return res.status(200).json({
-      convite: {
-        id_numerico: idNumerico,
-        link,
-      },
-    });
-  } catch (error) {
-    console.error('Erro ao gerar convite:', error.message);
-    return res.status(500).json({ message: 'Erro ao gerar convite.' });
   }
 });
 

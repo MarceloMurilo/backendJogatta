@@ -8,134 +8,51 @@ const authMiddleware = require('../../middlewares/authMiddleware');
 
 router.use(authMiddleware);
 
-// 1. CRIAR SALA COM LOGS DETALHADOS
-router.post('/criar', async (req, res) => {
+// Rota para gerar link do convite
+router.post('/convites/gerar', async (req, res) => {
   try {
-    const {
-      nome_jogo,
-      data_jogo,
-      horario_inicio,
-      horario_fim,
-      limite_jogadores,
-    } = req.body;
+    const { id_jogo } = req.body;
+    const id_usuario = req.user.id;
 
-    const id_usuario = req.user.id; // Obtém o ID do usuário autenticado
-
-    console.log('[INFO] Iniciando criação de sala...');
-    console.log('[DEBUG] Dados recebidos:', {
-      nome_jogo,
-      data_jogo,
-      horario_inicio,
-      horario_fim,
-      limite_jogadores,
-      id_usuario,
-    });
-
-    if (
-      !nome_jogo ||
-      !data_jogo ||
-      !horario_inicio ||
-      !horario_fim ||
-      !limite_jogadores
-    ) {
-      console.error('[ERROR] Campos obrigatórios ausentes.');
-      return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
+    if (!id_jogo) {
+      return res.status(400).json({ error: 'id_jogo é obrigatório.' });
     }
 
-    // Insere o jogo na tabela `jogos` com status 'aberto'
-    console.log('[INFO] Inserindo jogo na tabela `jogos`...');
-    const result = await db.query(
-      `INSERT INTO jogos (nome, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'aberto')
-       RETURNING id_jogo`,
-      [nome_jogo, data_jogo, horario_inicio, horario_fim, limite_jogadores, id_usuario]
+    // Verifica se o usuário é participante do jogo
+    const participacaoQuery = await db.query(
+      `SELECT status FROM participacao_jogos
+       WHERE id_jogo = $1 AND id_usuario = $2`,
+      [id_jogo, id_usuario]
     );
 
-    console.log('[DEBUG] Resultado da inserção na tabela `jogos`:', result.rows);
-
-    if (result.rowCount === 0) {
-      console.error('[ERROR] Falha ao inserir o jogo na tabela `jogos`.');
-      return res.status(500).json({ message: 'Erro ao criar o jogo.' });
+    if (participacaoQuery.rowCount === 0 || participacaoQuery.rows[0].status !== 'ativo') {
+      return res.status(403).json({ error: 'Somente participantes ativos podem gerar convites.' });
     }
 
-    const id_jogo = result.rows[0].id_jogo;
-    console.log('[INFO] Jogo criado com sucesso. ID do jogo:', id_jogo);
-
-    // Adiciona o criador como participante ativo na tabela `participacao_jogos`
-    console.log('[INFO] Inserindo criador na tabela `participacao_jogos`...');
-    const participacaoResult = await db.query(
-      `INSERT INTO participacao_jogos (id_jogo, id_usuario, lider_time, status)
-       VALUES ($1, $2, $3, 'ativo')`,
-      [id_jogo, id_usuario, true]
-    );
-
-    console.log('[DEBUG] Resultado da inserção na tabela `participacao_jogos`:', participacaoResult.rowCount);
-
-    if (participacaoResult.rowCount === 0) {
-      console.error('[ERROR] Falha ao inserir o criador na tabela `participacao_jogos`.');
-      return res.status(500).json({ message: 'Erro ao adicionar o criador como participante.' });
-    }
-
-    console.log('[INFO] Sala criada e criador adicionado com sucesso.');
-
-    return res.status(201).json({
-      message: 'Jogo criado com sucesso.',
-      id_jogo,
-    });
-  } catch (error) {
-    console.error('[ERROR] Erro ao criar o jogo:', error.message);
-    return res.status(500).json({ message: 'Erro ao criar o jogo.' });
-  }
-});
-
-
-
-// 2. GERAR LINK DE CONVITE
-router.post('/gerar', async (req, res) => {
-  try {
-    const { id_jogo, id_usuario } = req.body;
-
-    if (!id_jogo || !id_usuario) {
-      return res
-        .status(400)
-        .json({ error: 'id_jogo e id_usuario são obrigatórios.' });
-    }
-
+    // Gerar convite_uuid único
     const convite_uuid = uuidv4();
-    let idNumerico;
-    let isUnique = false;
 
-    while (!isUnique) {
-      idNumerico = Math.floor(100000 + Math.random() * 900000);
-      const existing = await db.query(
-        'SELECT 1 FROM convites WHERE id_numerico = $1',
-        [idNumerico]
-      );
-      if (existing.rowCount === 0) {
-        isUnique = true;
-      }
-    }
+    // Gerar link baseado no convite_uuid
+    const link = `https://jogatta.com/invite/${convite_uuid}`;
 
+    // Inserir o convite no banco de dados
     await db.query(
-      `INSERT INTO convites (id_jogo, id_usuario, convite_uuid, status, data_envio, id_numerico)
-       VALUES ($1, $2, $3, $4, NOW(), $5)`,
-      [id_jogo, id_usuario, convite_uuid, 'aberto', idNumerico]
+      `INSERT INTO convites (id_jogo, id_usuario, convite_uuid, status, data_envio)
+       VALUES ($1, $2, $3, 'aberto', NOW())`,
+      [id_jogo, id_usuario, convite_uuid]
     );
 
     return res.status(201).json({
-      convite: {
-        link: `https://jogatta.com/invite/${convite_uuid}`,
-        id_numerico: idNumerico,
-      },
-      message: 'Convite criado com sucesso!',
+      message: 'Convite gerado com sucesso.',
+      convite: { link, convite_uuid },
     });
   } catch (error) {
     console.error('Erro ao gerar convite:', error.message);
-    return res.status(500).json({ error: 'Erro ao gerar o convite.' });
+    return res.status(500).json({ message: 'Erro ao gerar o convite.' });
   }
 });
 
-// 3. ENTRAR NA SALA
+// Rota para entrar na sala usando convite_uuid ou id_numerico
 router.post('/entrar', async (req, res) => {
   const client = await db.getClient();
 
@@ -150,30 +67,49 @@ router.post('/entrar', async (req, res) => {
 
     await client.query('BEGIN');
 
-    const conviteQuery = await client.query(
-      `SELECT c.id_jogo, j.status AS status_jogo
-         FROM convites c
-         JOIN jogos j ON c.id_jogo = j.id_jogo
-        WHERE (c.convite_uuid = $1 OR c.id_numerico = $2)
-          AND c.status = $3
-        LIMIT 1`,
-      [convite_uuid, id_numerico, 'pendente']
-    );
+    let id_jogo;
+    let status_jogo;
 
-    if (conviteQuery.rowCount === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Convite inválido ou expirado.' });
+    if (convite_uuid) {
+      // Entrar usando convite_uuid
+      const conviteQuery = await client.query(
+        `SELECT c.id_jogo, j.status AS status_jogo
+           FROM convites c
+           JOIN jogos j ON c.id_jogo = j.id_jogo
+          WHERE c.convite_uuid = $1
+            AND c.status = 'aberto'
+          LIMIT 1`,
+        [convite_uuid]
+      );
+
+      if (conviteQuery.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Convite inválido ou expirado.' });
+      }
+
+      id_jogo = conviteQuery.rows[0].id_jogo;
+      status_jogo = conviteQuery.rows[0].status_jogo;
+    } else if (id_numerico) {
+      // Entrar usando id_numerico
+      const jogoQuery = await client.query(
+        `SELECT id_jogo, status AS status_jogo
+           FROM jogos
+          WHERE id_numerico = $1
+            AND status IN ('aberto', 'balanceando times')
+          LIMIT 1`,
+        [id_numerico]
+      );
+
+      if (jogoQuery.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Sala não encontrada ou não disponível para entrada.' });
+      }
+
+      id_jogo = jogoQuery.rows[0].id_jogo;
+      status_jogo = jogoQuery.rows[0].status_jogo;
     }
 
-    const { id_jogo, status_jogo } = conviteQuery.rows[0];
-
-    if (!['aberto', 'balanceando times'].includes(status_jogo)) {
-      await client.query('ROLLBACK');
-      return res.status(403).json({
-        error: 'A sala não está disponível para entrada.',
-      });
-    }
-
+    // Verificar limite de jogadores ativos
     const ativosCountQuery = await client.query(
       'SELECT COUNT(*) AS total_ativos FROM participacao_jogos WHERE id_jogo = $1 AND status = $2',
       [id_jogo, 'ativo']
@@ -187,6 +123,7 @@ router.post('/entrar', async (req, res) => {
     const limiteJogadores = jogoQuery.rows[0]?.limite_jogadores || 0;
 
     if (numJogadoresAtivos >= limiteJogadores) {
+      // Verificar se já está na fila
       const usuarioFilaQuery = await client.query(
         'SELECT 1 FROM fila_jogos WHERE id_jogo = $1 AND id_usuario = $2',
         [id_jogo, id_usuario]
@@ -199,6 +136,7 @@ router.post('/entrar', async (req, res) => {
           .json({ message: 'Jogador já está na lista de espera.' });
       }
 
+      // Adicionar à fila
       const posicaoQuery = await client.query(
         'SELECT COUNT(*) + 1 AS posicao FROM fila_jogos WHERE id_jogo = $1',
         [id_jogo]
@@ -207,14 +145,15 @@ router.post('/entrar', async (req, res) => {
 
       await client.query(
         `INSERT INTO fila_jogos (id_jogo, id_usuario, status, posicao_fila, timestamp)
-         VALUES ($1, $2, $3, $4, NOW())`,
-        [id_jogo, id_usuario, 'na_espera', posicao]
+         VALUES ($1, $2, 'na_espera', $3, NOW())`,
+        [id_jogo, id_usuario, posicao]
       );
 
       await client.query('COMMIT');
       return res.status(200).json({ message: 'Jogador adicionado à lista de espera.' });
     }
 
+    // Adicionar como participante ativo
     await client.query(
       `INSERT INTO participacao_jogos (id_jogo, id_usuario, status, confirmado, pago)
        VALUES ($1, $2, 'ativo', FALSE, FALSE)
@@ -231,93 +170,6 @@ router.post('/entrar', async (req, res) => {
     return res.status(500).json({ error: 'Erro ao entrar na sala.' });
   } finally {
     client.release();
-  }
-});
-
-// 4. LISTAR JOGADORES
-router.get('/:id_jogo/jogadores', async (req, res) => {
-  try {
-    const { id_jogo } = req.params;
-    const id_usuario_logado = req.user ? req.user.id : null;
-
-    // Verifica se o jogo existe
-    const jogoQuery = await db.query(
-      `SELECT id_usuario, limite_jogadores, status
-         FROM jogos
-        WHERE id_jogo = $1
-        LIMIT 1`,
-      [id_jogo]
-    );
-
-    if (jogoQuery.rowCount === 0) {
-      return res.status(404).json({ error: 'Jogo não encontrado.' });
-    }
-
-    const { id_usuario: organizador_id, limite_jogadores, status } =
-      jogoQuery.rows[0];
-    const isOrganizer =
-      parseInt(id_usuario_logado, 10) === parseInt(organizador_id, 10);
-
-    // Lista jogadores ativos
-    const ativosQuery = await db.query(
-      `SELECT u.id_usuario, u.nome, p.status, p.confirmado, p.pago
-         FROM participacao_jogos p
-         JOIN usuario u ON p.id_usuario = u.id_usuario
-        WHERE p.id_jogo = $1
-          AND p.status = 'ativo'
-        ORDER BY u.nome ASC`,
-      [id_jogo]
-    );
-    const ativos = ativosQuery.rows;
-
-    // Lista jogadores na fila de espera
-    const esperaQuery = await db.query(
-      `SELECT u.id_usuario, u.nome, f.status, f.posicao_fila
-         FROM fila_jogos f
-         JOIN usuario u ON f.id_usuario = u.id_usuario
-        WHERE f.id_jogo = $1
-          AND f.status = 'na_espera'
-        ORDER BY f.posicao_fila ASC, u.nome ASC`,
-      [id_jogo]
-    );
-    const espera = esperaQuery.rows;
-
-    // Lista os times e jogadores associados
-    const timesQuery = await db.query(
-      `SELECT t.numero_time AS time_numero, u.nome AS jogador_nome
-         FROM times t
-         JOIN usuario u ON t.id_usuario = u.id_usuario
-        WHERE t.id_jogo = $1
-        ORDER BY t.numero_time, u.nome`,
-      [id_jogo]
-    );
-
-    // Estrutura os times com seus jogadores
-    const times = timesQuery.rows.reduce((acc, row) => {
-      const timeExistente = acc.find((t) => t.numero === row.time_numero);
-      if (timeExistente) {
-        timeExistente.jogadores.push({ nome: row.jogador_nome });
-      } else {
-        acc.push({
-          numero: row.time_numero,
-          jogadores: [{ nome: row.jogador_nome }],
-        });
-      }
-      return acc;
-    }, []);
-
-    // Retorna todos os dados estruturados
-    return res.status(200).json({
-      ativos,
-      espera,
-      isOrganizer,
-      limite_jogadores,
-      status,
-      times, // Inclui os times formados
-    });
-  } catch (error) {
-    console.error('Erro ao listar jogadores:', error.message);
-    return res.status(500).json({ error: 'Erro ao listar jogadores.' });
   }
 });
 
@@ -600,7 +452,7 @@ router.post('/toggle-status', async (req, res) => {
         `UPDATE convites
             SET status = 'expirado'
           WHERE id_jogo = $1
-            AND status = 'pendente'`,
+            AND status = 'aberto'`,
         [id_jogo]
       );
     }
@@ -619,7 +471,7 @@ router.post('/toggle-status', async (req, res) => {
   -------------------------------------------
   10. FECHAR SALA
   -------------------------------------------
-  Endpoint para encerrar a sala, atualizando o status para 'fechada'.
+  Endpoint para encerrar a sala, atualizando o status para 'finalizado'.
 */
 router.post('/fechar-sala', async (req, res) => {
   const { id_jogo, id_usuario_organizador } = req.body;
@@ -644,7 +496,7 @@ router.post('/fechar-sala', async (req, res) => {
       return res.status(403).json({ error: 'Apenas o organizador pode encerrar a sala.' });
     }
 
-    // Atualizar o status do jogo para 'fechada'
+    // Atualizar o status do jogo para 'finalizado'
     await db.query(
       'UPDATE jogos SET status = $1 WHERE id_jogo = $2',
       ['finalizado', id_jogo]
@@ -739,7 +591,7 @@ FROM participacao_jogos p
 JOIN jogos j ON p.id_jogo = j.id_jogo
 WHERE p.id_usuario = $1
   AND p.status = 'ativo'  -- Participação ativa
-  AND j.status IN ('aberto', 'balanceando times', 'em andamento')  -- Status do jogo
+  AND j.status IN ('aberto', 'balanceando times', 'finalizado')  -- Status do jogo
 ORDER BY j.data_jogo, j.horario_inicio;`,
       [id_usuario]
     );
