@@ -6,9 +6,13 @@ const { v4: uuidv4 } = require('uuid');
 const db = require('../../db');
 const authMiddleware = require('../../middlewares/authMiddleware');
 
+// Aplica o middleware de autenticação a todas as rotas deste router
 router.use(authMiddleware);
 
-// Rota para gerar link do convite
+/**
+ * Rota para gerar link do convite
+ * POST /api/lobby/convites/gerar
+ */
 router.post('/convites/gerar', async (req, res) => {
   try {
     const { id_jogo } = req.body;
@@ -18,7 +22,7 @@ router.post('/convites/gerar', async (req, res) => {
       return res.status(400).json({ error: 'id_jogo é obrigatório.' });
     }
 
-    // Verifica se o usuário é participante do jogo
+    // Verifica se o usuário é participante ativo do jogo
     const participacaoQuery = await db.query(
       `SELECT status FROM participacao_jogos
        WHERE id_jogo = $1 AND id_usuario = $2`,
@@ -52,7 +56,10 @@ router.post('/convites/gerar', async (req, res) => {
   }
 });
 
-// Rota para entrar na sala usando convite_uuid ou id_numerico
+/**
+ * Rota para entrar na sala usando convite_uuid ou id_numerico
+ * POST /api/lobby/entrar
+ */
 router.post('/entrar', async (req, res) => {
   const client = await db.getClient();
 
@@ -116,11 +123,11 @@ router.post('/entrar', async (req, res) => {
     );
     const numJogadoresAtivos = parseInt(ativosCountQuery.rows[0].total_ativos, 10) || 0;
 
-    const jogoQuery = await client.query(
+    const jogoQueryDetalhes = await client.query(
       'SELECT limite_jogadores FROM jogos WHERE id_jogo = $1',
       [id_jogo]
     );
-    const limiteJogadores = jogoQuery.rows[0]?.limite_jogadores || 0;
+    const limiteJogadores = jogoQueryDetalhes.rows[0]?.limite_jogadores || 0;
 
     if (numJogadoresAtivos >= limiteJogadores) {
       // Verificar se já está na fila
@@ -173,7 +180,43 @@ router.post('/entrar', async (req, res) => {
   }
 });
 
-// 5. CONFIRMAR PRESENÇA
+/**
+ * Rota para listar jogadores do lobby
+ * GET /api/lobby/:id_jogo/jogadores
+ */
+router.get('/:id_jogo/jogadores', async (req, res) => {
+  const { id_jogo } = req.params;
+
+  if (!id_jogo) {
+    return res.status(400).json({ error: 'ID do jogo é obrigatório.' });
+  }
+
+  try {
+    // Busca os jogadores que estão participando do jogo
+    const jogadoresQuery = await db.query(
+      `SELECT pj.id_usuario, u.nome, pj.status, 
+              COALESCE(pj.confirmado, false) AS confirmado,
+              COALESCE(pj.pago, false) AS pago
+         FROM participacao_jogos pj
+         JOIN usuario u ON pj.id_usuario = u.id_usuario
+         WHERE pj.id_jogo = $1
+         ORDER BY u.nome ASC`,
+      [id_jogo]
+    );
+
+    const jogadores = jogadoresQuery.rows;
+
+    return res.status(200).json({ jogadores });
+  } catch (error) {
+    console.error('Erro ao carregar jogadores do lobby:', error.message);
+    return res.status(500).json({ error: 'Erro ao carregar jogadores.' });
+  }
+});
+
+/**
+ * Rota para confirmar presença
+ * POST /api/lobby/confirmar-presenca
+ */
 router.post('/confirmar-presenca', async (req, res) => {
   try {
     const { id_jogo, id_usuario } = req.body;
@@ -199,7 +242,10 @@ router.post('/confirmar-presenca', async (req, res) => {
   }
 });
 
-// 6. CONFIRMAR PAGAMENTO
+/**
+ * Rota para confirmar pagamento
+ * POST /api/lobby/confirmar-pagamento
+ */
 router.post('/confirmar-pagamento', async (req, res) => {
   try {
     const { id_jogo, id_usuario } = req.body;
@@ -227,7 +273,10 @@ router.post('/confirmar-pagamento', async (req, res) => {
   }
 });
 
-// 7. SAIR DA SALA
+/**
+ * Rota para sair do lobby
+ * POST /api/lobby/sair
+ */
 router.post('/sair', async (req, res) => {
   const client = await db.getClient();
 
@@ -309,7 +358,10 @@ router.post('/sair', async (req, res) => {
   }
 });
 
-// 8. REMOVER USUÁRIO (ORGANIZADOR)
+/**
+ * Rota para remover usuário (apenas organizador)
+ * POST /api/lobby/remover
+ */
 router.post('/remover', async (req, res) => {
   const client = await db.getClient();
 
@@ -324,6 +376,7 @@ router.post('/remover', async (req, res) => {
 
     await client.query('BEGIN');
 
+    // Verificar se o usuário que está tentando remover é o organizador
     const organizadorQuery = await client.query(
       'SELECT id_usuario FROM jogos WHERE id_jogo = $1',
       [id_jogo]
@@ -343,6 +396,7 @@ router.post('/remover', async (req, res) => {
         .json({ error: 'Somente o organizador pode remover usuários.' });
     }
 
+    // Atualizar o status do usuário para 'removido'
     await client.query(
       `UPDATE participacao_jogos
           SET status = 'removido'
@@ -351,6 +405,7 @@ router.post('/remover', async (req, res) => {
       [id_jogo, id_usuario_remover]
     );
 
+    // Verificar se há alguém na fila para promover
     const filaQuery = await client.query(
       `SELECT id_usuario
          FROM fila_jogos
@@ -408,7 +463,10 @@ router.post('/remover', async (req, res) => {
   }
 });
 
-// 9. TOGGLE STATUS SALA
+/**
+ * Rota para alternar status da sala (aberto/privado)
+ * POST /api/lobby/toggle-status
+ */
 router.post('/toggle-status', async (req, res) => {
   try {
     const { id_jogo, id_usuario_organizador } = req.body;
@@ -419,6 +477,7 @@ router.post('/toggle-status', async (req, res) => {
       });
     }
 
+    // Verificar se o usuário que está tentando alterar o status é o organizador
     const jogoQuery = await db.query(
       `SELECT id_usuario, status
          FROM jogos
@@ -438,6 +497,7 @@ router.post('/toggle-status', async (req, res) => {
         .json({ error: 'Somente o organizador pode alterar o status.' });
     }
 
+    // Alternar o status
     const novoStatus = status === 'aberto' ? 'finalizado' : 'aberto';
 
     await db.query(
@@ -447,6 +507,7 @@ router.post('/toggle-status', async (req, res) => {
       [novoStatus, id_jogo]
     );
 
+    // Se a sala for finalizada, atualizar convites para 'expirado'
     if (novoStatus === 'finalizado') {
       await db.query(
         `UPDATE convites
@@ -467,12 +528,10 @@ router.post('/toggle-status', async (req, res) => {
   }
 });
 
-/*
-  -------------------------------------------
-  10. FECHAR SALA
-  -------------------------------------------
-  Endpoint para encerrar a sala, atualizando o status para 'finalizado'.
-*/
+/**
+ * Rota para fechar a sala
+ * POST /api/lobby/fechar-sala
+ */
 router.post('/fechar-sala', async (req, res) => {
   const { id_jogo, id_usuario_organizador } = req.body;
 
@@ -509,12 +568,10 @@ router.post('/fechar-sala', async (req, res) => {
   }
 });
 
-/*
-  -------------------------------------------
-  11. ESTENDER TEMPO DA SALA
-  -------------------------------------------
-  Endpoint para estender o tempo de término da sala.
-*/
+/**
+ * Rota para estender o tempo da sala
+ * POST /api/lobby/estender-tempo
+ */
 router.post('/estender-tempo', async (req, res) => {
   const { id_jogo, id_usuario_organizador, novo_termino } = req.body;
 
@@ -569,12 +626,10 @@ router.post('/estender-tempo', async (req, res) => {
   }
 });
 
-/*
-  -------------------------------------------
-  12. OBTÉM SALAS ATIVAS DO USUÁRIO
-  -------------------------------------------
-  Endpoint para obter todas as salas em que o usuário está participando.
-*/
+/**
+ * Rota para obter salas ativas do usuário
+ * GET /api/lobby/me
+ */
 router.get('/me', async (req, res) => {
   const id_usuario = req.user.id;
 
