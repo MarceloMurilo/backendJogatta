@@ -160,7 +160,7 @@ function balancearJogadores(jogadores, tamanhoTime) {
   const embaralhados = embaralharJogadores([...jogadoresUnicos]);
 
   // Calcula quantos times teremos
-  const numTimes = Math.max(2, Math.floor(embaralhados.length / tamanhoTime));
+  const numTimes = Math.floor(jogadoresUnicos.length / tamanhoTime);
   console.log(`Número de times a serem criados: ${numTimes}`);
 
   const times = [];
@@ -176,17 +176,16 @@ function balancearJogadores(jogadores, tamanhoTime) {
   // Caso sobrem jogadores (reservas)
   let reservas = [];
 
-  // Distribui jogadores
-  let index = 0;
-  for (let j of embaralhados) {
-    const timeIndex = Math.floor(index / tamanhoTime);
-    if (timeIndex < numTimes) {
-      times[timeIndex].jogadores.push(j);
+  // Distribui jogadores entre os times
+  let timeIndex = 0;
+  embaralhados.forEach((jogador) => {
+    if (times[timeIndex].jogadores.length < tamanhoTime) {
+      times[timeIndex].jogadores.push(jogador);
     } else {
-      reservas.push(j);
+      reservas.push(jogador);
     }
-    index++;
-  }
+    timeIndex = (timeIndex + 1) % numTimes; // Alterna entre os times
+  });
 
   console.log(`Jogadores distribuídos nos times. Total de reservas: ${reservas.length}`);
 
