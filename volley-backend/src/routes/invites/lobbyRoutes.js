@@ -231,16 +231,6 @@ router.post('/entrar', async (req, res) => {
       [id_jogo, id_usuario]
     );
 
-    // Se foi através de um convite, marcar o convite como utilizado
-    if (convite_uuid) {
-      await client.query(
-        `UPDATE convites
-           SET status = 'utilizado'
-         WHERE convite_uuid = $1`,
-        [convite_uuid]
-      );
-    }
-
     await client.query('COMMIT');
     return res.status(200).json({ message: 'Jogador entrou na sala.' });
   } catch (error) {
@@ -258,8 +248,16 @@ router.post('/entrar', async (req, res) => {
  * 
  * Response:
  * {
- *   jogadoresAtivos: [...],
- *   jogadoresEspera: [...]
+ *   jogadores: [
+ *     {
+ *       id_usuario: number,
+ *       nome: string,
+ *       status: string,
+ *       confirmado: boolean,
+ *       pago: boolean
+ *     },
+ *     // ... outros jogadores
+ *   ]
  * }
  */
 router.get('/:id_jogo/jogadores', async (req, res) => {
@@ -270,36 +268,21 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
   }
 
   try {
-    // Busca os jogadores ativos que estão participando do jogo
-    const jogadoresAtivosQuery = await db.query(
+    // Busca os jogadores que estão participando do jogo
+    const jogadoresQuery = await db.query(
       `SELECT pj.id_usuario, u.nome, pj.status, 
               COALESCE(pj.confirmado, false) AS confirmado,
               COALESCE(pj.pago, false) AS pago
          FROM participacao_jogos pj
          JOIN usuario u ON pj.id_usuario = u.id_usuario
-         WHERE pj.id_jogo = $1 AND pj.status = 'ativo'
+         WHERE pj.id_jogo = $1
          ORDER BY u.nome ASC`,
       [id_jogo]
     );
 
-    const jogadoresAtivos = jogadoresAtivosQuery.rows;
+    const jogadores = jogadoresQuery.rows;
 
-    // Busca os jogadores na lista de espera
-    const jogadoresEsperaQuery = await db.query(
-      `SELECT fj.id_usuario, u.nome, fj.status, 
-              COALESCE(pj.confirmado, false) AS confirmado,
-              COALESCE(pj.pago, false) AS pago
-         FROM fila_jogos fj
-         JOIN usuario u ON fj.id_usuario = u.id_usuario
-         LEFT JOIN participacao_jogos pj ON fj.id_jogo = pj.id_jogo AND fj.id_usuario = pj.id_usuario
-         WHERE fj.id_jogo = $1 AND fj.status = 'na_espera'
-         ORDER BY fj.posicao_fila ASC`,
-      [id_jogo]
-    );
-
-    const jogadoresEspera = jogadoresEsperaQuery.rows;
-
-    return res.status(200).json({ jogadoresAtivos, jogadoresEspera });
+    return res.status(200).json({ jogadores });
   } catch (error) {
     console.error('Erro ao carregar jogadores do lobby:', error.message);
     return res.status(500).json({ error: 'Erro ao carregar jogadores.' });
@@ -331,17 +314,13 @@ router.post('/confirmar-presenca', async (req, res) => {
         .json({ error: 'id_jogo e id_usuario são obrigatórios.' });
     }
 
-    const result = await db.query(
+    await db.query(
       `UPDATE participacao_jogos
           SET confirmado = TRUE
         WHERE id_jogo = $1
           AND id_usuario = $2`,
       [id_jogo, id_usuario]
     );
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: 'Participação não encontrada.' });
-    }
 
     return res.status(200).json({ message: 'Presença confirmada com sucesso.' });
   } catch (error) {
@@ -375,17 +354,13 @@ router.post('/confirmar-pagamento', async (req, res) => {
         .json({ error: 'id_jogo e id_usuario são obrigatórios.' });
     }
 
-    const result = await db.query(
+    await db.query(
       `UPDATE participacao_jogos
           SET pago = TRUE
         WHERE id_jogo = $1
           AND id_usuario = $2`,
       [id_jogo, id_usuario]
     );
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: 'Participação não encontrada.' });
-    }
 
     return res
       .status(200)
@@ -425,8 +400,7 @@ router.post('/sair', async (req, res) => {
 
     await client.query('BEGIN');
 
-    // Atualizar o status do usuário para 'saiu'
-    const updateResult = await client.query(
+    await client.query(
       `UPDATE participacao_jogos
           SET status = 'saiu'
         WHERE id_jogo = $1
@@ -434,16 +408,11 @@ router.post('/sair', async (req, res) => {
       [id_jogo, id_usuario]
     );
 
-    if (updateResult.rowCount === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Participação não encontrada.' });
-    }
-
-    // Buscar o próximo da fila, se houver
     const filaQuery = await client.query(
       `SELECT id_usuario
          FROM fila_jogos
-        WHERE id_jogo = $1 AND status = 'na_espera'
+        WHERE id_jogo = $1
+          AND status = 'na_espera'
         ORDER BY posicao_fila ASC
         LIMIT 1`,
       [id_jogo]
@@ -452,11 +421,11 @@ router.post('/sair', async (req, res) => {
     if (filaQuery.rowCount > 0) {
       const proximoDaFila = filaQuery.rows[0].id_usuario;
 
-      // Verificar se há vaga disponível
       const ativosCountQuery = await client.query(
         `SELECT COUNT(*) AS total_ativos
            FROM participacao_jogos
-          WHERE id_jogo = $1 AND status = 'ativo'`,
+          WHERE id_jogo = $1
+            AND status = 'ativo'`,
         [id_jogo]
       );
       const numJogadoresAtivos = parseInt(ativosCountQuery.rows[0].total_ativos, 10) || 0;
@@ -468,7 +437,6 @@ router.post('/sair', async (req, res) => {
       const limiteJogadores = jogoQuery.rows[0]?.limite_jogadores || 0;
 
       if (numJogadoresAtivos < limiteJogadores) {
-        // Promover o próximo da fila para ativo
         await client.query(
           `INSERT INTO participacao_jogos (id_jogo, id_usuario, status, confirmado, pago)
            VALUES ($1, $2, 'ativo', FALSE, FALSE)
@@ -477,10 +445,10 @@ router.post('/sair', async (req, res) => {
           [id_jogo, proximoDaFila]
         );
 
-        // Remover da fila
         await client.query(
           `DELETE FROM fila_jogos
-            WHERE id_jogo = $1 AND id_usuario = $2`,
+            WHERE id_jogo = $1
+              AND id_usuario = $2`,
           [id_jogo, proximoDaFila]
         );
       }
@@ -550,7 +518,7 @@ router.post('/remover', async (req, res) => {
     }
 
     // Atualizar o status do usuário para 'removido'
-    const updateResult = await client.query(
+    await client.query(
       `UPDATE participacao_jogos
           SET status = 'removido'
         WHERE id_jogo = $1
@@ -558,16 +526,12 @@ router.post('/remover', async (req, res) => {
       [id_jogo, id_usuario_remover]
     );
 
-    if (updateResult.rowCount === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Participação a ser removida não encontrada.' });
-    }
-
     // Verificar se há alguém na fila para promover
     const filaQuery = await client.query(
       `SELECT id_usuario
          FROM fila_jogos
-        WHERE id_jogo = $1 AND status = 'na_espera'
+        WHERE id_jogo = $1
+          AND status = 'na_espera'
         ORDER BY posicao_fila ASC
         LIMIT 1`,
       [id_jogo]
@@ -576,11 +540,11 @@ router.post('/remover', async (req, res) => {
     if (filaQuery.rowCount > 0) {
       const proximoDaFila = filaQuery.rows[0].id_usuario;
 
-      // Verificar se há vaga disponível
       const ativosCountQuery = await client.query(
         `SELECT COUNT(*) AS total_ativos
            FROM participacao_jogos
-          WHERE id_jogo = $1 AND status = 'ativo'`,
+          WHERE id_jogo = $1
+            AND status = 'ativo'`,
         [id_jogo]
       );
       const numJogadoresAtivos = parseInt(ativosCountQuery.rows[0].total_ativos, 10) || 0;
@@ -592,7 +556,6 @@ router.post('/remover', async (req, res) => {
       const limiteJogadores = jogoQuery.rows[0]?.limite_jogadores || 0;
 
       if (numJogadoresAtivos < limiteJogadores) {
-        // Promover o próximo da fila para ativo
         await client.query(
           `INSERT INTO participacao_jogos (id_jogo, id_usuario, status, confirmado, pago)
            VALUES ($1, $2, 'ativo', FALSE, FALSE)
@@ -601,10 +564,10 @@ router.post('/remover', async (req, res) => {
           [id_jogo, proximoDaFila]
         );
 
-        // Remover da fila
         await client.query(
           `DELETE FROM fila_jogos
-            WHERE id_jogo = $1 AND id_usuario = $2`,
+            WHERE id_jogo = $1
+              AND id_usuario = $2`,
           [id_jogo, proximoDaFila]
         );
       }
@@ -668,7 +631,7 @@ router.post('/toggle-status', async (req, res) => {
     }
 
     // Alternar o status
-    const novoStatus = status === 'aberto' ? 'privado' : 'aberto';
+    const novoStatus = status === 'aberto' ? 'finalizado' : 'aberto';
 
     await db.query(
       `UPDATE jogos
@@ -912,7 +875,6 @@ router.get('/invite/:uuid', async (req, res) => {
             .container { background-color: #fff; padding: 20px; border-radius: 8px; max-width: 600px; margin: auto; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
             h1 { color: #333; }
             p { color: #555; }
-            .button { display: inline-block; padding: 10px 20px; margin-top: 20px; background-color: #4A90E2; color: #fff; text-decoration: none; border-radius: 5px; }
           </style>
         </head>
         <body>
@@ -921,7 +883,6 @@ router.get('/invite/:uuid', async (req, res) => {
             <p><strong>Organizador:</strong> ${convite.organizador}</p>
             <p><strong>Status:</strong> ${convite.status}</p>
             <p>Para aceitar o convite, faça login no aplicativo e entre na sala utilizando o convite gerado.</p>
-            <a href="${BASE_URL}/api/lobby/entrar" class="button">Entrar na Sala</a>
           </div>
         </body>
       </html>
@@ -929,259 +890,6 @@ router.get('/invite/:uuid', async (req, res) => {
   } catch (error) {
     console.error('Erro ao buscar convite:', error.message);
     return res.status(500).send('Erro ao processar a solicitação.');
-  }
-});
-
-/**
- * Rota para iniciar o balanceamento dos times
- * POST /api/lobby/balanceamento/iniciar
- * 
- * Body:
- * {
- *   id_jogo: number,
- *   tamanho_time?: number
- * }
- * 
- * Response:
- * {
- *   message: string,
- *   times: [...],
- *   reservas: [...]
- * }
- */
-router.post('/balanceamento/iniciar', async (req, res) => {
-  const client = await db.getClient();
-
-  try {
-    const { id_jogo, tamanho_time } = req.body;
-
-    if (!id_jogo) {
-      return res.status(400).json({ error: 'id_jogo é obrigatório.' });
-    }
-
-    // Verificar se a sala está no status correto para balanceamento
-    const jogoQuery = await client.query(
-      `SELECT status FROM jogos WHERE id_jogo = $1`,
-      [id_jogo]
-    );
-
-    if (jogoQuery.rowCount === 0) {
-      return res.status(404).json({ error: 'Jogo não encontrado.' });
-    }
-
-    const statusSala = jogoQuery.rows[0].status;
-
-    if (statusSala !== 'aberto' && statusSala !== 'balanceando times') {
-      return res.status(400).json({ error: 'Sala não está aberta para balanceamento.' });
-    }
-
-    await client.query('BEGIN');
-
-    // Obter jogadores ativos
-    const jogadoresAtivosQuery = await client.query(
-      `SELECT pj.id_usuario, u.nome, COALESCE(pj.levantamento, 0) AS levantamento
-         FROM participacao_jogos pj
-         JOIN usuario u ON pj.id_usuario = u.id_usuario
-        WHERE pj.id_jogo = $1 AND pj.status = 'ativo'`,
-      [id_jogo]
-    );
-
-    const jogadoresAtivos = jogadoresAtivosQuery.rows;
-
-    // Definir tamanho dos times
-    const tamanhoTimeFinal = tamanho_time || 4; // Valor padrão se não fornecido
-
-    // Função fictícia para balancear jogadores em times
-    const balancearJogadores = (jogadores, tamanho) => {
-      // Ordenar jogadores por levantamento (descendente)
-      const sortedJogadores = [...jogadores].sort((a, b) => b.levantamento - a.levantamento);
-
-      const times = [];
-      const reservas = [];
-
-      let currentTime = { nome: `Time ${times.length + 1}`, jogadores: [] };
-
-      sortedJogadores.forEach(jogador => {
-        if (currentTime.jogadores.length < tamanho) {
-          currentTime.jogadores.push(jogador);
-        } else {
-          times.push(currentTime);
-          currentTime = { nome: `Time ${times.length + 1}`, jogadores: [jogador] };
-        }
-      });
-
-      if (currentTime.jogadores.length > 0) {
-        times.push(currentTime);
-      }
-
-      // Supondo que o número de times seja determinado pelo tamanho desejado
-      // Exemplo: se houver 10 jogadores e tamanho 4, teremos 3 times e 2 reservas
-      const totalJogadores = jogadores.length;
-      const numTimes = Math.floor(totalJogadores / tamanhoTimeFinal);
-      const expectedJogadores = numTimes * tamanhoTimeFinal;
-
-      reservas.push(...jogadores.slice(expectedJogadores));
-
-      return { times, reservas };
-    };
-
-    const { times, reservas } = balancearJogadores(jogadoresAtivos, tamanhoTimeFinal);
-
-    // Atualizar status da sala para 'balanceando times'
-    await client.query(
-      `UPDATE jogos
-          SET status = 'balanceando times'
-        WHERE id_jogo = $1`,
-      [id_jogo]
-    );
-
-    // Inserir ou atualizar times no banco de dados
-    for (const time of times) {
-      // Inserir um novo time
-      const insertTimeResult = await client.query(
-        `INSERT INTO times (id_jogo, nome_time)
-         VALUES ($1, $2)
-         RETURNING id_time`,
-        [id_jogo, time.nome]
-      );
-
-      const id_time = insertTimeResult.rows[0].id_time;
-
-      // Adicionar jogadores ao time
-      for (const jogador of time.jogadores) {
-        await client.query(
-          `INSERT INTO participacao_times (id_time, id_usuario)
-           VALUES ($1, $2)
-           ON CONFLICT DO NOTHING`,
-          [id_time, jogador.id_usuario]
-        );
-      }
-    }
-
-    // Atualizar jogadores excedentes para 'na_espera'
-    for (const reserva of reservas) {
-      // Verificar se já está na fila
-      const filaExistente = await client.query(
-        `SELECT 1 FROM fila_jogos WHERE id_jogo = $1 AND id_usuario = $2`,
-        [id_jogo, reserva.id_usuario]
-      );
-
-      if (filaExistente.rowCount === 0) {
-        // Obter a próxima posição na fila
-        const posicaoQuery = await client.query(
-          `SELECT COUNT(*) + 1 AS posicao FROM fila_jogos WHERE id_jogo = $1`,
-          [id_jogo]
-        );
-        const posicao = parseInt(posicaoQuery.rows[0].posicao, 10) || 1;
-
-        // Adicionar à fila
-        await client.query(
-          `INSERT INTO fila_jogos (id_jogo, id_usuario, status, posicao_fila, timestamp)
-           VALUES ($1, $2, 'na_espera', $3, NOW())`,
-          [id_jogo, reserva.id_usuario, posicao]
-        );
-      }
-    }
-
-    // Remover associações de times anteriores, se necessário
-    // Isso depende da lógica do seu sistema. Se você estiver re-balanceando, talvez precise limpar os times anteriores.
-
-    await client.query('COMMIT');
-
-    return res.status(200).json({
-      message: 'Balanceamento realizado com sucesso!',
-      times,
-      reservas,
-    });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Erro ao iniciar balanceamento:', error.message);
-    return res.status(500).json({ error: 'Erro ao iniciar balanceamento.' });
-  } finally {
-    if (client) client.release();
-  }
-});
-
-/**
- * Rota para finalizar o balanceamento dos times
- * POST /api/lobby/balanceamento/finalizar
- * 
- * Body:
- * {
- *   id_jogo: number,
- *   id_usuario_organizador: number,
- *   times: [
- *     {
- *       nome: string,
- *       jogadores: [
- *         { id_usuario: number, nome: string, levantamento: number },
- *         // ... outros jogadores
- *       ]
- *     },
- *     // ... outros times
- *   ]
- * }
- * 
- * Response:
- * {
- *   message: string,
- *   status: string
- * }
- */
-router.post('/balanceamento/finalizar', async (req, res) => {
-  const client = await db.getClient();
-
-  try {
-    const { id_jogo, id_usuario_organizador, times } = req.body;
-
-    if (!id_jogo || !id_usuario_organizador || !Array.isArray(times)) {
-      return res.status(400).json({ error: 'Parâmetros obrigatórios ausentes ou inválidos.' });
-    }
-
-    await client.query('BEGIN');
-
-    // Verificar se o usuário é organizador
-    const organizadorQuery = await client.query(
-      'SELECT id_usuario FROM jogos WHERE id_jogo = $1',
-      [id_jogo]
-    );
-
-    if (organizadorQuery.rowCount === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Jogo não encontrado.' });
-    }
-
-    const organizador_id = organizadorQuery.rows[0].id_usuario;
-    if (parseInt(organizador_id) !== parseInt(id_usuario_organizador, 10)) {
-      await client.query('ROLLBACK');
-      return res.status(403).json({ error: 'Apenas o organizador pode finalizar o balanceamento.' });
-    }
-
-    // Atualizar status da sala para 'finalizado' ou outro status desejado
-    await client.query(
-      `UPDATE jogos
-          SET status = 'finalizado'
-        WHERE id_jogo = $1`,
-      [id_jogo]
-    );
-
-    // Opcional: Atualizar convites para 'expirado' se necessário
-    await client.query(
-      `UPDATE convites
-          SET status = 'expirado'
-        WHERE id_jogo = $1 AND status = 'aberto'`,
-      [id_jogo]
-    );
-
-    await client.query('COMMIT');
-
-    return res.status(200).json({ message: 'Balanceamento finalizado com sucesso!', status: 'finalizado' });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Erro ao finalizar balanceamento:', error.message);
-    return res.status(500).json({ error: 'Erro ao finalizar balanceamento.' });
-  } finally {
-    if (client) client.release();
   }
 });
 
