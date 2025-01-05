@@ -6,6 +6,9 @@ const { v4: uuidv4 } = require('uuid');
 const db = require('../../db');
 const authMiddleware = require('../../middlewares/authMiddleware');
 
+// Substitua "backendjogatta.onrender.com" pela sua URL do Render
+const BASE_URL = 'https://backendjogatta.onrender.com';
+
 // Aplica o middleware de autenticação a todas as rotas deste router
 router.use(authMiddleware);
 
@@ -15,6 +18,7 @@ router.use(authMiddleware);
  */
 const generateUniqueIdNumerico = async (attempt = 1, maxAttempts = 5) => {
   if (attempt > maxAttempts) {
+    console.error(`Falha ao gerar um id_numerico único após ${maxAttempts} tentativas.`);
     throw new Error('Não foi possível gerar um id_numerico único.');
   }
 
@@ -38,6 +42,21 @@ const generateUniqueIdNumerico = async (attempt = 1, maxAttempts = 5) => {
 /**
  * Rota para gerar link do convite
  * POST /api/lobby/convites/gerar
+ * 
+ * Body:
+ * {
+ *   id_jogo: number
+ * }
+ * 
+ * Response:
+ * {
+ *   message: "Convite gerado com sucesso.",
+ *   convite: {
+ *     link: string,
+ *     convite_uuid: string,
+ *     id_numerico: number
+ *   }
+ * }
  */
 router.post('/convites/gerar', async (req, res) => {
   try {
@@ -46,6 +65,16 @@ router.post('/convites/gerar', async (req, res) => {
 
     if (!id_jogo) {
       return res.status(400).json({ error: 'id_jogo é obrigatório.' });
+    }
+
+    // Validação adicional: Verificar se o jogo existe
+    const jogoExiste = await db.query(
+      'SELECT 1 FROM jogos WHERE id_jogo = $1',
+      [id_jogo]
+    );
+
+    if (jogoExiste.rowCount === 0) {
+      return res.status(404).json({ error: 'Jogo não encontrado.' });
     }
 
     // Verifica se o usuário é participante ativo do jogo
@@ -62,8 +91,8 @@ router.post('/convites/gerar', async (req, res) => {
     // Gerar convite_uuid único
     const convite_uuid = uuidv4();
 
-    // Gerar link baseado no convite_uuid
-    const link = `https://jogatta.com/invite/${convite_uuid}`;
+    // Gerar link baseado no convite_uuid e na URL do Render
+    const link = `${BASE_URL}/invite/${convite_uuid}`;
 
     // Gerar id_numerico único
     const id_numerico = await generateUniqueIdNumerico();
@@ -81,13 +110,28 @@ router.post('/convites/gerar', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao gerar convite:', error.message);
-    return res.status(500).json({ message: 'Erro ao gerar o convite.' });
+    return res.status(500).json({
+      message: 'Erro ao gerar o convite.',
+      details: error.message,
+    });
   }
 });
 
 /**
  * Rota para entrar na sala usando convite_uuid ou id_numerico
  * POST /api/lobby/entrar
+ * 
+ * Body:
+ * {
+ *   convite_uuid?: string,
+ *   id_numerico?: number,
+ *   id_usuario: number
+ * }
+ * 
+ * Response:
+ * {
+ *   message: string
+ * }
  */
 router.post('/entrar', async (req, res) => {
   const client = await db.getClient();
@@ -106,39 +150,28 @@ router.post('/entrar', async (req, res) => {
     let id_jogo;
     let status_jogo;
 
-    if (convite_uuid) {
-      // Entrar usando convite_uuid
-      const conviteQuery = await client.query(
-        `SELECT c.id_jogo, j.status AS status_jogo
-           FROM convites c
-           JOIN jogos j ON c.id_jogo = j.id_jogo
-          WHERE c.convite_uuid = $1
-            AND c.status = 'aberto'
-          LIMIT 1`,
-        [convite_uuid]
-      );
+    if (convite_uuid || id_numerico) {
+      const query = convite_uuid
+        ? `SELECT c.id_jogo, j.status AS status_jogo
+             FROM convites c
+             JOIN jogos j ON c.id_jogo = j.id_jogo
+            WHERE c.convite_uuid = $1 AND c.status = 'aberto'
+            LIMIT 1`
+        : `SELECT id_jogo, status AS status_jogo
+             FROM jogos
+            WHERE id_numerico = $1 AND status IN ('aberto', 'balanceando times')
+            LIMIT 1`;
 
-      if (conviteQuery.rowCount === 0) {
-        await client.query('ROLLBACK');
-        return res.status(404).json({ error: 'Convite inválido ou expirado.' });
-      }
+      const param = convite_uuid || id_numerico;
 
-      id_jogo = conviteQuery.rows[0].id_jogo;
-      status_jogo = conviteQuery.rows[0].status_jogo;
-    } else if (id_numerico) {
-      // Entrar usando id_numerico
-      const jogoQuery = await client.query(
-        `SELECT id_jogo, status AS status_jogo
-           FROM jogos
-          WHERE id_numerico = $1
-            AND status IN ('aberto', 'balanceando times')
-          LIMIT 1`,
-        [id_numerico]
-      );
-
+      const jogoQuery = await client.query(query, [param]);
       if (jogoQuery.rowCount === 0) {
         await client.query('ROLLBACK');
-        return res.status(404).json({ error: 'Sala não encontrada ou não disponível para entrada.' });
+        return res.status(404).json({
+          error: convite_uuid
+            ? 'Convite inválido ou expirado.'
+            : 'Sala não encontrada ou não disponível para entrada.',
+        });
       }
 
       id_jogo = jogoQuery.rows[0].id_jogo;
@@ -205,13 +238,27 @@ router.post('/entrar', async (req, res) => {
     console.error('Erro ao entrar na sala:', error.message);
     return res.status(500).json({ error: 'Erro ao entrar na sala.' });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
 /**
  * Rota para listar jogadores do lobby
  * GET /api/lobby/:id_jogo/jogadores
+ * 
+ * Response:
+ * {
+ *   jogadores: [
+ *     {
+ *       id_usuario: number,
+ *       nome: string,
+ *       status: string,
+ *       confirmado: boolean,
+ *       pago: boolean
+ *     },
+ *     // ... outros jogadores
+ *   ]
+ * }
  */
 router.get('/:id_jogo/jogadores', async (req, res) => {
   const { id_jogo } = req.params;
@@ -245,6 +292,17 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
 /**
  * Rota para confirmar presença
  * POST /api/lobby/confirmar-presenca
+ * 
+ * Body:
+ * {
+ *   id_jogo: number,
+ *   id_usuario: number
+ * }
+ * 
+ * Response:
+ * {
+ *   message: "Presença confirmada com sucesso."
+ * }
  */
 router.post('/confirmar-presenca', async (req, res) => {
   try {
@@ -274,6 +332,17 @@ router.post('/confirmar-presenca', async (req, res) => {
 /**
  * Rota para confirmar pagamento
  * POST /api/lobby/confirmar-pagamento
+ * 
+ * Body:
+ * {
+ *   id_jogo: number,
+ *   id_usuario: number
+ * }
+ * 
+ * Response:
+ * {
+ *   message: "Pagamento confirmado com sucesso."
+ * }
  */
 router.post('/confirmar-pagamento', async (req, res) => {
   try {
@@ -305,6 +374,17 @@ router.post('/confirmar-pagamento', async (req, res) => {
 /**
  * Rota para sair do lobby
  * POST /api/lobby/sair
+ * 
+ * Body:
+ * {
+ *   id_jogo: number,
+ *   id_usuario: number
+ * }
+ * 
+ * Response:
+ * {
+ *   message: string
+ * }
  */
 router.post('/sair', async (req, res) => {
   const client = await db.getClient();
@@ -383,13 +463,25 @@ router.post('/sair', async (req, res) => {
     console.error('Erro ao sair da sala:', error.message);
     return res.status(500).json({ error: 'Erro ao sair da sala.' });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
 /**
  * Rota para remover usuário (apenas organizador)
  * POST /api/lobby/remover
+ * 
+ * Body:
+ * {
+ *   id_jogo: number,
+ *   id_usuario_remover: number,
+ *   id_usuario_organizador: number
+ * }
+ * 
+ * Response:
+ * {
+ *   message: string
+ * }
  */
 router.post('/remover', async (req, res) => {
   const client = await db.getClient();
@@ -488,13 +580,25 @@ router.post('/remover', async (req, res) => {
     console.error('Erro ao remover usuário:', error.message);
     return res.status(500).json({ error: 'Erro ao remover usuário.' });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
 /**
  * Rota para alternar status da sala (aberto/privado)
  * POST /api/lobby/toggle-status
+ * 
+ * Body:
+ * {
+ *   id_jogo: number,
+ *   id_usuario_organizador: number
+ * }
+ * 
+ * Response:
+ * {
+ *   message: string,
+ *   status: string
+ * }
  */
 router.post('/toggle-status', async (req, res) => {
   try {
@@ -560,6 +664,18 @@ router.post('/toggle-status', async (req, res) => {
 /**
  * Rota para fechar a sala
  * POST /api/lobby/fechar-sala
+ * 
+ * Body:
+ * {
+ *   id_jogo: number,
+ *   id_usuario_organizador: number
+ * }
+ * 
+ * Response:
+ * {
+ *   message: string,
+ *   status: string
+ * }
  */
 router.post('/fechar-sala', async (req, res) => {
   const { id_jogo, id_usuario_organizador } = req.body;
@@ -600,6 +716,18 @@ router.post('/fechar-sala', async (req, res) => {
 /**
  * Rota para estender o tempo da sala
  * POST /api/lobby/estender-tempo
+ * 
+ * Body:
+ * {
+ *   id_jogo: number,
+ *   id_usuario_organizador: number,
+ *   novo_termino: string (ISO 8601 format)
+ * }
+ * 
+ * Response:
+ * {
+ *   message: string
+ * }
  */
 router.post('/estender-tempo', async (req, res) => {
   const { id_jogo, id_usuario_organizador, novo_termino } = req.body;
@@ -658,6 +786,22 @@ router.post('/estender-tempo', async (req, res) => {
 /**
  * Rota para obter salas ativas do usuário
  * GET /api/lobby/me
+ * 
+ * Response:
+ * {
+ *   salas: [
+ *     {
+ *       id_jogo: number,
+ *       nome_jogo: string,
+ *       data_jogo: string (YYYY-MM-DD),
+ *       horario_inicio: string (HH:MM:SS),
+ *       horario_fim: string (HH:MM:SS),
+ *       status: string,
+ *       participacao_status: string
+ *     },
+ *     // ... outras salas
+ *   ]
+ * }
  */
 router.get('/me', async (req, res) => {
   const id_usuario = req.user.id;
@@ -686,6 +830,66 @@ ORDER BY j.data_jogo, j.horario_inicio;`,
   } catch (error) {
     console.error('Erro ao obter salas do usuário:', error.message);
     return res.status(500).json({ error: 'Erro ao obter salas do usuário.' });
+  }
+});
+
+/**
+ * Rota para visualizar convite via link
+ * GET /api/lobby/invite/:uuid
+ * 
+ * Esta rota exibe informações sobre o convite quando o link é acessado.
+ * 
+ * Exemplo de Acesso:
+ * https://backendjogatta.onrender.com/invite/9e3534e6-a20a-4ef2-a2cd-1005c8bb06df
+ * 
+ * Response:
+ * HTML simples com detalhes do convite
+ */
+router.get('/invite/:uuid', async (req, res) => {
+  const { uuid } = req.params;
+
+  try {
+    // Busca o convite no banco
+    const conviteQuery = await db.query(
+      `SELECT c.id_jogo, j.nome_jogo, u.nome AS organizador, c.status
+         FROM convites c
+         JOIN jogos j ON c.id_jogo = j.id_jogo
+         JOIN usuario u ON j.id_usuario = u.id_usuario
+        WHERE c.convite_uuid = $1`,
+      [uuid]
+    );
+
+    if (conviteQuery.rowCount === 0) {
+      return res.status(404).send('Convite inválido ou expirado.');
+    }
+
+    const convite = conviteQuery.rows[0];
+
+    // Retorna um HTML simples para teste
+    return res.send(`
+      <html>
+        <head>
+          <title>Convite para o Jogo</title>
+          <style>
+            body { font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px; }
+            .container { background-color: #fff; padding: 20px; border-radius: 8px; max-width: 600px; margin: auto; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+            h1 { color: #333; }
+            p { color: #555; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1>Convite para o Jogo: ${convite.nome_jogo}</h1>
+            <p><strong>Organizador:</strong> ${convite.organizador}</p>
+            <p><strong>Status:</strong> ${convite.status}</p>
+            <p>Para aceitar o convite, faça login no aplicativo e entre na sala utilizando o convite gerado.</p>
+          </div>
+        </body>
+      </html>
+    `);
+  } catch (error) {
+    console.error('Erro ao buscar convite:', error.message);
+    return res.status(500).send('Erro ao processar a solicitação.');
   }
 });
 
