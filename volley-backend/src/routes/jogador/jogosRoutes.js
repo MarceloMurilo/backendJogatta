@@ -116,6 +116,8 @@ router.post('/criar', authMiddleware, async (req, res) => {
       VALUES ($1, $2, true, 'ativo')
     `, [id_jogo, id_usuario]);
 
+    console.log(`[INFO] Organizador ${id_usuario} associado ao jogo ${id_jogo} como líder.`);
+
     // Associar na tabela 'usuario_funcao', se necessário
     const funcOrganizador = await client.query(`
       SELECT id_funcao FROM funcao WHERE nome_funcao = 'organizador'
@@ -157,7 +159,7 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
   }
 
   try {
-    // 1) Dados básicos do jogo
+    // 1) Dados básicos do jogo com verificação expandida de isOrganizer
     const jogoQuery = await db.query(`
       SELECT
         j.id_jogo,
@@ -172,7 +174,17 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
         j.id_numerico,
 
         -- Verifica se o usuário é o organizador
-        (CASE WHEN j.id_usuario = $1 THEN true ELSE false END) AS "isOrganizer"
+        (CASE
+          WHEN j.id_usuario = $1 OR
+               EXISTS (
+                 SELECT 1
+                 FROM participacao_jogos pj
+                 WHERE pj.id_jogo = j.id_jogo
+                   AND pj.id_usuario = $1
+                   AND pj.lider_time = true
+               )
+          THEN true ELSE false
+        END) AS "isOrganizer"
 
       FROM jogos j
       WHERE j.id_jogo = $2
@@ -184,6 +196,9 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
     }
     const jogo = jogoQuery.rows[0];
     const isOrganizer = jogo.isOrganizer;
+
+    // Logs para depuração
+    console.log(`[INFO] Usuário ${userId} isOrganizer: ${isOrganizer}`);
 
     // 2) Jogadores Ativos / Espera
     const partQuery = await db.query(`
@@ -230,7 +245,7 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
       const nt = row.numero_time;
       if (!mapTimes[nt]) {
         mapTimes[nt] = {
-          nome: `Time ${nt}`,
+          nome: nt === '99' ? 'Reservas' : `Time ${nt}`,
           jogadores: []
         };
       }
