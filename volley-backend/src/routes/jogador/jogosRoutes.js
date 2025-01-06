@@ -336,7 +336,8 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
 
     // **Consulta os times balanceados**
     const timesResult = await db.query(
-      `SELECT t.id_time, t.numero_time, t.id_usuario, u.nome AS nome_jogador, t.total_score, t.total_altura
+      `SELECT t.id AS id_time, t.numero_time, t.id_usuario, 
+              u.nome AS nome_jogador, t.total_score, t.total_altura
        FROM times t
        LEFT JOIN usuario u ON t.id_usuario = u.id_usuario
        WHERE t.id_jogo = $1
