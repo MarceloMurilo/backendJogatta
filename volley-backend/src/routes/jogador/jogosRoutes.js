@@ -7,12 +7,12 @@ const authMiddleware = require('../../middlewares/authMiddleware');
 
 // Middleware de log
 router.use((req, res, next) => {
-  console.log(`=== Requisição em /api/jogos ===`);
+  console.log('=== Requisição em /api/jogos ===');
   console.log(`Método: ${req.method}`);
   console.log(`URL: ${req.originalUrl}`);
-  console.log(`Body:`, req.body);
-  console.log(`Params:`, req.params);
-  console.log(`==============================`);
+  console.log('Body:', req.body);
+  console.log('Params:', req.params);
+  console.log('==============================');
   next();
 });
 
@@ -70,8 +70,8 @@ router.post('/criar', authMiddleware, async (req, res) => {
     }
 
     // Inserir jogo na tabela 'jogos', usando id_usuario_organizador
-    const insertJogo = await client.query(`
-      INSERT INTO jogos (
+    const insertJogo = await client.query(
+      `INSERT INTO jogos (
         nome_jogo, data_jogo, horario_inicio, horario_fim,
         limite_jogadores, id_usuario_organizador,
         descricao, chave_pix, status, id_numerico
@@ -81,18 +81,19 @@ router.post('/criar', authMiddleware, async (req, res) => {
         $5, $6,
         $7, $8, 'aberto', $9
       )
-      RETURNING id_jogo
-    `, [
-      nome_jogo,
-      data_jogo,
-      horario_inicio,
-      horario_fim,
-      limite_jogadores,
-      idUsuarioAutenticado, // este é o organizador
-      descricao || null,
-      chave_pix || null,
-      idNumerico
-    ]);
+      RETURNING id_jogo`,
+      [
+        nome_jogo,
+        data_jogo,
+        horario_inicio,
+        horario_fim,
+        limite_jogadores,
+        idUsuarioAutenticado, // este é o organizador
+        descricao || null,
+        chave_pix || null,
+        idNumerico
+      ]
+    );
 
     const id_jogo = insertJogo.rows[0]?.id_jogo;
     if (!id_jogo) {
@@ -100,32 +101,35 @@ router.post('/criar', authMiddleware, async (req, res) => {
     }
 
     // Inserir convite (se você quiser)
-    await client.query(`
-      INSERT INTO convites (id_jogo, id_numerico, status, data_envio, id_usuario)
-      VALUES ($1, $2, 'aberto', NOW(), $3)
-    `, [id_jogo, idNumerico, idUsuarioAutenticado]);
+    await client.query(
+      `INSERT INTO convites (id_jogo, id_numerico, status, data_envio, id_usuario)
+      VALUES ($1, $2, 'aberto', NOW(), $3)`,
+      [id_jogo, idNumerico, idUsuarioAutenticado]
+    );
 
     // Inserir participação do organizador em participacao_jogos
-    await client.query(`
-      INSERT INTO participacao_jogos (
+    await client.query(
+      `INSERT INTO participacao_jogos (
         id_jogo, id_usuario, lider_time, status
       )
-      VALUES ($1, $2, TRUE, 'ativo')
-    `, [id_jogo, idUsuarioAutenticado]);
+      VALUES ($1, $2, TRUE, 'ativo')`,
+      [id_jogo, idUsuarioAutenticado]
+    );
 
     // Se quiser associar organizador a user_funcao
     // Certifique-se de que a funcao "organizador" existe
     // e coloque se for preciso
     /*
-    const funcQuery = await client.query(`
-      SELECT id_funcao FROM funcao WHERE nome_funcao = 'organizador'
-    `);
+    const funcQuery = await client.query(
+      `SELECT id_funcao FROM funcao WHERE nome_funcao = 'organizador'`
+    );
     if (funcQuery.rowCount > 0) {
       const idFuncOrganizador = funcQuery.rows[0].id_funcao;
-      await client.query(`
-        INSERT INTO usuario_funcao (id_usuario, id_funcao, id_jogo)
-        VALUES ($1, $2, $3)
-      `, [idUsuarioAutenticado, idFuncOrganizador, id_jogo]);
+      await client.query(
+        `INSERT INTO usuario_funcao (id_usuario, id_funcao, id_jogo)
+        VALUES ($1, $2, $3)`,
+        [idUsuarioAutenticado, idFuncOrganizador, id_jogo]
+      );
     }
     */
 
@@ -161,8 +165,8 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
     }
 
     // Buscar info do jogo
-    const jogoQuery = await db.query(`
-      SELECT
+    const jogoQuery = await db.query(
+      `SELECT
         j.id_jogo,
         j.nome_jogo,
         j.data_jogo,
@@ -178,8 +182,9 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
         (CASE WHEN j.id_usuario_organizador = $1 THEN true ELSE false END) AS "isOrganizer"
       FROM jogos j
       WHERE j.id_jogo = $2
-      LIMIT 1
-    `, [userId, id_jogo]);
+      LIMIT 1`,
+      [userId, id_jogo]
+    );
 
     if (jogoQuery.rowCount === 0) {
       return res.status(404).json({ message: 'Jogo não encontrado.' });
@@ -187,8 +192,8 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
     const jogo = jogoQuery.rows[0];
 
     // Carrega participações
-    const partQuery = await db.query(`
-      SELECT
+    const partQuery = await db.query(
+      `SELECT
         pj.id_usuario,
         u.nome,
         pj.status,
@@ -197,8 +202,9 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
       FROM participacao_jogos pj
       JOIN usuario u ON pj.id_usuario = u.id_usuario
       WHERE pj.id_jogo = $1
-      ORDER BY u.nome ASC
-    `, [id_jogo]);
+      ORDER BY u.nome ASC`,
+      [id_jogo]
+    );
 
     // separar
     const jogadoresAtivos = partQuery.rows.filter(r => r.status === 'ativo');
@@ -206,8 +212,8 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
 
     // Carrega times (se existirem)
     // Precisamos referenciar jogos j no FROM, senão dá "missing FROM-clause entry for table j"
-    const timesQuery = await db.query(`
-      SELECT
+    const timesQuery = await db.query(
+      `SELECT
         t.numero_time,
         t.id_usuario,
         t.total_score,
@@ -224,8 +230,9 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
         ON a.usuario_id = u2.id_usuario
        AND a.organizador_id = j2.id_usuario_organizador
       WHERE t.id_jogo = $1
-      ORDER BY t.numero_time, u2.nome
-    `, [id_jogo]);
+      ORDER BY t.numero_time, u2.nome`,
+      [id_jogo]
+    );
 
     // Agrupar times vs reservas
     const mapTimes = {};
@@ -274,7 +281,7 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
       id_numerico: jogo.id_numerico,
 
       // Organizador?
-      isOrganizer: jogo.isorganizer, // do CASE WHEN
+      isOrganizer: jogo.isOrganizer, // Corrigido para "isOrganizer"
 
       // Participações
       jogadoresAtivos,
