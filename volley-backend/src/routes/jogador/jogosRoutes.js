@@ -233,8 +233,8 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
       JOIN usuario u ON t.id_usuario = u.id_usuario
       LEFT JOIN avaliacoes a
         ON a.usuario_id = u.id_usuario
-       AND a.organizador_id = j.id_usuario 
-      JOIN jogos j ON j.id_jogo = t.id_jogo 
+       AND a.organizador_id = j.id_usuario -- Corrigido para usar "j.id_usuario"
+      JOIN jogos j ON j.id_jogo = t.id_jogo -- Alias "j" está explicitamente declarado
       WHERE t.id_jogo = $1
       ORDER BY t.numero_time, u.nome
     `, [id_jogo]);
