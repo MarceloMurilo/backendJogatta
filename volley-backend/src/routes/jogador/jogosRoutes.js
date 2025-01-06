@@ -28,13 +28,16 @@ router.post('/criar', authMiddleware, async (req, res) => {
     horario_inicio,
     horario_fim,
     limite_jogadores,
-    id_usuario,       // este será o organizador
+    // Removido: id_usuario, // Este será obtido do middleware
     descricao,
     chave_pix
   } = req.body;
 
-  // Valida campos obrigatórios
-  if (!nome_jogo || !data_jogo || !horario_inicio || !horario_fim || !limite_jogadores || !id_usuario) {
+  // Obtém o ID do usuário autenticado a partir do middleware
+  const id_usuario = req.user.id;
+
+  // Valida campos obrigatórios (id_usuario não é mais necessário aqui)
+  if (!nome_jogo || !data_jogo || !horario_inicio || !horario_fim || !limite_jogadores) {
     return res.status(400).json({ message: 'Campos obrigatórios ausentes.' });
   }
 
@@ -62,11 +65,24 @@ router.post('/criar', authMiddleware, async (req, res) => {
       }
     }
 
-    // Insere jogo: use a coluna "id_usuario_organizador"
+    // Logs para depuração
+    console.log('[INFO] Dados para inserção no banco:', {
+      nome_jogo,
+      data_jogo,
+      horario_inicio,
+      horario_fim,
+      limite_jogadores,
+      id_usuario, // Obtido do middleware
+      descricao: descricao || null,
+      chave_pix: chave_pix || null,
+      idNumerico
+    });
+
+    // Insere jogo: use a coluna "id_usuario" em vez de "id_usuario_organizador"
     const jogoInsert = await client.query(`
       INSERT INTO jogos (
         nome_jogo, data_jogo, horario_inicio, horario_fim,
-        limite_jogadores, id_usuario_organizador, descricao, chave_pix,
+        limite_jogadores, id_usuario, descricao, chave_pix,
         status, id_numerico
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'aberto', $9)
@@ -77,7 +93,7 @@ router.post('/criar', authMiddleware, async (req, res) => {
       horario_inicio,
       horario_fim,
       limite_jogadores,
-      id_usuario, // <- define quem é o organizador
+      id_usuario, // Usa o valor correto do usuário logado
       descricao || null,
       chave_pix || null,
       idNumerico
@@ -100,7 +116,7 @@ router.post('/criar', authMiddleware, async (req, res) => {
       VALUES ($1, $2, true, 'ativo')
     `, [id_jogo, id_usuario]);
 
-    // Associar na tabela 'usuario_funcao', se você usar
+    // Associar na tabela 'usuario_funcao', se necessário
     const funcOrganizador = await client.query(`
       SELECT id_funcao FROM funcao WHERE nome_funcao = 'organizador'
     `);
@@ -134,7 +150,7 @@ router.post('/criar', authMiddleware, async (req, res) => {
  */
 router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
   const { id_jogo } = req.params;
-  const userId = req.user.id; // do token
+  const userId = req.user.id; // Obtido do token
 
   if (!id_jogo) {
     return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
@@ -155,8 +171,8 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
         j.status,
         j.id_numerico,
 
-        -- Compare com id_usuario_organizador
-        (CASE WHEN j.id_usuario_organizador = $1 THEN true ELSE false END) AS "isOrganizer"
+        -- Verifica se o usuário é o organizador
+        (CASE WHEN j.id_usuario = $1 THEN true ELSE false END) AS "isOrganizer"
 
       FROM jogos j
       WHERE j.id_jogo = $2
@@ -202,7 +218,7 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
       JOIN usuario u ON t.id_usuario = u.id_usuario
       LEFT JOIN avaliacoes a
         ON a.usuario_id = u.id_usuario
-       AND a.organizador_id = j.id_usuario_organizador
+       AND a.organizador_id = j.id_usuario
       JOIN jogos j ON j.id_jogo = t.id_jogo
       WHERE t.id_jogo = $1
       ORDER BY t.numero_time, u.nome
