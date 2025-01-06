@@ -170,6 +170,13 @@ router.post('/criar', authMiddleware, async (req, res) => {
     await client.query('COMMIT'); // Finaliza a transação
     console.log('[INFO] Jogo criado com sucesso. Transação concluída.');
 
+    // Log do Retorno da API
+    console.log('Retorno da API:', {
+      message: 'Jogo criado com sucesso.',
+      id_jogo,
+      id_numerico: idNumerico
+    });
+
     return res
       .status(201)
       .json({ message: 'Jogo criado com sucesso.', id_jogo, id_numerico: idNumerico });
@@ -208,6 +215,8 @@ router.post('/iniciar-balanceamento', authMiddleware, async (req, res) => {
 
     const jogadores = jogadoresResult.rows;
 
+    console.log('Detalhes do jogo:', jogadores);
+
     if (jogadores.length === 0) {
       throw new Error('Nenhum jogador ativo encontrado para balanceamento.');
     }
@@ -222,6 +231,8 @@ router.post('/iniciar-balanceamento', authMiddleware, async (req, res) => {
       const timeIndex = index % balancedTimes.length;
       balancedTimes[timeIndex].jogadores.push(jogador);
     });
+
+    console.log('Times balanceados:', balancedTimes);
 
     // Inserir os jogadores balanceados na tabela `times`
     console.log('[INFO] Inserindo jogadores balanceados na tabela `times`.');
@@ -288,6 +299,8 @@ router.get('/:id_jogo/times', authMiddleware, async (req, res) => {
       ORDER BY t.numero_time, u.nome;
     `, [id_jogo]);
 
+    console.log('Times balanceados:', result.rows);
+
     res.status(200).json(result.rows);
   } catch (error) {
     console.error('Erro ao buscar times:', error);
@@ -346,6 +359,28 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
     );
 
     const times = timesResult.rows;
+
+    // Log dos detalhes do jogo e times balanceados
+    console.log('Detalhes do jogo:', jogo);
+    console.log('Times balanceados:', times);
+
+    // Log do Retorno da API
+    console.log('Retorno da API:', {
+      id_jogo: jogo.id_jogo,
+      nome_jogo: jogo.nome_jogo,
+      data_jogo: jogo.data_jogo,
+      horario_inicio: jogo.horario_inicio,
+      horario_fim: jogo.horario_fim,
+      limite_jogadores: jogo.limite_jogadores,
+      descricao: jogo.descricao,
+      chave_pix: jogo.chave_pix,
+      status: jogo.status,
+      id_numerico: jogo.id_numerico,
+      isOrganizer: jogo.isOrganizer,
+      jogadoresAtivos: ativos,
+      jogadoresEspera: espera,
+      timesBalanceados: times,
+    });
 
     return res.status(200).json({
       id_jogo: jogo.id_jogo,
