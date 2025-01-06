@@ -149,21 +149,23 @@ router.post('/criar', authMiddleware, async (req, res) => {
     );
     console.log('[INFO] Organizador associado à função "organizador" com sucesso.');
 
-    // **Inserção dos times balanceados na tabela `times_jogos`**
-    console.log('[INFO] Inserindo times balanceados na tabela `times_jogos`.');
-    const times = [
-      { nome: 'Time A', jogadores: [] },
-      { nome: 'Time B', jogadores: [] },
-    ];
+    // **Inserção do organizador na tabela `times` como parte do Time 1**
+    console.log('[INFO] Inserindo organizador na tabela `times` como parte do Time 1.');
+    await client.query(
+      `INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [
+        id_jogo,
+        1, // Número do time
+        id_usuario,
+        0, // total_score inicial
+        0  // total_altura inicial
+      ]
+    );
+    console.log('[INFO] Organizador inserido no Time 1 com sucesso.');
 
-    for (const time of times) {
-      await client.query(
-        `INSERT INTO times_jogos (id_jogo, nome_time)
-         VALUES ($1, $2)`,
-        [id_jogo, time.nome]
-      );
-      console.log(`[INFO] ${time.nome} inserido com sucesso.`);
-    }
+    // **Inserção dos times balanceados na tabela `times`**
+    // A lógica de balanceamento será tratada na rota /iniciar-balanceamento
 
     await client.query('COMMIT'); // Finaliza a transação
     console.log('[INFO] Jogo criado com sucesso. Transação concluída.');
@@ -178,6 +180,118 @@ router.post('/criar', authMiddleware, async (req, res) => {
   } finally {
     client.release();
     console.log('[INFO] Conexão com o banco de dados liberada.');
+  }
+});
+
+// Rota para iniciar o balanceamento dos times
+router.post('/iniciar-balanceamento', authMiddleware, async (req, res) => {
+  const { id_jogo } = req.body;
+
+  if (!id_jogo) {
+    return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
+  }
+
+  const client = await db.getClient();
+  try {
+    console.log('[INFO] Iniciando balanceamento para o jogo:', id_jogo);
+    await client.query('BEGIN');
+
+    // Buscar todos os jogadores ativos do jogo
+    const jogadoresResult = await client.query(
+      `SELECT pj.id_usuario, u.nome, u.score, u.altura
+       FROM participacao_jogos pj
+       JOIN usuario u ON pj.id_usuario = u.id_usuario
+       WHERE pj.id_jogo = $1 AND pj.status = 'ativo'
+       ORDER BY u.score DESC`, // Ordenar por algum critério de balanceamento
+      [id_jogo]
+    );
+
+    const jogadores = jogadoresResult.rows;
+
+    if (jogadores.length === 0) {
+      throw new Error('Nenhum jogador ativo encontrado para balanceamento.');
+    }
+
+    // Lógica de balanceamento simples (exemplo: alternar jogadores entre os times)
+    const balancedTimes = [
+      { numero_time: 1, jogadores: [] },
+      { numero_time: 2, jogadores: [] },
+    ];
+
+    jogadores.forEach((jogador, index) => {
+      const timeIndex = index % balancedTimes.length;
+      balancedTimes[timeIndex].jogadores.push(jogador);
+    });
+
+    // Inserir os jogadores balanceados na tabela `times`
+    console.log('[INFO] Inserindo jogadores balanceados na tabela `times`.');
+    for (const time of balancedTimes) {
+      for (const jogador of time.jogadores) {
+        // Verificar se o jogador já está no time (para evitar duplicações)
+        const exists = await client.query(
+          `SELECT 1 FROM times WHERE id_jogo = $1 AND id_usuario = $2`,
+          [id_jogo, jogador.id_usuario]
+        );
+        if (exists.rowCount === 0) {
+          await client.query(
+            `INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [
+              id_jogo,
+              time.numero_time,
+              jogador.id_usuario,
+              jogador.score || 0,
+              jogador.altura || 0,
+            ]
+          );
+          console.log(`[INFO] Jogador ${jogador.nome} inserido no Time ${time.numero_time}.`);
+        } else {
+          console.log(`[INFO] Jogador ${jogador.nome} já está associado a um time.`);
+        }
+      }
+    }
+
+    await client.query('COMMIT');
+    console.log('[INFO] Balanceamento concluído com sucesso.');
+
+    return res.status(200).json({ message: 'Balanceamento realizado com sucesso.', times: balancedTimes });
+  } catch (error) {
+    console.error('[ERROR] Erro ao balancear times:', error.message);
+    await client.query('ROLLBACK');
+    return res.status(500).json({ message: 'Erro interno ao balancear os times.', error: error.message });
+  } finally {
+    client.release();
+    console.log('[INFO] Conexão com o banco de dados liberada.');
+  }
+});
+
+// Rota para buscar os times de um jogo específico
+router.get('/:id_jogo/times', authMiddleware, async (req, res) => {
+  const { id_jogo } = req.params;
+
+  if (!id_jogo) {
+    return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
+  }
+
+  try {
+    const result = await db.query(`
+      SELECT 
+          t.id AS id_time,
+          t.numero_time,
+          u.id_usuario,
+          u.nome AS nome_jogador,
+          t.total_score,
+          t.total_altura
+      FROM times t
+      LEFT JOIN usuario u ON t.id_usuario = u.id_usuario
+      WHERE t.id_jogo = $1
+      ORDER BY t.numero_time, u.nome;
+    `, [id_jogo]);
+
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Erro ao buscar times:', error);
+    res.status(500).json({ message: 'Erro interno ao buscar times.', error: error.message });
   }
 });
 
@@ -222,9 +336,11 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
 
     // **Consulta os times balanceados**
     const timesResult = await db.query(
-      `SELECT id_time, nome_time
-       FROM times_jogos
-       WHERE id_jogo = $1`,
+      `SELECT t.id_time, t.numero_time, t.id_usuario, u.nome AS nome_jogador, t.total_score, t.total_altura
+       FROM times t
+       LEFT JOIN usuario u ON t.id_usuario = u.id_usuario
+       WHERE t.id_jogo = $1
+       ORDER BY t.numero_time, u.nome;`,
       [id_jogo]
     );
 
@@ -248,7 +364,7 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao buscar detalhes do jogo:', error.message);
-    return res.status(500).json({ message: 'Erro interno ao buscar detalhes do jogo.' });
+    return res.status(500).json({ message: 'Erro interno ao buscar detalhes do jogo.', error: error.message });
   }
 });
 
