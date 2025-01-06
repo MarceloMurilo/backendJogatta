@@ -192,83 +192,28 @@ router.post('/criar', authMiddleware, async (req, res) => {
 
 // Rota para iniciar o balanceamento dos times
 router.post('/iniciar-balanceamento', authMiddleware, async (req, res) => {
+  const { id_jogo } = req.body;
+
+  if (!id_jogo) {
+    return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
+  }
+
   const client = await db.getClient();
   try {
-    console.log('=== Nova requisição: POST /api/jogos/iniciar-balanceamento ===');
-    console.log('Body:', req.body);
+    console.log('[INFO] Iniciando balanceamento para o jogo:', id_jogo);
+    await client.query('BEGIN');
 
-    const { id_jogo } = req.body;
+    // Buscar todos os jogadores ativos do jogo
+    const jogadoresResult = await client.query(
+      `SELECT pj.id_usuario, u.nome, u.score, u.altura
+       FROM participacao_jogos pj
+       JOIN usuario u ON pj.id_usuario = u.id_usuario
+       WHERE pj.id_jogo = $1 AND pj.status = 'ativo'
+       ORDER BY u.score DESC`, // Ordenar por algum critério de balanceamento
+      [id_jogo]
+    );
 
-    if (!id_jogo) {
-      client.release();
-      return res.status(400).json({ error: 'ID do jogo é obrigatório.' });
-    }
-
-    console.log(`Verificando existência do jogo com id_jogo: ${id_jogo}`);
-    const jogoResp = await client.query(`
-      SELECT id_jogo, id_usuario, status, tamanho_time
-      FROM jogos
-      WHERE id_jogo = $1
-      LIMIT 1
-    `, [id_jogo]);
-
-    if (jogoResp.rowCount === 0) {
-      client.release();
-      return res.status(404).json({
-        error: 'Jogo não encontrado.',
-      });
-    }
-
-    const { status, id_usuario, tamanho_time: tamanhoTimeDB } = jogoResp.rows[0];
-
-    // Se jogo finalizado -> não deixa prosseguir
-    if (status === 'finalizado') {
-      client.release();
-      return res.status(400).json({
-        error: 'O jogo já foi finalizado e não pode ser balanceado novamente.',
-      });
-    }
-
-    // Check de organizador
-    if (id_usuario !== req.user.id) {
-      client.release();
-      return res.status(403).json({
-        error: 'Apenas o organizador do jogo pode iniciar o balanceamento.',
-      });
-    }
-
-    // Atualiza tamanho_time se vier no body
-    let tamanhoTimeFinal = tamanhoTimeDB;
-    if (typeof req.body.tamanho_time === 'number') {
-      await client.query(`
-        UPDATE jogos
-           SET tamanho_time = $1
-         WHERE id_jogo = $2
-      `, [req.body.tamanho_time, id_jogo]);
-      tamanhoTimeFinal = req.body.tamanho_time;
-    }
-
-    if (!tamanhoTimeFinal) {
-      client.release();
-      return res.status(200).json({
-        message: 'O tamanho_time ainda não foi definido. Configure-o na tela do jogo.',
-        status: 'pendente',
-      });
-    }
-
-    // Buscar jogadores ativos do jogo com avaliações
-    const jogadoresResp = await client.query(`
-      SELECT pj.id_usuario, u.nome, 
-             COALESCE(a.passe, 3) + COALESCE(a.ataque, 3) + COALESCE(a.levantamento, 3) AS score,
-             u.altura
-      FROM participacao_jogos pj
-      JOIN usuario u ON pj.id_usuario = u.id_usuario
-      LEFT JOIN avaliacoes a ON a.usuario_id = u.id_usuario AND a.organizador_id = $1
-      WHERE pj.id_jogo = $2 AND pj.status = 'ativo'
-      ORDER BY score DESC
-    `, [req.user.id, id_jogo]);
-
-    const jogadores = jogadoresResp.rows;
+    const jogadores = jogadoresResult.rows;
 
     console.log('Detalhes do jogo:', jogadores);
 
@@ -277,15 +222,11 @@ router.post('/iniciar-balanceamento', authMiddleware, async (req, res) => {
     }
 
     // Lógica de balanceamento simples (exemplo: alternar jogadores entre os times)
-    const balancedTimes = [];
-    for (let i = 0; i < 2; i++) { // Exemplo: 2 times
-      balancedTimes.push({
-        numero_time: i + 1,
-        jogadores: [],
-      });
-    }
+    const balancedTimes = [
+      { numero_time: 1, jogadores: [] },
+      { numero_time: 2, jogadores: [] },
+    ];
 
-    // Ordenar os jogadores com base no score já foi feito pela consulta
     jogadores.forEach((jogador, index) => {
       const timeIndex = index % balancedTimes.length;
       balancedTimes[timeIndex].jogadores.push(jogador);
@@ -297,48 +238,51 @@ router.post('/iniciar-balanceamento', authMiddleware, async (req, res) => {
     console.log('[INFO] Inserindo jogadores balanceados na tabela `times`.');
     for (const time of balancedTimes) {
       for (const jogador of time.jogadores) {
-        // Calcular total_score e total_altura
-        const totalScore = jogador.score || 0;
-        const totalAltura = jogador.altura || 0;
-
-        // Inserir na tabela `times`
-        await client.query(`
-          INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
-          VALUES ($1, $2, $3, $4, $5)
-        `, [
-          id_jogo,
-          time.numero_time,
-          jogador.id_usuario,
-          totalScore,
-          totalAltura,
-        ]);
-        console.log(`[INFO] Jogador ${jogador.nome} inserido no Time ${time.numero_time}.`);
+        // Verificar se o jogador já está no time (para evitar duplicações)
+        const exists = await client.query(
+          `SELECT 1 FROM times WHERE id_jogo = $1 AND id_usuario = $2`,
+          [id_jogo, jogador.id_usuario]
+        );
+        if (exists.rowCount === 0) {
+          await client.query(
+            `INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [
+              id_jogo,
+              time.numero_time,
+              jogador.id_usuario,
+              jogador.score || 0,
+              jogador.altura || 0,
+            ]
+          );
+          console.log(`[INFO] Jogador ${jogador.nome} inserido no Time ${time.numero_time}.`);
+        } else {
+          console.log(`[INFO] Jogador ${jogador.nome} já está associado a um time.`);
+        }
       }
     }
 
     await client.query('COMMIT');
-    client.release();
-
     console.log('[INFO] Balanceamento concluído com sucesso.');
 
-    return res.status(200).json({
-      message: 'Balanceamento realizado com sucesso.',
-      times: balancedTimes,
-    });
+    return res.status(200).json({ message: 'Balanceamento realizado com sucesso.', times: balancedTimes });
   } catch (error) {
-    await client.query('ROLLBACK');
-    client.release();
     console.error('[ERROR] Erro ao balancear times:', error.message);
-    return res.status(500).json({
-      message: 'Erro interno ao balancear os times.',
-      error: error.message,
-    });
+    await client.query('ROLLBACK');
+    return res.status(500).json({ message: 'Erro interno ao balancear os times.', error: error.message });
+  } finally {
+    client.release();
+    console.log('[INFO] Conexão com o banco de dados liberada.');
   }
 });
 
 // Rota para buscar os times de um jogo específico
 router.get('/:id_jogo/times', authMiddleware, async (req, res) => {
   const { id_jogo } = req.params;
+
+  if (!id_jogo) {
+    return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
+  }
 
   try {
     const result = await db.query(`
@@ -435,7 +379,7 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
       isOrganizer: jogo.isOrganizer,
       jogadoresAtivos: ativos,
       jogadoresEspera: espera,
-      timesBalanceados: times, // Adiciona os times balanceados
+      timesBalanceados: times,
     });
 
     return res.status(200).json({

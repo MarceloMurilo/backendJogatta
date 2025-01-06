@@ -1,4 +1,4 @@
-// src/routes/balanceamento/balanceamento.js
+// /routes/balanceamentoRoutes.js
 
 const express = require('express');
 const router = express.Router();
@@ -101,8 +101,8 @@ function balancearJogadores(jogadores, tamanhoTime) {
     times.push({
       nomeTime: `Time ${i + 1}`,
       jogadores: [],
-      total_score: 0,
-      total_altura: 0,
+      totalScore: 0,
+      totalAltura: 0,
     });
   }
 
@@ -118,11 +118,10 @@ function balancearJogadores(jogadores, tamanhoTime) {
     index++;
   }
 
-  // Calcular totais uma única vez
   times.forEach(time => {
     const { totalScore, totalAltura } = calcularTotais(time);
-    time.total_score = totalScore;
-    time.total_altura = totalAltura;
+    time.totalScore = totalScore;
+    time.totalAltura = totalAltura;
   });
 
   return { times, reservas };
@@ -340,24 +339,16 @@ router.post(
             throw new Error(`id_usuario inválido no Time ${numeroTime}.`);
           }
 
-          // Inserção com prevenção de duplicatas usando ON CONFLICT
           await client.query(`
             INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
             VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (id_jogo, numero_time, id_usuario) DO NOTHING
-          `, [id_jogo, numeroTime, jogador.id_usuario, totalScore, totalAltura]);
-
-          // Verificar se a inserção ocorreu
-          const verificaInsert = await client.query(`
-            SELECT 1 FROM times
-            WHERE id_jogo = $1 AND numero_time = $2 AND id_usuario = $3
-          `, [id_jogo, numeroTime, jogador.id_usuario]);
-
-          if (verificaInsert.rowCount > 0) {
-            console.log(`[INFO] Jogador ${jogador.nome} inserido no Time ${numeroTime}.`);
-          } else {
-            console.log(`[INFO] Jogador ${jogador.nome} já está associado ao Time ${numeroTime}. Duplicata evitada.`);
-          }
+          `, [
+            id_jogo,
+            numeroTime,
+            jogador.id_usuario,
+            totalScore || 0,
+            totalAltura || 0,
+          ]);
         }
       }
 
@@ -366,20 +357,7 @@ router.post(
         await client.query(`
           INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
           VALUES ($1, 99, $2, 0, $3)
-          ON CONFLICT (id_jogo, numero_time, id_usuario) DO NOTHING
         `, [id_jogo, reserva.id_usuario, reserva.altura]);
-
-        // Verificar se a inserção ocorreu
-        const verificaReserva = await client.query(`
-          SELECT 1 FROM times
-          WHERE id_jogo = $1 AND numero_time = 99 AND id_usuario = $2
-        `, [id_jogo, reserva.id_usuario]);
-
-        if (verificaReserva.rowCount > 0) {
-          console.log(`[INFO] Jogador ${reserva.nome} inserido na Lista de Espera.`);
-        } else {
-          console.log(`[INFO] Jogador ${reserva.nome} já está na Lista de Espera. Duplicata evitada.`);
-        }
       }
 
       await client.query('COMMIT');
@@ -387,13 +365,14 @@ router.post(
 
       return res.status(200).json({
         message: 'Balanceamento (ONLINE) realizado com sucesso!',
+        status,
         times: balancedTimes,
         reservas,
       });
     } catch (err) {
       await client.query('ROLLBACK');
       client.release();
-      console.error('Erro ao iniciar balanceamento:', err.message);
+      console.error('Erro ao iniciar balanceamento:', err);
       return res.status(500).json({
         error: 'Erro ao iniciar balanceamento',
         details: err.message,
@@ -404,7 +383,6 @@ router.post(
 
 /**
  * POST /api/balanceamento/finalizar-balanceamento
- * Ajustado para não "encerrar" a sala, mas sim passar para status 'andamento'.
  */
 router.post(
   '/finalizar-balanceamento',
@@ -446,31 +424,29 @@ router.post(
         });
       }
 
-      // Em vez de "finalizado", passamos para "andamento".
-      // Se quiser outro nome, fique à vontade, ex: 'em_andamento'.
-      const novoStatus = 'andamento';
+      if (status === 'finalizado') {
+        client.release();
+        return res.status(400).json({
+          error: 'O jogo já está finalizado.',
+        });
+      }
+
+      // Atualiza o status do jogo para "finalizado"
+      await client.query(`
+        UPDATE jogos 
+           SET status = 'finalizado' 
+         WHERE id_jogo = $1
+      `, [id_jogo]);
 
       await client.query('BEGIN');
 
-      // Atualiza o status do jogo para 'andamento'
-      await client.query(`
-        UPDATE jogos 
-           SET status = $1 
-         WHERE id_jogo = $2
-      `, [novoStatus, id_jogo]);
-
-      // Remover times existentes para inserir os novos
+      // Remover times existentes
       await client.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
 
-      // Calcular totais uma única vez para cada time
-      const timesComTotais = times.map(time => {
-        const { totalScore, totalAltura } = calcularTotais(time);
-        return { ...time, totalScore, totalAltura };
-      });
-
-      // Inserir os novos times com prevenção de duplicatas
-      for (const [index, time] of timesComTotais.entries()) {
+      // Inserir os novos times
+      for (const [index, time] of times.entries()) {
         const numeroTime = index + 1;
+        const { totalScore, totalAltura } = calcularTotais(time);
 
         if (!Array.isArray(time.jogadores) || time.jogadores.length === 0) {
           throw new Error(`"jogadores" deve ser um array não vazio no Time ${numeroTime}.`);
@@ -478,32 +454,21 @@ router.post(
 
         for (const jogador of time.jogadores) {
           if (!jogador.id_usuario || typeof jogador.id_usuario !== 'number') {
-            throw new Error(`id_usuario inválido no Time ${numeroTime}.`);
+            throw new Error(
+              `id_usuario inválido ou ausente para um dos jogadores no Time ${numeroTime}.`
+            );
           }
 
           await client.query(`
             INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
             VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (id_jogo, numero_time, id_usuario) DO NOTHING
           `, [
             id_jogo,
             numeroTime,
             jogador.id_usuario,
-            time.totalScore || 0,
-            time.totalAltura || 0,
+            totalScore || 0,
+            totalAltura || 0,
           ]);
-
-          // Verificar se a inserção ocorreu
-          const verificaInsert = await client.query(`
-            SELECT 1 FROM times
-            WHERE id_jogo = $1 AND numero_time = $2 AND id_usuario = $3
-          `, [id_jogo, numeroTime, jogador.id_usuario]);
-
-          if (verificaInsert.rowCount > 0) {
-            console.log(`[INFO] Jogador ${jogador.nome} inserido no Time ${numeroTime}.`);
-          } else {
-            console.log(`[INFO] Jogador ${jogador.nome} já está associado ao Time ${numeroTime}. Duplicata evitada.`);
-          }
         }
       }
 
@@ -511,15 +476,14 @@ router.post(
       client.release();
 
       return res.status(200).json({
-        message: 'Balanceamento finalizado. Status do jogo agora é "andamento".',
-        status: novoStatus,
+        message: 'Balanceamento finalizado.',
+        status: 'finalizado',
         id_jogo,
         times,
       });
     } catch (error) {
       await client.query('ROLLBACK');
       client.release();
-      console.error('Erro ao finalizar balanceamento:', error.message);
       return res.status(500).json({
         error: 'Erro ao finalizar balanceamento.',
         details: error.message,
@@ -530,7 +494,6 @@ router.post(
 
 /**
  * POST /api/balanceamento/atualizar-times
- * (Mantido igual ou ajuste se desejar)
  */
 router.post(
   '/atualizar-times',
@@ -558,6 +521,7 @@ router.post(
         SELECT id_jogo, status
         FROM jogos
         WHERE id_jogo = $1
+        LIMIT 1
       `, [id_jogo]);
 
       if (jogoQuery.rowCount === 0) {
@@ -567,15 +531,10 @@ router.post(
       // Remove times antigos
       await client.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
 
-      // Calcular totais uma única vez para cada time
-      const timesComTotais = times.map(time => {
-        const { totalScore, totalAltura } = calcularTotais(time);
-        return { ...time, totalScore, totalAltura };
-      });
-
-      // Insere novos times com prevenção de duplicatas
-      for (const [index, time] of timesComTotais.entries()) {
+      // Insere novos
+      for (const [index, time] of times.entries()) {
         const numeroTime = index + 1;
+        const { totalScore, totalAltura } = calcularTotais(time);
 
         if (!Array.isArray(time.jogadores) || time.jogadores.length === 0) {
           throw new Error(`"jogadores" deve ser um array não vazio no Time ${numeroTime}.`);
@@ -585,30 +544,16 @@ router.post(
           if (!jogador.id_usuario || typeof jogador.id_usuario !== 'number') {
             throw new Error(`id_usuario inválido no Time ${numeroTime}.`);
           }
-
           await client.query(`
             INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
             VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (id_jogo, numero_time, id_usuario) DO NOTHING
           `, [
             id_jogo,
             numeroTime,
             jogador.id_usuario,
-            time.totalScore || 0,
-            time.totalAltura || 0,
+            totalScore || 0,
+            totalAltura || 0,
           ]);
-
-          // Verificar se a inserção ocorreu
-          const verificaInsert = await client.query(`
-            SELECT 1 FROM times
-            WHERE id_jogo = $1 AND numero_time = $2 AND id_usuario = $3
-          `, [id_jogo, numeroTime, jogador.id_usuario]);
-
-          if (verificaInsert.rowCount > 0) {
-            console.log(`[INFO] Jogador ${jogador.nome} inserido no Time ${numeroTime}.`);
-          } else {
-            console.log(`[INFO] Jogador ${jogador.nome} já está associado ao Time ${numeroTime}. Duplicata evitada.`);
-          }
         }
       }
 
@@ -622,7 +567,6 @@ router.post(
     } catch (error) {
       await client.query('ROLLBACK');
       client.release();
-      console.error('Erro ao atualizar os times:', error.message);
       return res.status(500).json({
         error: 'Erro ao atualizar os times.',
         details: error.message,
