@@ -1,5 +1,3 @@
-// /routes/balanceamentoRoutes.js
-
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
@@ -204,16 +202,17 @@ router.post(
             // Merge: preferir dados do BD (passe, ataque, levantamento, altura)
             return {
               ...frontJog,
-              nome: dbJog.nome || frontJog.nome,
+              nome: dbJog.nome || frontJog.nome || `Jogador Temporário ${frontJog.id_usuario}`, // Preserve o nome
               passe: dbJog.passe,
               ataque: dbJog.ataque,
               levantamento: dbJog.levantamento,
               altura: parseFloat(dbJog.altura) || 170,
             };
           } else {
-            // Se não encontrou no BD, usar do front com defaults
+            // Se não encontrou no BD, usar do front com defaults e preservar o nome
             return {
               ...frontJog,
+              nome: frontJog.nome || `Jogador Temporário ${frontJog.id_usuario}`, // Preserve o nome
               passe: parseInt(frontJog.passe, 10) || 3,
               ataque: parseInt(frontJog.ataque, 10) || 3,
               levantamento: parseInt(frontJog.levantamento, 10) || 3,
@@ -224,6 +223,21 @@ router.post(
 
         // 4) Balancear jogadores (sem gravar no DB)
         const { times, reservas } = balancearJogadores(jogadoresParaBalancear, tamanho_time || 4);
+
+        // 5) Garantir que todos os jogadores tenham o nome preservado
+        times.forEach(time => {
+          time.jogadores.forEach(jogador => {
+            if (!jogador.nome) {
+              jogador.nome = `Jogador Temporário ${jogador.id_usuario}`;
+            }
+          });
+        });
+
+        reservas.forEach(reserva => {
+          if (!reserva.nome) {
+            reserva.nome = `Jogador Temporário ${reserva.id_usuario}`;
+          }
+        });
 
         client.release();
         return res.status(200).json({
@@ -322,6 +336,21 @@ router.post(
       const { times: balancedTimes, reservas } = balancearJogadores(jogadores, tamanhoTimeFinal);
       const custo = calcularCusto(balancedTimes);
       console.log(`Custo do balanceamento: ${custo}`);
+
+      // Garantir que todos os jogadores tenham o nome preservado
+      balancedTimes.forEach(time => {
+        time.jogadores.forEach(jogador => {
+          if (!jogador.nome) {
+            jogador.nome = `Jogador Temporário ${jogador.id_usuario}`;
+          }
+        });
+      });
+
+      reservas.forEach(reserva => {
+        if (!reserva.nome) {
+          reserva.nome = `Jogador Temporário ${reserva.id_usuario}`;
+        }
+      });
 
       // Salvar no DB
       await client.query('BEGIN');
@@ -458,7 +487,6 @@ router.post(
               `id_usuario inválido ou ausente para um dos jogadores no Time ${numeroTime}.`
             );
           }
-
           await client.query(`
             INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
             VALUES ($1, $2, $3, $4, $5)
@@ -528,10 +556,10 @@ router.post(
         throw new Error('Jogo não encontrado.');
       }
 
-      // Remove times antigos
+      // Remover times antigos
       await client.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
 
-      // Insere novos
+      // Inserir novos
       for (const [index, time] of times.entries()) {
         const numeroTime = index + 1;
         const { totalScore, totalAltura } = calcularTotais(time);
