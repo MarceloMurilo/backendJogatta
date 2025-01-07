@@ -1,4 +1,4 @@
-// /routes/avaliacoes/avaliacoesRoutes.js
+// /routes/jogador/AvaliacoesRoutes.js
 
 const express = require('express');
 const router = express.Router();
@@ -16,6 +16,65 @@ router.use((req, res, next) => {
   console.log(`==============================`);
   next();
 });
+
+/**
+ * Função para gerar um ID único dentro do intervalo de 32-bit integer.
+ * Gera números entre 1 e 2,147,483,647.
+ */
+const gerarIdUnico = async () => {
+  const MAX_INT = 2147483647;
+  let idGerado;
+  let tentativa = 0;
+  const MAX_TENTATIVAS = 1000;
+
+  do {
+    idGerado = Math.floor(Math.random() * MAX_INT) + 1; // Gera entre 1 e 2147483647
+    tentativa += 1;
+    if (tentativa > MAX_TENTATIVAS) {
+      throw new Error('Não foi possível gerar um ID único para o jogador temporário.');
+    }
+
+    // Verifica se o ID já existe na tabela usuario
+    const result = await db.query('SELECT id_usuario FROM usuario WHERE id_usuario = $1', [idGerado]);
+    if (result.rows.length === 0) {
+      break; // ID único encontrado
+    }
+  } while (tentativa <= MAX_TENTATIVAS);
+
+  return idGerado;
+};
+
+// Novo endpoint para criar jogador temporário
+router.post(
+  '/temporario',
+  authMiddleware,
+  roleMiddleware(['organizador']),
+  async (req, res) => {
+    const { nome } = req.body;
+
+    if (!nome || nome.trim() === '') {
+      return res.status(400).json({ message: 'Nome do jogador é obrigatório.' });
+    }
+
+    try {
+      // Gera um ID único dentro do intervalo permitido
+      const id_usuario = await gerarIdUnico();
+
+      await db.query(
+        `INSERT INTO usuario (id_usuario, nome, email, senha, imagem_perfil, temporario)
+         VALUES ($1, $2, NULL, 'senha_temporaria', NULL, TRUE)
+         ON CONFLICT (id_usuario) DO NOTHING;`,
+        [id_usuario, nome.trim()]
+      );
+
+      console.log('Jogador temporário criado:', { id_usuario, nome: nome.trim() });
+      res.status(201).json({ message: 'Jogador temporário criado com sucesso!', id_usuario, nome: nome.trim() });
+    } catch (error) {
+      console.error('Erro ao criar jogador temporário:', error);
+      res.status(500).json({ message: 'Erro ao criar jogador temporário.' });
+    }
+  }
+);
 
 // Rota para salvar ou atualizar avaliações
 router.post(
