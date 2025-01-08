@@ -1,3 +1,5 @@
+// /src/features/jogo/routes/balanceamento.js
+
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
@@ -166,79 +168,103 @@ router.post(
           });
         }
 
-        // 1) Extrair IDs para buscar avaliações no banco
-        const offlineIds = amigos_offline
+        // 1) Separar jogadores temporários e oficiais
+        const jogadoresTemporarios = amigos_offline.filter(j => j.isTemp);
+        const jogadoresOficiais = amigos_offline.filter(j => !j.isTemp);
+
+        // 2) Extrair IDs de jogadores oficiais para buscar avaliações no banco
+        const jogadoresOficiaisIds = jogadoresOficiais
           .map(a => a.id_usuario)
           .filter(id => typeof id === 'number');
 
-        if (!offlineIds.length) {
-          client.release();
-          return res.status(400).json({
-            error: 'IDs de jogadores inválidos no fluxo OFFLINE.',
-          });
+        // 3) Buscar habilidades no DB apenas dos jogadores oficiais
+        let rowsAval = [];
+        if (jogadoresOficiaisIds.length > 0) {
+          const avalQuery = await client.query(`
+            SELECT
+              u.id_usuario,
+              u.nome,
+              COALESCE(a.passe, 3) AS passe,
+              COALESCE(a.ataque, 3) AS ataque,
+              COALESCE(a.levantamento, 3) AS levantamento,
+              COALESCE(u.altura, 170) AS altura
+            FROM usuario u
+            LEFT JOIN avaliacoes a ON a.usuario_id = u.id_usuario
+            WHERE u.id_usuario = ANY($1)
+          `, [jogadoresOficiaisIds]);
+
+          rowsAval = avalQuery.rows;
         }
 
-        // 2) Buscar habilidades no DB (enriquecer)
-        const { rows: rowsAval } = await client.query(`
-          SELECT
-            u.id_usuario,
-            u.nome,
-            COALESCE(a.passe, 3) AS passe,
-            COALESCE(a.ataque, 3) AS ataque,
-            COALESCE(a.levantamento, 3) AS levantamento,
-            COALESCE(u.altura, 170) AS altura
-          FROM usuario u
-          LEFT JOIN avaliacoes a ON a.usuario_id = u.id_usuario
-          WHERE u.id_usuario = ANY($1)
-        `, [offlineIds]);
-
-        // Montar map para acesso rápido
+        // 4) Montar map para acesso rápido de avaliações dos oficiais
         const mapAval = new Map(rowsAval.map(av => [av.id_usuario, av]));
 
-        // 3) Mesclar dados do front com BD
-        const jogadoresParaBalancear = amigos_offline.map(frontJog => {
+        // 5) Preparar a lista final de jogadores para balanceamento
+        const jogadoresParaBalancear = [];
+
+        // Adicionar jogadores oficiais com suas habilidades do DB
+        jogadoresOficiais.forEach(frontJog => {
           const dbJog = mapAval.get(frontJog.id_usuario);
           if (dbJog) {
-            // Merge: preferir dados do BD (passe, ataque, levantamento, altura)
-            return {
-              ...frontJog,
-              nome: dbJog.nome || frontJog.nome || `Jogador Temporário ${frontJog.id_usuario}`, // Preserve o nome
+            jogadoresParaBalancear.push({
+              id_usuario: dbJog.id_usuario,
+              nome: dbJog.nome || frontJog.nome || `Jogador Temporário ${frontJog.id_usuario}`,
               passe: dbJog.passe,
               ataque: dbJog.ataque,
               levantamento: dbJog.levantamento,
               altura: parseFloat(dbJog.altura) || 170,
-            };
+              temporario: false,
+            });
           } else {
-            // Se não encontrou no BD, usar do front com defaults e preservar o nome
-            return {
-              ...frontJog,
-              nome: frontJog.nome || `Jogador Temporário ${frontJog.id_usuario}`, // Preserve o nome
+            // Se não encontrou no DB, usar dados do front com defaults
+            jogadoresParaBalancear.push({
+              id_usuario: frontJog.id_usuario,
+              nome: frontJog.nome || `Jogador Temporário ${frontJog.id_usuario}`,
               passe: parseInt(frontJog.passe, 10) || 3,
               ataque: parseInt(frontJog.ataque, 10) || 3,
               levantamento: parseInt(frontJog.levantamento, 10) || 3,
               altura: parseFloat(frontJog.altura) || 170,
-            };
+              temporario: false,
+            });
           }
         });
 
-        // 4) Balancear jogadores (sem gravar no DB)
+        // Adicionar jogadores temporários diretamente do front
+        jogadoresTemporarios.forEach(tempJog => {
+          jogadoresParaBalancear.push({
+            id_temporario: tempJog.id_temporario,
+            nome: tempJog.nome || `Jogador Temporário ${tempJog.id_temporario}`,
+            passe: parseInt(tempJog.passe, 10) || 3,
+            ataque: parseInt(tempJog.ataque, 10) || 3,
+            levantamento: parseInt(tempJog.levantamento, 10) || 3,
+            altura: parseFloat(tempJog.altura) || 170,
+            temporario: true,
+          });
+        });
+
+        // 6) Balancear jogadores (sem gravar no DB)
         const { times, reservas } = balancearJogadores(jogadoresParaBalancear, tamanho_time || 4);
 
-        // 5) Garantir que todos os jogadores tenham o nome preservado
+        // 7) Garantir que todos os jogadores tenham o nome preservado
         times.forEach(time => {
           time.jogadores.forEach(jogador => {
             if (!jogador.nome) {
-              jogador.nome = `Jogador Temporário ${jogador.id_usuario}`;
+              jogador.nome = jogador.temporario
+                ? `Jogador Temporário ${jogador.id_temporario}`
+                : `Usuário ${jogador.id_usuario}`;
             }
           });
         });
 
         reservas.forEach(reserva => {
           if (!reserva.nome) {
-            reserva.nome = `Jogador Temporário ${reserva.id_usuario}`;
+            reserva.nome = reserva.temporario
+              ? `Jogador Temporário ${reserva.id_temporario}`
+              : `Usuário ${reserva.id_usuario}`;
           }
         });
 
+        // 8) Retornar o balanceamento
         client.release();
         return res.status(200).json({
           message: 'Balanceamento (OFFLINE) realizado com sucesso!',
@@ -341,14 +367,18 @@ router.post(
       balancedTimes.forEach(time => {
         time.jogadores.forEach(jogador => {
           if (!jogador.nome) {
-            jogador.nome = `Jogador Temporário ${jogador.id_usuario}`;
+            jogador.nome = jogador.temporario
+              ? `Jogador Temporário ${jogador.id_temporario}`
+              : `Usuário ${jogador.id_usuario}`;
           }
         });
       });
 
       reservas.forEach(reserva => {
         if (!reserva.nome) {
-          reserva.nome = `Jogador Temporário ${reserva.id_usuario}`;
+          reserva.nome = reserva.temporario
+            ? `Jogador Temporário ${reserva.id_temporario}`
+            : `Usuário ${reserva.id_usuario}`;
         }
       });
 
@@ -394,17 +424,8 @@ router.post(
 
       return res.status(200).json({
         message: 'Balanceamento (ONLINE) realizado com sucesso!',
-        status,
         times: balancedTimes,
         reservas,
-      });
-    } catch (err) {
-      await client.query('ROLLBACK');
-      client.release();
-      console.error('Erro ao iniciar balanceamento:', err);
-      return res.status(500).json({
-        error: 'Erro ao iniciar balanceamento',
-        details: err.message,
       });
     }
   }
@@ -483,9 +504,7 @@ router.post(
 
         for (const jogador of time.jogadores) {
           if (!jogador.id_usuario || typeof jogador.id_usuario !== 'number') {
-            throw new Error(
-              `id_usuario inválido ou ausente para um dos jogadores no Time ${numeroTime}.`
-            );
+            throw new Error(`id_usuario inválido no Time ${numeroTime}.`);
           }
           await client.query(`
             INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)

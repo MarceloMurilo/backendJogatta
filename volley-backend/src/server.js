@@ -32,6 +32,10 @@ const chatRoutes = require('./routes/chatRoutes');
 // === Adicione a importação das rotas de balanceamento ===
 const balanceamentoRoutes = require('./routes/jogador/balanceamentoRoutes');
 
+// Temporarios
+
+const temporariosRoutes = require('./routes/jogador/temporariosRoutes');
+
 // Configurações globais
 app.use(express.json());
 app.use(cors());
@@ -96,7 +100,8 @@ app.get('/api/test', (req, res) => {
 
 // chatRoutes
 app.use('/api/chat', authMiddleware, chatRoutes);
-
+//Temporarios
+app.use('/api/temporarios', temporariosRoutes);
 
 // Cron job para encerrar jogos automaticamente
 cron.schedule('*/5 * * * *', async () => {
