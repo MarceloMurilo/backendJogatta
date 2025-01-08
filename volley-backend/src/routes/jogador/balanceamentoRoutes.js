@@ -64,8 +64,7 @@ const calcularDistancia = (jogador1, jogador2) => {
 };
 
 /**
- * Função para gerar sugestões de substituição,
- * baseando-se na "distância" entre reserva e jogador em quadra.
+ * Exemplo de sugestão de substituições
  */
 const gerarSugerirRotacoes = (times, reservas, topN = 2) => {
   const rotacoes = [];
@@ -115,7 +114,7 @@ function balancearJogadores(jogadores, tamanhoTime) {
 
   let reservas = [];
   let index = 0;
-  for (let j of embaralhados) {
+  for (const j of embaralhados) {
     const timeIndex = Math.floor(index / tamanhoTime);
     if (timeIndex < numTimes) {
       times[timeIndex].jogadores.push(j);
@@ -157,7 +156,8 @@ function balancearRole(req, res, next) {
 /**
  * POST /api/balanceamento/iniciar-balanceamento
  * - Se for OFFLINE (sem id_jogo): 
- *      Recebe `amigos_offline` e realiza balanceamento sem gravar no DB.
+ *      Recebe `amigos_offline` e realiza balanceamento sem gravar no DB,
+ *      mantendo o nome do jogador temporário conforme digitado no front.
  * - Se for ONLINE (com id_jogo): 
  *      Verifica o jogo, busca jogadores do DB e grava times no DB.
  */
@@ -177,7 +177,6 @@ router.post(
       // FLUXO OFFLINE (id_jogo == null)
       // ==========================
       if (!id_jogo) {
-        // Se não recebeu nenhum jogador, retorna erro
         if (!amigos_offline.length) {
           client.release();
           return res.status(400).json({
@@ -185,21 +184,21 @@ router.post(
           });
         }
 
-        // Filtra jogadores que têm id_usuario (oficiais)
+        // Filtra os jogadores que têm id_usuario (oficiais)
         const offlineOficiais = amigos_offline.filter(
           (j) => typeof j.id_usuario === 'number'
         );
 
-        // Filtra jogadores que têm apenas id_temporario (não têm id_usuario)
+        // Filtra jogadores que têm apenas id_temporario ou algo assim
         const offlineTemporarios = amigos_offline.filter(
-          (j) => !j.id_usuario && j.id_temporario
+          (j) => !j.id_usuario
         );
 
-        // Se existirem jogadores oficiais, buscar do DB para sobrescrever
+        // Buscar no DB apenas se tiver jogadores oficiais
         let rowsAval = [];
         if (offlineOficiais.length) {
           const oficiaisIds = offlineOficiais.map((j) => j.id_usuario);
-          // Buscar habilidades no DB
+          // Buscar no DB (usuario + avaliacoes) para sobrescrever stats
           const respAval = await client.query(
             `
               SELECT
@@ -216,30 +215,36 @@ router.post(
             `,
             [oficiaisIds]
           );
-          rowsAval = respAval.rows; // Dados do DB
+          rowsAval = respAval.rows;
         }
 
         // Montar map <id_usuario, dados do DB>
         const mapAval = new Map(rowsAval.map((row) => [row.id_usuario, row]));
 
-        // 1) Mesclar dados dos oficiais
+        // Processar jogadores oficiais
         const jogadoresOficiaisProntos = offlineOficiais.map((frontJog) => {
           const dbJog = mapAval.get(frontJog.id_usuario);
           if (dbJog) {
-            // Merge do DB: preferir passe, ataque, levantamento, altura do DB
+            // Se achou no BD, mescla, mas não sobrescreve "frontJog.nome" se vier preenchido
             return {
               ...frontJog,
-              nome: dbJog.nome || frontJog.nome,
+              nome:
+                frontJog.nome && frontJog.nome.trim() !== ''
+                  ? frontJog.nome
+                  : dbJog.nome || `Jogador Temporário ${frontJog.id_usuario}`,
               passe: dbJog.passe,
               ataque: dbJog.ataque,
               levantamento: dbJog.levantamento,
               altura: parseFloat(dbJog.altura) || 170,
             };
           } else {
-            // Se não encontrou no DB, usar do front com defaults
+            // Não achou no BD -> é "oficial" mas sem dados, ou algo do tipo
             return {
               ...frontJog,
-              nome: frontJog.nome || `Jogador Temporário ${frontJog.id_usuario}`,
+              nome:
+                frontJog.nome && frontJog.nome.trim() !== ''
+                  ? frontJog.nome
+                  : `Jogador Temporário ${frontJog.id_usuario}`,
               passe: parseInt(frontJog.passe, 10) || 3,
               ataque: parseInt(frontJog.ataque, 10) || 3,
               levantamento: parseInt(frontJog.levantamento, 10) || 3,
@@ -248,40 +253,43 @@ router.post(
           }
         });
 
-        // 2) Para jogadores temporários (id_temporario) no OFFLINE,
-        //    simplesmente usamos as informações passadas do front.
+        // Processar jogadores temporários (sem id_usuario)
+        // Mantém EXACTAMENTE o frontJog.nome se não estiver vazio
         const jogadoresTemporariosProntos = offlineTemporarios.map((frontJog) => ({
           ...frontJog,
-          nome: frontJog.nome || `Jogador Temporário ${frontJog.id_temporario}`,
+          nome:
+            frontJog.nome && frontJog.nome.trim() !== ''
+              ? frontJog.nome
+              : `Jogador Temporário ${frontJog.id_temporario || frontJog.id}`,
           passe: parseInt(frontJog.passe, 10) || 3,
           ataque: parseInt(frontJog.ataque, 10) || 3,
           levantamento: parseInt(frontJog.levantamento, 10) || 3,
           altura: parseFloat(frontJog.altura) || 170,
         }));
 
-        // 3) Junta todo mundo
+        // Junta todos
         const todosJogadoresParaBalancear = [
           ...jogadoresOficiaisProntos,
           ...jogadoresTemporariosProntos,
         ];
 
-        // 4) Balanceia
+        // Balancear
         const { times, reservas } = balancearJogadores(
           todosJogadoresParaBalancear,
           tamanho_time || 4
         );
 
-        // 5) Garante nome
+        // Se ainda houver algum jogador sem nome, definir fallback
         times.forEach((time) => {
-          time.jogadores.forEach((jogador) => {
-            if (!jogador.nome) {
-              jogador.nome = `Jogador Temporário ${jogador.id_usuario || jogador.id_temporario}`;
+          time.jogadores.forEach((j) => {
+            if (!j.nome || !j.nome.trim()) {
+              j.nome = `Jogador Temporário ${j.id_usuario || j.id}`;
             }
           });
         });
-        reservas.forEach((reserva) => {
-          if (!reserva.nome) {
-            reserva.nome = `Jogador Temporário ${reserva.id_usuario || reserva.id_temporario}`;
+        reservas.forEach((r) => {
+          if (!r.nome || !r.nome.trim()) {
+            r.nome = `Jogador Temporário ${r.id_usuario || r.id}`;
           }
         });
 
@@ -316,7 +324,7 @@ router.post(
 
       const { status, id_usuario, tamanho_time: tamanhoTimeDB } = jogoResp.rows[0];
 
-      // Se jogo finalizado -> não deixa prosseguir
+      // Se jogo finalizado
       if (status === 'finalizado') {
         client.release();
         return res.status(400).json({
@@ -354,7 +362,7 @@ router.post(
         });
       }
 
-      // Buscar jogadores do DB (que participam do jogo e têm avaliação do organizador)
+      // Buscar jogadores do DB (participantes do jogo + avaliações do organizador)
       const jogadoresResp = await client.query(
         `
         SELECT 
@@ -477,6 +485,7 @@ router.post(
 
 /**
  * POST /api/balanceamento/finalizar-balanceamento
+ * Finaliza e grava times definitivos (ONLINE).
  */
 router.post(
   '/finalizar-balanceamento',
@@ -543,7 +552,7 @@ router.post(
       // Remove times existentes
       await client.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
 
-      // Insere os novos times
+      // Inserir novos times
       for (const [index, time] of times.entries()) {
         const numeroTime = index + 1;
         const { totalScore, totalAltura } = calcularTotais(time);
@@ -591,6 +600,7 @@ router.post(
 
 /**
  * POST /api/balanceamento/atualizar-times
+ * (ONLINE) Permite sobrescrever a lista de times no DB.
  */
 router.post(
   '/atualizar-times',
