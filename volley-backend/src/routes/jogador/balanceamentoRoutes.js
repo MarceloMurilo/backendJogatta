@@ -67,6 +67,8 @@ const calcularDistancia = (jogador1, jogador2) => {
  * Exemplo de sugestão de substituições
  */
 const gerarSugerirRotacoes = (times, reservas, topN = 2) => {
+  console.log('Times recebidos para gerar rotações:', JSON.stringify(times, null, 2));
+  console.log('Reservas recebidas para gerar rotações:', JSON.stringify(reservas, null, 2));
   const rotacoes = [];
   reservas.forEach((reserva) => {
     const sugeridos = [];
@@ -274,6 +276,7 @@ router.post(
         ];
 
         // Balancear
+        console.log('Rotacoes geradas:', JSON.stringify(rotacoes, null, 2));
         const { times, reservas } = balancearJogadores(
           todosJogadoresParaBalancear,
           tamanho_time || 4
@@ -281,7 +284,7 @@ router.post(
 
         // Gerar sugestões de substituições
         const rotacoes = gerarSugerirRotacoes(times, reservas);
-
+        console.log('Rotacoes geradas:', JSON.stringify(rotacoes, null, 2));
         // Se ainda houver algum jogador sem nome, definir fallback
         times.forEach((time) => {
           time.jogadores.forEach((j) => {
@@ -297,6 +300,13 @@ router.post(
         });
 
         client.release();
+        console.log('Resposta final enviada ao cliente:', JSON.stringify({
+          message: 'Balanceamento (OFFLINE) realizado com sucesso!',
+          times,
+          reservas,
+          rotacoes, // Inclua este dado no log
+        }, null, 2));
+        
         return res.status(200).json({
           message: 'Balanceamento (OFFLINE) realizado com sucesso!',
           times,
@@ -480,6 +490,8 @@ router.post(
         rotacoes, // Adiciona as sugestões no retorno
       });
     } catch (err) {
+      console.error('Erro ao iniciar balanceamento:', err);
+      console.error('Stacktrace do erro:', err.stack);
       await client.query('ROLLBACK');
       client.release();
       console.error('Erro ao iniciar balanceamento:', err);
