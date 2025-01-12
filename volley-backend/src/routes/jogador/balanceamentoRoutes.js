@@ -276,7 +276,7 @@ router.post(
         ];
 
         // Balancear
-        console.log('Rotacoes geradas:', JSON.stringify(rotacoes, null, 2));
+        
         const { times, reservas } = balancearJogadores(
           todosJogadoresParaBalancear,
           tamanho_time || 4
