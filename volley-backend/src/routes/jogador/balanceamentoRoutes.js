@@ -279,6 +279,9 @@ router.post(
           tamanho_time || 4
         );
 
+        // Gerar sugestões de substituições
+        const rotacoes = gerarSugerirRotacoes(times, reservas);
+
         // Se ainda houver algum jogador sem nome, definir fallback
         times.forEach((time) => {
           time.jogadores.forEach((j) => {
@@ -298,6 +301,7 @@ router.post(
           message: 'Balanceamento (OFFLINE) realizado com sucesso!',
           times,
           reservas,
+          rotacoes, // Adiciona as sugestões no retorno
         });
       }
 
@@ -405,6 +409,9 @@ router.post(
       const custo = calcularCusto(balancedTimes);
       console.log(`Custo do balanceamento: ${custo}`);
 
+      // Gerar sugestões de substituições
+      const rotacoes = gerarSugerirRotacoes(balancedTimes, reservas);
+
       // Ajusta nomes se estiverem vazios
       balancedTimes.forEach((time) => {
         time.jogadores.forEach((jogador) => {
@@ -470,6 +477,7 @@ router.post(
         status,
         times: balancedTimes,
         reservas,
+        rotacoes, // Adiciona as sugestões no retorno
       });
     } catch (err) {
       await client.query('ROLLBACK');
@@ -640,7 +648,7 @@ router.post(
       // Remove times antigos
       await client.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
 
-      // Insere novos
+      // Inserir novos times
       for (const [index, time] of times.entries()) {
         const numeroTime = index + 1;
         const { totalScore, totalAltura } = calcularTotais(time);
@@ -669,6 +677,7 @@ router.post(
       return res.status(200).json({
         message: 'Times atualizados com sucesso!',
         times,
+        // rotacoes: Não estamos gerando rotacoes aqui, remover se não for necessário
       });
     } catch (error) {
       await client.query('ROLLBACK');
