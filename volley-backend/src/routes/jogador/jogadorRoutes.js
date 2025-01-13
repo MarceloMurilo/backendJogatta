@@ -66,6 +66,44 @@ router.get(
   }
 );
 
+// Rota para verificar se um PDF foi gerado com sucesso
+router.get(
+  '/verificar-pdf/:nomeArquivo',
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const { nomeArquivo } = req.params;
+
+      // Caminho onde o PDF é salvo
+      const path = require('path');
+      const caminhoPDF = path.join(__dirname, '../../../pdf', `${nomeArquivo}.pdf`);
+      // Verifica se o arquivo existe e se tem conteúdo
+      const fs = require('fs');
+      if (fs.existsSync(caminhoPDF) && fs.statSync(caminhoPDF).size > 0) {
+        return res.status(200).json({ 
+          success: true, 
+          message: 'PDF gerado com sucesso.', 
+          caminho: caminhoPDF 
+        });
+      } else {
+        return res.status(404).json({ 
+          success: false, 
+          message: 'PDF não encontrado ou inválido.' 
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao verificar PDF:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Erro ao verificar PDF.', 
+        error: error.message 
+      });
+    }
+  }
+);
+
+
+
 // **Nova Rota: Listar Jogadores de um Jogo Específico**
 router.get(
   '/listar/:jogoId',

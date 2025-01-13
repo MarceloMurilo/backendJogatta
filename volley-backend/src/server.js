@@ -35,7 +35,17 @@ const balanceamentoRoutes = require('./routes/jogador/balanceamentoRoutes');
 // Temporarios
 
 const temporariosRoutes = require('./routes/jogador/temporariosRoutes');
+const fs = require('fs');
+const path = require('path');
 
+// Caminho para o diretório `pdf`
+const pdfDir = path.join(__dirname, 'pdf');
+
+// Criar o diretório, caso não exista
+if (!fs.existsSync(pdfDir)) {
+  fs.mkdirSync(pdfDir, { recursive: true });
+  console.log('Diretório "pdf" criado automaticamente.');
+}
 // Configurações globais
 app.use(express.json());
 app.use(cors());
