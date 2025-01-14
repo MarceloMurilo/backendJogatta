@@ -29,12 +29,12 @@ const amigosRoutes = require('./routes/amigosRoutes');
 const avaliacoesRoutes = require('./routes/jogador/AvaliacoesRoutes');
 const lobbyRoutes = require('./routes/invites/lobbyRoutes');
 const chatRoutes = require('./routes/chatRoutes');
-// === Adicione a importação das rotas de balanceamento ===
 const balanceamentoRoutes = require('./routes/jogador/balanceamentoRoutes');
-
-// Temporarios
-
 const temporariosRoutes = require('./routes/jogador/temporariosRoutes');
+
+// === IMPORTAÇÃO NOVA DO ARQUIVO DE ROTAS PARA PDF ===
+const pdfRoutes = require('./routes/pdfRoutes');
+
 const fs = require('fs');
 const path = require('path');
 
@@ -46,6 +46,7 @@ if (!fs.existsSync(pdfDir)) {
   fs.mkdirSync(pdfDir, { recursive: true });
   console.log('Diretório "pdf" criado automaticamente.');
 }
+
 // Configurações globais
 app.use(express.json());
 app.use(cors());
@@ -64,10 +65,9 @@ app.use((req, res, next) => {
 //  ROTAS
 // ===================================
 
-// (Exemplo) Rotas para jogador (estas ainda usam roleMiddleware se quiser)
+// (Exemplo) Rotas para jogador
 app.use('/api/jogador', authMiddleware, roleMiddleware(['jogador', 'organizador']), jogadorRoutes);
 app.use('/api/jogador/reservas', authMiddleware, reservationRoutes);
-// app.use('/api/jogador/times', authMiddleware, gameRoutes);
 app.use('/api/jogos', authMiddleware, jogosRoutes);
 
 // (Exemplo) Rotas para owner
@@ -100,7 +100,7 @@ app.use('/api/lobby', authMiddleware, lobbyRoutes);
 // (Exemplo) Rotas de CEP
 app.use('/api/cep', authMiddleware, cepRoutes);
 
-// === Aqui definimos as ROTAS DE BALANCEAMENTO, sem roleMiddleware no server ===
+// (Exemplo) Rotas de balanceamento
 app.use('/api/balanceamento', balanceamentoRoutes);
 
 // Rota de teste
@@ -110,24 +110,23 @@ app.get('/api/test', (req, res) => {
 
 // chatRoutes
 app.use('/api/chat', authMiddleware, chatRoutes);
-//Temporarios
+
+// Temporarios
 app.use('/api/temporarios', temporariosRoutes);
+
+// === AQUI USAMOS A NOVA ROTA DE PDF ===
+app.use('/api/pdf', pdfRoutes);
 
 // Cron job para encerrar jogos automaticamente
 cron.schedule('*/5 * * * *', async () => {
   console.log('Verificando jogos que precisam ser encerrados...');
   try {
-    const agora = new Date();
-    const result = await db.query(`
+    await db.query(`
       UPDATE jogos
          SET status = 'encerrada'
        WHERE horario_fim < NOW()
          AND status = 'ativa'
     `);
-
-    if (result.rowCount > 0) {
-      console.log(`${result.rowCount} jogos encerrados automaticamente.`);
-    }
   } catch (error) {
     console.error('Erro ao encerrar jogos automaticamente:', error);
   }
