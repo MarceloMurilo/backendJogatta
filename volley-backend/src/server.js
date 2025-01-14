@@ -4,17 +4,18 @@ const express = require('express');
 const cors = require('cors');
 const cron = require('node-cron');
 const db = require('./db');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 
 // Middlewares
 const authMiddleware = require('./middlewares/authMiddleware');
-const roleMiddleware = require('./middlewares/roleMiddleware'); // se precisar em outras rotas
+const roleMiddleware = require('./middlewares/roleMiddleware');
 
-// Rotas
+// Importar todas as rotas
 const jogadorRoutes = require('./routes/jogador/jogadorRoutes');
 const reservationRoutes = require('./routes/jogador/reservationRoutes');
-// const gameRoutes = require('./routes/jogador/jogosRoutes');
 const jogosRoutes = require('./routes/jogador/jogosRoutes');
 const courtManagementRoutes = require('./routes/owner/courtManagementRoutes');
 const ownerReservationsRoutes = require('./routes/owner/ownerReservationsRoutes');
@@ -32,11 +33,8 @@ const chatRoutes = require('./routes/chatRoutes');
 const balanceamentoRoutes = require('./routes/jogador/balanceamentoRoutes');
 const temporariosRoutes = require('./routes/jogador/temporariosRoutes');
 
-// === IMPORTAÇÃO NOVA DO ARQUIVO DE ROTAS PARA PDF ===
+// === Importação nova do arquivo de rotas para PDF ===
 const pdfRoutes = require('./routes/pdfRoutes');
-
-const fs = require('fs');
-const path = require('path');
 
 // Caminho para o diretório `pdf`
 const pdfDir = path.join(__dirname, 'pdf');
@@ -62,60 +60,70 @@ app.use((req, res, next) => {
 });
 
 // ===================================
-//  ROTAS
+//          ROTAS
 // ===================================
 
-// (Exemplo) Rotas para jogador
-app.use('/api/jogador', authMiddleware, roleMiddleware(['jogador', 'organizador']), jogadorRoutes);
+// Rotas para jogador
+app.use(
+  '/api/jogador',
+  authMiddleware,
+  roleMiddleware(['jogador', 'organizador']),
+  jogadorRoutes
+);
 app.use('/api/jogador/reservas', authMiddleware, reservationRoutes);
 app.use('/api/jogos', authMiddleware, jogosRoutes);
 
-// (Exemplo) Rotas para owner
-app.use('/api/owner/quadras', authMiddleware, roleMiddleware(['owner']), courtManagementRoutes);
+// Rotas para owner
+app.use(
+  '/api/owner/quadras',
+  authMiddleware,
+  roleMiddleware(['owner']),
+  courtManagementRoutes
+);
 app.use('/api/owner/reservas', authMiddleware, ownerReservationsRoutes);
 
-// (Exemplo) Rotas de auth
+// Rotas de autenticação e usuário
 app.use('/api/auth', authRoutes);
 app.use('/api/usuario', userRoutes);
 
-// (Exemplo) Rotas para empresa
+// Rotas para empresa
 app.use('/api/empresas', authMiddleware, companyRoutes);
 
-// (Exemplo) Rotas de convites
+// Rotas de convites
 app.use('/api/convites', authMiddleware, convitesRoutes);
 app.use('/api/convites/usuario', authMiddleware, convitesUserRoutes);
 
-// (Exemplo) Rotas de avaliações
+// Rotas de avaliações
 app.use('/api/avaliacoes', authMiddleware, avaliacoesRoutes);
 
-// (Exemplo) Rotas de amigos
+// Rotas de amigos
 app.use('/api/amigos', authMiddleware, amigosRoutes);
 
-// (Exemplo) Rotas de grupos
+// Rotas de grupos
 app.use('/api/groups', groupRoutes);
 
-// (Exemplo) Rotas de lobby
+// Rotas de lobby
 app.use('/api/lobby', authMiddleware, lobbyRoutes);
 
-// (Exemplo) Rotas de CEP
+// Rotas de CEP
 app.use('/api/cep', authMiddleware, cepRoutes);
 
-// (Exemplo) Rotas de balanceamento
+// Rotas de balanceamento
 app.use('/api/balanceamento', balanceamentoRoutes);
+
+// Rotas de chat
+app.use('/api/chat', authMiddleware, chatRoutes);
+
+// Rotas de temporários
+app.use('/api/temporarios', temporariosRoutes);
+
+// === Aqui usamos a nova rota de PDF ===
+app.use('/api/pdf', pdfRoutes);
 
 // Rota de teste
 app.get('/api/test', (req, res) => {
   res.json({ message: 'Rota de teste funcionando!' });
 });
-
-// chatRoutes
-app.use('/api/chat', authMiddleware, chatRoutes);
-
-// Temporarios
-app.use('/api/temporarios', temporariosRoutes);
-
-// === AQUI USAMOS A NOVA ROTA DE PDF ===
-app.use('/api/pdf', pdfRoutes);
 
 // Cron job para encerrar jogos automaticamente
 cron.schedule('*/5 * * * *', async () => {
@@ -127,6 +135,7 @@ cron.schedule('*/5 * * * *', async () => {
        WHERE horario_fim < NOW()
          AND status = 'ativa'
     `);
+    console.log('Jogos encerrados automaticamente, se aplicável.');
   } catch (error) {
     console.error('Erro ao encerrar jogos automaticamente:', error);
   }
@@ -135,7 +144,10 @@ cron.schedule('*/5 * * * *', async () => {
 // Exibir rotas registradas
 app._router.stack.forEach(function (r) {
   if (r.route && r.route.path) {
-    console.log(`Rota registrada: ${r.route.path} [${Object.keys(r.route.methods)}]`);
+    const methods = Object.keys(r.route.methods)
+      .map(method => method.toUpperCase())
+      .join(', ');
+    console.log(`Rota registrada: ${r.route.path} [${methods}]`);
   }
 });
 
