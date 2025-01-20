@@ -40,6 +40,38 @@ router.put(
   }
 );
 
+// **Nova Rota: Atualizar Descrição do Perfil**
+router.put(
+  '/descricao',
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const { id_usuario, descricao } = req.body;
+
+      if (!id_usuario || descricao === undefined) {
+        return res.status(400).json({ message: 'ID do usuário e descrição são obrigatórios.' });
+      }
+
+      const result = await db.query(
+        'UPDATE usuario SET descricao = $1 WHERE id_usuario = $2 RETURNING *',
+        [descricao, id_usuario]
+      );
+
+      if (result.rowCount === 0) {
+        return res.status(404).json({ message: 'Usuário não encontrado.' });
+      }
+
+      res.status(200).json({
+        message: 'Descrição atualizada com sucesso!',
+        usuario: result.rows[0],
+      });
+    } catch (error) {
+      console.error('Erro ao atualizar descrição:', error);
+      res.status(500).json({ message: 'Erro ao atualizar descrição.' });
+    }
+  }
+);
+
 // Rota para obter informações do perfil do jogador
 router.get(
   '/perfil',
@@ -50,7 +82,7 @@ router.get(
       const userId = req.user.id;
 
       const result = await db.query(
-        'SELECT id_usuario, nome, email, imagem_perfil FROM usuario WHERE id_usuario = $1',
+        'SELECT id_usuario, nome, email, imagem_perfil, descricao FROM usuario WHERE id_usuario = $1',
         [userId]
       );
 
@@ -102,7 +134,10 @@ router.get(
   }
 );
 
-
+/** 
+ * **Outras Rotas Existentes**
+ * (Mantidas conforme seu código original)
+ */
 
 // **Nova Rota: Listar Jogadores de um Jogo Específico**
 router.get(
@@ -282,7 +317,6 @@ router.post(
     }
   }
 );
-
 
 /**
  * Função fictícia para equilibrar jogadores em times.
