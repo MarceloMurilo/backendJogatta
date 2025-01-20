@@ -4,6 +4,8 @@ const router = express.Router();
 const db = require('../../db');
 const authMiddleware = require('../../middlewares/authMiddleware');
 const roleMiddleware = require('../../middlewares/roleMiddleware');
+const path = require('path');
+const fs = require('fs');
 
 // Rota para atualizar a imagem de perfil
 router.put(
@@ -40,7 +42,11 @@ router.put(
   }
 );
 
-// **Nova Rota: Atualizar Descrição do Perfil**
+/**
+ * **Nova Rota: Atualizar Descrição do Perfil com Validação de Comprimento**
+ * Rota: PUT /descricao
+ * Objetivo: Atualizar apenas a descrição do perfil do usuário com um limite de 150 caracteres.
+ */
 router.put(
   '/descricao',
   authMiddleware,
@@ -48,10 +54,18 @@ router.put(
     try {
       const { id_usuario, descricao } = req.body;
 
+      // Validações básicas
       if (!id_usuario || descricao === undefined) {
         return res.status(400).json({ message: 'ID do usuário e descrição são obrigatórios.' });
       }
 
+      // Validação de limite de caracteres (150 caracteres)
+      const MAX_CHARS = 150;
+      if (descricao.length > MAX_CHARS) {
+        return res.status(400).json({ message: `Descrição muito longa. O limite é de ${MAX_CHARS} caracteres.` });
+      }
+
+      // Atualiza apenas o campo descricao
       const result = await db.query(
         'UPDATE usuario SET descricao = $1 WHERE id_usuario = $2 RETURNING *',
         [descricao, id_usuario]
@@ -107,10 +121,9 @@ router.get(
       const { nomeArquivo } = req.params;
 
       // Caminho onde o PDF é salvo
-      const path = require('path');
       const caminhoPDF = path.join(__dirname, '../../../pdf', `${nomeArquivo}.pdf`);
+      
       // Verifica se o arquivo existe e se tem conteúdo
-      const fs = require('fs');
       if (fs.existsSync(caminhoPDF) && fs.statSync(caminhoPDF).size > 0) {
         return res.status(200).json({ 
           success: true, 
