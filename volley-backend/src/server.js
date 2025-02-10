@@ -8,7 +8,7 @@ require('dotenv').config({
 const express = require('express');
 const cors = require('cors');
 const cron = require('node-cron');
-const db = require('./js');
+const db = require('./db.js');
 const fs = require('fs');
 
 // Se você usa passaporte em arquivo separado (passport.js), importe aqui:
