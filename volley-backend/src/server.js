@@ -36,6 +36,10 @@ app.get('/termos-servico', (req, res) => {
   `);
 });
 
+// Public do Google
+
+app.use(express.static('public'));
+
 // ==============================
 //    MIDDLEWARES GLOBAIS
 // ==============================
