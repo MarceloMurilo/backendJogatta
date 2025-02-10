@@ -12,7 +12,7 @@ const router = express.Router();
  */
 router.post('/logStatus', (req, res) => {
   const { status, info } = req.body;
-  // Aqui você pode salvar no DB ou apenas imprimir no console:
+  // Aqui você pode salvar no DB ou apenas imprimir no console
   console.log('=== LOG DE PDF ===');
   console.log('Status:', status);
   console.log('Info:', info);

@@ -2,8 +2,54 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const pool = require('../db');
+const passport = require('passport');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
+require('dotenv').config();
+
 const router = express.Router();
 
+// Configuração do Passport com Google OAuth
+passport.use(
+  new GoogleStrategy(
+    {
+      clientID: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      callbackURL: process.env.GOOGLE_CALLBACK_URL,
+    },
+    async (accessToken, refreshToken, profile, done) => {
+      try {
+        // Verifica se o usuário já existe no banco
+        const userCheck = await pool.query(
+          'SELECT * FROM public.usuario WHERE email = $1',
+          [profile.emails[0].value]
+        );
+
+        let user;
+        if (userCheck.rows.length > 0) {
+          user = userCheck.rows[0];
+        } else {
+          // Se o usuário não existir, cria um novo
+          const newUser = await pool.query(
+            'INSERT INTO public.usuario (nome, email, papel_usuario) VALUES ($1, $2, $3) RETURNING *',
+            [profile.displayName, profile.emails[0].value, 'jogador']
+          );
+          user = newUser.rows[0];
+        }
+
+        // Gera token JWT para autenticação
+        const token = jwt.sign(
+          { id: user.id_usuario, papel_usuario: user.papel_usuario },
+          process.env.JWT_SECRET,
+          { expiresIn: '1h' }
+        );
+
+        return done(null, { token, user });
+      } catch (error) {
+        return done(error, null);
+      }
+    }
+  )
+);
 
 // Middleware para verificar o token JWT
 const verifyToken = (req, res, next) => {
@@ -22,20 +68,17 @@ const verifyToken = (req, res, next) => {
       return res.status(401).json({ error: 'Token inválido' });
     }
 
-    // Log detalhado para depuração
+    // Log para depuração
     console.log('Token decodificado com sucesso:', decoded);
 
-    // Passa o ID e o papel_usuario do usuário para a requisição
     req.user = { id: decoded.id, papel_usuario: decoded.papel_usuario };
     next();
   });
 };
 
-
 // Rota para registrar um novo usuário com senha criptografada (Register)
 router.post('/register', async (req, res) => {
   const { nome, email, senha, tt, altura, imagem_perfil = null, user_papel_usuario = 'jogador' } = req.body;
-
 
   try {
     // Verificar se o email já está registrado
@@ -55,8 +98,8 @@ router.post('/register', async (req, res) => {
     // Criptografar a senha
     const hashedPassword = await bcrypt.hash(senha, 10);
 
-     // Inserir o novo usuário no banco de dados
-     const result = await pool.query(
+    // Inserir o novo usuário no banco de dados
+    const result = await pool.query(
       'INSERT INTO public.usuario (nome, email, senha, tt, altura, imagem_perfil, papel_usuario) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
       [nome, email, hashedPassword, tt, altura, imagem_perfil, user_papel_usuario]
     );
@@ -75,8 +118,6 @@ router.post('/register', async (req, res) => {
     res.status(500).json({ error: 'Erro ao registrar o usuário' });
   }
 });
-
-
 
 // Rota de login
 router.post('/login', async (req, res) => {
@@ -106,7 +147,7 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Senha inválida.' });
     }
 
-    // Gera token JWT (sem imagem_perfil)
+    // Gera token JWT (sem incluir imagem_perfil)
     const token = jwt.sign(
       {
         id: usuario.id_usuario,
@@ -130,13 +171,25 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// Rota de login com Google
+router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+
+// Callback do Google OAuth
+router.get(
+  '/google/callback',
+  passport.authenticate('google', { session: false }),
+  (req, res) => {
+    // Redireciona para o frontend com o token gerado
+    res.redirect(`http://localhost:3000/auth/success?token=${req.user.token}`);
+  }
+);
 
 // Rota protegida para autenticação
 router.get('/protected', verifyToken, (req, res) => {
   res.status(200).json({
     message: 'Acesso permitido. Você está autenticado!',
-    userId: req.user.id, // Garantir que o ID do usuário está vindo do middleware
-    papel_usuario: req.user.papel_usuario, // Papel do usuário
+    userId: req.user.id,
+    papel_usuario: req.user.papel_usuario,
   });
 });
 

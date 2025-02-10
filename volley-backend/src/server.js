@@ -6,6 +6,7 @@ const cron = require('node-cron');
 const db = require('./db');
 const fs = require('fs');
 const path = require('path');
+const passport = require('passport'); // Importação do Passport
 
 const app = express();
 
@@ -48,6 +49,7 @@ if (!fs.existsSync(pdfDir)) {
 // Configurações globais
 app.use(express.json());
 app.use(cors());
+app.use(passport.initialize()); // Inicialização do Passport
 
 // Middleware de logging
 app.use((req, res, next) => {
