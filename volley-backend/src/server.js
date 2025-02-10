@@ -8,7 +8,7 @@ require('dotenv').config({
 const express = require('express');
 const cors = require('cors');
 const cron = require('node-cron');
-const db = require('./db.js');
+const db = require('./js');
 const fs = require('fs');
 
 // Se você usa passaporte em arquivo separado (passport.js), importe aqui:
@@ -39,7 +39,8 @@ app.get('/termos-servico', (req, res) => {
 
 // Se quiser servir arquivos estáticos, incluindo
 // aquele google-site-verification .html:
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'public')));
+
 
 // ------------------------------------------------
 //  Middlewares globais
