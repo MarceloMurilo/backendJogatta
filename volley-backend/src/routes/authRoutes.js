@@ -180,7 +180,7 @@ router.get(
   passport.authenticate('google', { session: false }),
   (req, res) => {
     // Redireciona para o frontend com o token gerado
-    res.redirect(`http://localhost:3000/auth/success?token=${req.user.token}`);
+    res.redirect(`exp://192.168.0.10:8081/auth/success?token=${req.user.token}`);
   }
 );
 
