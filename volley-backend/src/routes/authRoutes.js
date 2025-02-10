@@ -1,3 +1,5 @@
+// routes/authRoutes.js
+
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
@@ -8,17 +10,20 @@ require('dotenv').config();
 
 const router = express.Router();
 
-// Configuração do Passport com Google OAuth
+// ===========================
+// CONFIG PASSPORT (GOOGLE)
+// ===========================
 passport.use(
   new GoogleStrategy(
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      // Lê o callbackURL do .env
       callbackURL: process.env.GOOGLE_CALLBACK_URL,
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
-        // Verifica se o usuário já existe no banco
+        // Verifica se o usuário já existe
         const userCheck = await pool.query(
           'SELECT * FROM public.usuario WHERE email = $1',
           [profile.emails[0].value]
@@ -28,7 +33,7 @@ passport.use(
         if (userCheck.rows.length > 0) {
           user = userCheck.rows[0];
         } else {
-          // Se o usuário não existir, cria um novo
+          // Se não existir, cria novo
           const newUser = await pool.query(
             'INSERT INTO public.usuario (nome, email, papel_usuario) VALUES ($1, $2, $3) RETURNING *',
             [profile.displayName, profile.emails[0].value, 'jogador']
@@ -36,7 +41,7 @@ passport.use(
           user = newUser.rows[0];
         }
 
-        // Gera token JWT para autenticação
+        // Gera token JWT
         const token = jwt.sign(
           { id: user.id_usuario, papel_usuario: user.papel_usuario },
           process.env.JWT_SECRET,
@@ -51,13 +56,15 @@ passport.use(
   )
 );
 
-// Middleware para verificar o token JWT
+// Middleware para verificar token
 const verifyToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     console.error('Token não fornecido ou formato inválido.');
-    return res.status(403).json({ error: 'Token não fornecido ou formato inválido' });
+    return res
+      .status(403)
+      .json({ error: 'Token não fornecido ou formato inválido' });
   }
 
   const token = authHeader.split(' ')[1];
@@ -68,7 +75,6 @@ const verifyToken = (req, res, next) => {
       return res.status(401).json({ error: 'Token inválido' });
     }
 
-    // Log para depuração
     console.log('Token decodificado com sucesso:', decoded);
 
     req.user = { id: decoded.id, papel_usuario: decoded.papel_usuario };
@@ -76,59 +82,83 @@ const verifyToken = (req, res, next) => {
   });
 };
 
-// Rota para registrar um novo usuário com senha criptografada (Register)
+// =============================
+//    ROTA DE REGISTER
+// =============================
 router.post('/register', async (req, res) => {
-  const { nome, email, senha, tt, altura, imagem_perfil = null, user_papel_usuario = 'jogador' } = req.body;
+  const {
+    nome,
+    email,
+    senha,
+    tt,
+    altura,
+    imagem_perfil = null,
+    user_papel_usuario = 'jogador',
+  } = req.body;
 
   try {
-    // Verificar se o email já está registrado
-    const userCheck = await pool.query('SELECT * FROM public.usuario WHERE email = $1', [email]);
+    // Verificar se o email já está no bd
+    const userCheck = await pool.query(
+      'SELECT * FROM public.usuario WHERE email = $1',
+      [email]
+    );
     if (userCheck.rows.length > 0) {
       return res.status(400).json({ error: 'Email já registrado' });
     }
 
     // Verificar se o tt já está registrado
     if (tt) {
-      const ttCheck = await pool.query('SELECT * FROM public.usuario WHERE tt = $1', [tt]);
+      const ttCheck = await pool.query(
+        'SELECT * FROM public.usuario WHERE tt = $1',
+        [tt]
+      );
       if (ttCheck.rows.length > 0) {
         return res.status(400).json({ error: 'TT já registrado' });
       }
     }
 
-    // Criptografar a senha
+    // Criptografar senha
     const hashedPassword = await bcrypt.hash(senha, 10);
 
-    // Inserir o novo usuário no banco de dados
+    // Inserir novo usuário
     const result = await pool.query(
       'INSERT INTO public.usuario (nome, email, senha, tt, altura, imagem_perfil, papel_usuario) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
       [nome, email, hashedPassword, tt, altura, imagem_perfil, user_papel_usuario]
     );
-    
-    // Gerar o token JWT com `id` e `papel_usuario`
+
+    // Gerar token
     const token = jwt.sign(
-      { id: result.rows[0].id_usuario, papel_usuario: result.rows[0].papel_usuario },
+      {
+        id: result.rows[0].id_usuario,
+        papel_usuario: result.rows[0].papel_usuario,
+      },
       process.env.JWT_SECRET,
       { expiresIn: '1h' }
     );
 
-    // Retornar o token e os dados do usuário (sem a senha)
-    res.status(201).json({ token, user: { ...result.rows[0], senha: undefined } });
+    res
+      .status(201)
+      .json({ token, user: { ...result.rows[0], senha: undefined } });
   } catch (error) {
-    console.error('Erro ao registrar o usuário:', error);
+    console.error('Erro ao registrar usuário:', error);
     res.status(500).json({ error: 'Erro ao registrar o usuário' });
   }
 });
 
-// Rota de login
+// =============================
+//       ROTA DE LOGIN
+// =============================
 router.post('/login', async (req, res) => {
   const { email, senha } = req.body;
 
   if (!email || !senha) {
-    return res.status(400).json({ message: 'Email/TT e senha são obrigatórios.' });
+    return res
+      .status(400)
+      .json({ message: 'Email/TT e senha são obrigatórios.' });
   }
 
   try {
-    // Verifica se o valor enviado é um email (contém @) ou um TT
+    // Verifica se é email ou TT
     const query = email.includes('@')
       ? 'SELECT * FROM public.usuario WHERE email = $1'
       : 'SELECT * FROM public.usuario WHERE tt = $1';
@@ -147,7 +177,7 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Senha inválida.' });
     }
 
-    // Gera token JWT (sem incluir imagem_perfil)
+    // Gera token
     const token = jwt.sign(
       {
         id: usuario.id_usuario,
@@ -160,43 +190,55 @@ router.post('/login', async (req, res) => {
       { expiresIn: '1d' }
     );
 
-    // Remover a senha antes de enviar os dados do usuário
     const { senha: _, ...usuarioSemSenha } = usuario;
 
-    // Retorna o token e os dados do usuário (sem a senha)
-    res.status(200).json({ message: 'Login bem-sucedido!', token, user: usuarioSemSenha });
+    res
+      .status(200)
+      .json({ message: 'Login bem-sucedido!', token, user: usuarioSemSenha });
   } catch (error) {
     console.error('Erro ao realizar login:', error);
-    res.status(500).json({ message: 'Erro interno ao realizar login.', error: error.message });
+    res
+      .status(500)
+      .json({ message: 'Erro interno ao realizar login.', error: error.message });
   }
 });
 
-// Rota de login com Google
-router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+// =============================
+//   ROTA DE LOGIN COM GOOGLE
+// =============================
+router.get(
+  '/google',
+  passport.authenticate('google', { scope: ['profile', 'email'] })
+);
 
-// Callback do Google OAuth
-
+// =============================
+//   CALLBACK DO GOOGLE
+// =============================
 router.get(
   '/google/callback',
   passport.authenticate('google', { session: false }),
   (req, res) => {
     const token = req.user.token;
 
-    // Verifica se está rodando no Expo ou na Web
-    const expoRedirectUri = process.env.EXPO_REDIRECT_URI || 'exp://192.168.0.10:8081/--/auth/success';
-    const webRedirectUri = process.env.WEB_REDIRECT_URI || 'https://frontendjogatta.onrender.com/auth/success';
+    // Se está rodando no Expo ou Web, define a URL final:
+    const expoRedirectUri =
+      process.env.EXPO_REDIRECT_URI || 'exp://192.168.0.10:8081/--/auth/success';
+    const webRedirectUri =
+      process.env.WEB_REDIRECT_URI ||
+      'https://frontendjogatta.onrender.com/auth/success';
 
-    // Usa o redirecionamento correto
-    const redirectUri = process.env.NODE_ENV === 'production' ? webRedirectUri : expoRedirectUri;
+    // Se estiver em produção, redireciona para web, senão para expo
+    const redirectUri =
+      process.env.NODE_ENV === 'production' ? webRedirectUri : expoRedirectUri;
 
     console.log(`Redirecionando para ${redirectUri}?token=${token}`);
     res.redirect(`${redirectUri}?token=${token}`);
   }
 );
 
-
-
-// Rota protegida para autenticação
+// =============================
+//   ROTA PROTEGIDA (exemplo)
+// =============================
 router.get('/protected', verifyToken, (req, res) => {
   res.status(200).json({
     message: 'Acesso permitido. Você está autenticado!',
