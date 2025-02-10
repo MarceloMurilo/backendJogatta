@@ -6,7 +6,7 @@ const bcrypt = require('bcryptjs');
 const pool = require('../db');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
-require('dotenv').config();
+// require('dotenv').config();
 
 const router = express.Router();
 

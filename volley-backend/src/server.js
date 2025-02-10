@@ -1,23 +1,24 @@
-// server.js
+// src/server.js
+const path = require('path');
+// 1) Carregar as variáveis DO .env que está NA RAIZ do projeto:
+require('dotenv').config({
+  path: path.join(__dirname, '..', '.env'),
+});
 
 const express = require('express');
 const cors = require('cors');
 const cron = require('node-cron');
-const db = require('./db');
+const db = require('./db.js');
 const fs = require('fs');
-const path = require('path');
 
-// Se estiver usando o passport.js EXTERNO, importe aqui:
-// const passport = require('./passport');
-
-// Se estiver usando a Strategy dentro do authRoutes, não precisa importar passaporte extra
-const passport = require('passport');
+// Se você usa passaporte em arquivo separado (passport.js), importe aqui:
+const passport = require('./config/passport.js');
 
 const app = express();
 
-// ==============================
-//     ROTAS ESTÁTICAS
-// ==============================
+// ------------------------------------------------
+//  Rotas estáticas / verificações
+// ------------------------------------------------
 app.get('/', (req, res) => {
   res.status(200).send('Backend do Jogatta está online! 🚀');
 });
@@ -36,18 +37,18 @@ app.get('/termos-servico', (req, res) => {
   `);
 });
 
-// Public do Google
-
+// Se quiser servir arquivos estáticos, incluindo
+// aquele google-site-verification .html:
 app.use(express.static('public'));
 
-// ==============================
-//    MIDDLEWARES GLOBAIS
-// ==============================
+// ------------------------------------------------
+//  Middlewares globais
+// ------------------------------------------------
 app.use(express.json());
 app.use(cors());
 app.use(passport.initialize());
 
-// Middleware de logging
+//  Logging
 app.use((req, res, next) => {
   console.log(`\n=== Nova requisição recebida ===`);
   console.log(`Método: ${req.method}`);
@@ -57,9 +58,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// ==============================
-//     IMPORTAÇÃO DE ROTAS
-// ==============================
+// ------------------------------------------------
+//  Importação de rotas
+// ------------------------------------------------
 const jogadorRoutes = require('./routes/jogador/jogadorRoutes');
 const reservationRoutes = require('./routes/jogador/reservationRoutes');
 const jogosRoutes = require('./routes/jogador/jogosRoutes');
@@ -80,20 +81,17 @@ const balanceamentoRoutes = require('./routes/jogador/balanceamentoRoutes');
 const temporariosRoutes = require('./routes/jogador/temporariosRoutes');
 const pdfRoutes = require('./routes/pdfRoutes');
 
-// ==============================
-//      CONFIG DE DIRETÓRIO PDF
-// ==============================
-const pdfDir = path.join(__dirname, 'pdf');
-if (!fs.existsSync(pdfDir)) {
-  fs.mkdirSync(pdfDir, { recursive: true });
+// ------------------------------------------------
+//  Diretório PDF (opcional no seu caso)
+// ------------------------------------------------
+if (!fs.existsSync(path.join(__dirname, 'pdf'))) {
+  fs.mkdirSync(path.join(__dirname, 'pdf'), { recursive: true });
   console.log('Diretório "pdf" criado automaticamente.');
 }
 
-// ==============================
-//       REGISTRO DE ROTAS
-// ==============================
-
-// Rotas para jogador
+// ------------------------------------------------
+//  Registro de rotas
+// ------------------------------------------------
 app.use(
   '/api/jogador',
   require('./middlewares/authMiddleware'),
@@ -104,16 +102,16 @@ app.use(
 app.use('/api/jogador/reservas', require('./middlewares/authMiddleware'), reservationRoutes);
 app.use('/api/jogos', require('./middlewares/authMiddleware'), jogosRoutes);
 
-// Rotas para owner
 app.use(
   '/api/owner/quadras',
   require('./middlewares/authMiddleware'),
   require('./middlewares/roleMiddleware')(['owner']),
   courtManagementRoutes
 );
+
 app.use('/api/owner/reservas', require('./middlewares/authMiddleware'), ownerReservationsRoutes);
 
-// Rotas de autenticação (importante!)
+// Rotas de autenticação
 app.use('/api/auth', authRoutes);
 
 // Rotas gerais
@@ -131,9 +129,9 @@ app.use('/api/chat', require('./middlewares/authMiddleware'), chatRoutes);
 app.use('/api/temporarios', temporariosRoutes);
 app.use('/api/pdf', pdfRoutes);
 
-// ==============================
-//       CRON DE ENCERRAR JOGOS
-// ==============================
+// ------------------------------------------------
+//  CRON (encerrar jogos, etc.)
+// ------------------------------------------------
 cron.schedule('*/5 * * * *', async () => {
   console.log('Verificando jogos que precisam ser encerrados...');
   try {
@@ -149,7 +147,7 @@ cron.schedule('*/5 * * * *', async () => {
   }
 });
 
-// Exibir rotas registradas (debug)
+// Exibir rotas (debug)
 app._router.stack.forEach((layer) => {
   if (layer.route) {
     const methods = Object.keys(layer.route.methods).join(', ').toUpperCase();
@@ -157,9 +155,9 @@ app._router.stack.forEach((layer) => {
   }
 });
 
-// ==============================
-//       INICIAR SERVIDOR
-// ==============================
+// ------------------------------------------------
+//  Iniciar Servidor
+// ------------------------------------------------
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Servidor rodando na porta ${PORT}`);
