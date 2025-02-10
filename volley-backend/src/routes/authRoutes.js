@@ -175,14 +175,26 @@ router.post('/login', async (req, res) => {
 router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
 
 // Callback do Google OAuth
+
 router.get(
   '/google/callback',
   passport.authenticate('google', { session: false }),
   (req, res) => {
-    // Redireciona para o frontend com o token gerado
-    res.redirect(`exp://192.168.0.10:8081/auth/success?token=${req.user.token}`);
+    const token = req.user.token;
+
+    // Verifica se está rodando no Expo ou na Web
+    const expoRedirectUri = process.env.EXPO_REDIRECT_URI || 'exp://192.168.0.10:8081/--/auth/success';
+    const webRedirectUri = process.env.WEB_REDIRECT_URI || 'https://frontendjogatta.onrender.com/auth/success';
+
+    // Usa o redirecionamento correto
+    const redirectUri = process.env.NODE_ENV === 'production' ? webRedirectUri : expoRedirectUri;
+
+    console.log(`Redirecionando para ${redirectUri}?token=${token}`);
+    res.redirect(`${redirectUri}?token=${token}`);
   }
 );
+
+
 
 // Rota protegida para autenticação
 router.get('/protected', verifyToken, (req, res) => {
