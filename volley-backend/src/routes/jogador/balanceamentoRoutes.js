@@ -1,5 +1,3 @@
-// /routes/jogador/balanceamentoRoutes.js
-
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
@@ -64,45 +62,22 @@ const calcularDistancia = (jogador1, jogador2) => {
 };
 
 /**
- * Exemplo de sugestão de substituições
- */
-const gerarSugerirRotacoes = (times, reservas, topN = 2) => {
-  console.log('Times recebidos para gerar rotações:', JSON.stringify(times, null, 2));
-  console.log('Reservas recebidas para gerar rotações:', JSON.stringify(reservas, null, 2));
-  const rotacoes = [];
-  reservas.forEach((reserva) => {
-    const sugeridos = [];
-    times.forEach((time, timeIndex) => {
-      time.jogadores.forEach((jogador) => {
-        const distancia = calcularDistancia(reserva, jogador);
-        sugeridos.push({
-          time: timeIndex + 1,
-          jogador,
-          distancia,
-        });
-      });
-    });
-    sugeridos.sort((a, b) => a.distancia - b.distancia);
-    const topSugeridos = sugeridos.slice(0, topN).map((s) => ({
-      time: s.time,
-      jogador: s.jogador,
-      distancia: s.distancia.toFixed(2),
-    }));
-    rotacoes.push({
-      reserva,
-      sugeridos: topSugeridos,
-    });
-  });
-  return rotacoes;
-};
-
-/**
- * Função principal de balanceamento (embaralha e distribui).
+ * ======================================
+ * Função principal de balanceamento (fixando os levantadores)
+ * ======================================
+ *
+ * Separa os jogadores fixos (levantadores) dos demais e os distribui:
+ * - Os jogadores marcados como "isLevantador" serão distribuídos em round-robin,
+ *   ficando fixos em seus times.
+ * - Os demais jogadores serão embaralhados e alocados para completar os times.
  */
 function balancearJogadores(jogadores, tamanhoTime) {
-  const embaralhados = embaralharJogadores([...jogadores]);
+  // Separa jogadores fixos (levantadores) e flexíveis
+  const fixed = jogadores.filter(j => j.isLevantador);
+  const flexible = jogadores.filter(j => !j.isLevantador);
 
-  const numTimes = Math.floor(embaralhados.length / tamanhoTime);
+  const totalPlayers = jogadores.length;
+  const numTimes = Math.floor(totalPlayers / tamanhoTime);
 
   const times = [];
   for (let i = 0; i < numTimes; i++) {
@@ -114,20 +89,36 @@ function balancearJogadores(jogadores, tamanhoTime) {
     });
   }
 
-  let reservas = [];
-  let index = 0;
-  for (const j of embaralhados) {
-    const timeIndex = Math.floor(index / tamanhoTime);
-    if (timeIndex < numTimes) {
-      times[timeIndex].jogadores.push(j);
+  const reservas = [];
+
+  // Distribuir os jogadores fixos (levantadores) em round-robin
+  fixed.forEach((player, idx) => {
+    const teamIndex = idx % numTimes;
+    if (times[teamIndex].jogadores.length < tamanhoTime) {
+      times[teamIndex].jogadores.push(player);
     } else {
-      reservas.push(j);
+      reservas.push(player);
     }
-    index++;
+  });
+
+  // Embaralhar e distribuir os jogadores flexíveis
+  const shuffledFlexible = embaralharJogadores([...flexible]);
+  for (const player of shuffledFlexible) {
+    let assigned = false;
+    for (let i = 0; i < numTimes; i++) {
+      if (times[i].jogadores.length < tamanhoTime) {
+        times[i].jogadores.push(player);
+        assigned = true;
+        break;
+      }
+    }
+    if (!assigned) {
+      reservas.push(player);
+    }
   }
 
-  // Calcula totalScore e totalAltura de cada time
-  times.forEach((time) => {
+  // Calcula totais para cada time
+  times.forEach(time => {
     const { totalScore, totalAltura } = calcularTotais(time);
     time.totalScore = totalScore;
     time.totalAltura = totalAltura;
@@ -137,9 +128,7 @@ function balancearJogadores(jogadores, tamanhoTime) {
 }
 
 /**
- * Verifica a role:
- * - Se tiver id_jogo no body, exige "organizador".
- * - Se não tiver (offline), exige "jogador".
+ * Middleware para balancear a role com base na presença de id_jogo
  */
 function balancearRole(req, res, next) {
   if (req.body.id_jogo) {
@@ -157,11 +146,8 @@ function balancearRole(req, res, next) {
 
 /**
  * POST /api/balanceamento/iniciar-balanceamento
- * - Se for OFFLINE (sem id_jogo): 
- *      Recebe `amigos_offline` e realiza balanceamento sem gravar no DB,
- *      mantendo o nome do jogador temporário conforme digitado no front.
- * - Se for ONLINE (com id_jogo): 
- *      Verifica o jogo, busca jogadores do DB e grava times no DB.
+ * - OFFLINE: recebe `amigos_offline` e balanceia sem gravar no DB.
+ * - ONLINE: verifica o jogo, busca jogadores e grava times no DB.
  */
 router.post(
   '/iniciar-balanceamento',
@@ -175,9 +161,7 @@ router.post(
 
       const { id_jogo, tamanho_time, amigos_offline = [] } = req.body;
 
-      // ==========================
-      // FLUXO OFFLINE (id_jogo == null)
-      // ==========================
+      // FLUXO OFFLINE
       if (!id_jogo) {
         if (!amigos_offline.length) {
           client.release();
@@ -186,21 +170,17 @@ router.post(
           });
         }
 
-        // Filtra os jogadores que têm id_usuario (oficiais)
+        // Separa jogadores oficiais e temporários
         const offlineOficiais = amigos_offline.filter(
           (j) => typeof j.id_usuario === 'number'
         );
-
-        // Filtra jogadores que têm apenas id_temporario ou algo assim
         const offlineTemporarios = amigos_offline.filter(
           (j) => !j.id_usuario
         );
 
-        // Buscar no DB apenas se tiver jogadores oficiais
         let rowsAval = [];
         if (offlineOficiais.length) {
           const oficiaisIds = offlineOficiais.map((j) => j.id_usuario);
-          // Buscar no DB (usuario + avaliacoes) para sobrescrever stats
           const respAval = await client.query(
             `
               SELECT
@@ -220,14 +200,11 @@ router.post(
           rowsAval = respAval.rows;
         }
 
-        // Montar map <id_usuario, dados do DB>
         const mapAval = new Map(rowsAval.map((row) => [row.id_usuario, row]));
 
-        // Processar jogadores oficiais
         const jogadoresOficiaisProntos = offlineOficiais.map((frontJog) => {
           const dbJog = mapAval.get(frontJog.id_usuario);
           if (dbJog) {
-            // Se achou no BD, mescla, mas não sobrescreve "frontJog.nome" se vier preenchido
             return {
               ...frontJog,
               nome:
@@ -240,7 +217,6 @@ router.post(
               altura: parseFloat(dbJog.altura) || 170,
             };
           } else {
-            // Não achou no BD -> é "oficial" mas sem dados, ou algo do tipo
             return {
               ...frontJog,
               nome:
@@ -255,8 +231,6 @@ router.post(
           }
         });
 
-        // Processar jogadores temporários (sem id_usuario)
-        // Mantém EXACTAMENTE o frontJog.nome se não estiver vazio
         const jogadoresTemporariosProntos = offlineTemporarios.map((frontJog) => ({
           ...frontJog,
           nome:
@@ -269,23 +243,19 @@ router.post(
           altura: parseFloat(frontJog.altura) || 170,
         }));
 
-        // Junta todos
         const todosJogadoresParaBalancear = [
           ...jogadoresOficiaisProntos,
           ...jogadoresTemporariosProntos,
         ];
 
-        // Balancear
-        
+        // O frontend já envia a flag isLevantador conforme seleção
         const { times, reservas } = balancearJogadores(
           todosJogadoresParaBalancear,
           tamanho_time || 4
         );
 
-        // Gerar sugestões de substituições
-        const rotacoes = gerarSugerirRotacoes(times, reservas);
-        console.log('Rotacoes geradas:', JSON.stringify(rotacoes, null, 2));
-        // Se ainda houver algum jogador sem nome, definir fallback
+        const rotacoes = []; // Pode gerar rotações se necessário
+
         times.forEach((time) => {
           time.jogadores.forEach((j) => {
             if (!j.nome || !j.nome.trim()) {
@@ -300,24 +270,15 @@ router.post(
         });
 
         client.release();
-        console.log('Resposta final enviada ao cliente:', JSON.stringify({
-          message: 'Balanceamento (OFFLINE) realizado com sucesso!',
-          times,
-          reservas,
-          rotacoes, // Inclua este dado no log
-        }, null, 2));
-        
         return res.status(200).json({
           message: 'Balanceamento (OFFLINE) realizado com sucesso!',
           times,
           reservas,
-          rotacoes, // Adiciona as sugestões no retorno
+          rotacoes,
         });
       }
 
-      // ==========================
-      // FLUXO ONLINE (id_jogo existe)
-      // ==========================
+      // FLUXO ONLINE
       console.log(`Verificando existência do jogo com id_jogo: ${id_jogo}`);
       const jogoResp = await client.query(
         `
@@ -338,7 +299,6 @@ router.post(
 
       const { status, id_usuario, tamanho_time: tamanhoTimeDB } = jogoResp.rows[0];
 
-      // Se jogo finalizado
       if (status === 'finalizado') {
         client.release();
         return res.status(400).json({
@@ -346,7 +306,6 @@ router.post(
         });
       }
 
-      // Check de organizador
       if (id_usuario !== req.user.id) {
         client.release();
         return res.status(403).json({
@@ -354,7 +313,6 @@ router.post(
         });
       }
 
-      // Atualiza tamanho_time se vier no body
       let tamanhoTimeFinal = tamanhoTimeDB;
       if (typeof tamanho_time === 'number') {
         await client.query(
@@ -376,7 +334,6 @@ router.post(
         });
       }
 
-      // Buscar jogadores do DB (participantes do jogo + avaliações do organizador)
       const jogadoresResp = await client.query(
         `
         SELECT 
@@ -411,7 +368,8 @@ router.post(
         altura: parseFloat(j.altura) || 0,
       }));
 
-      // Executa balanceamento
+      // O frontend envia a flag isLevantador conforme seleção.
+      // Assim, fixamos os levantadores e balanceamos os demais.
       const { times: balancedTimes, reservas } = balancearJogadores(
         jogadores,
         tamanhoTimeFinal
@@ -419,10 +377,8 @@ router.post(
       const custo = calcularCusto(balancedTimes);
       console.log(`Custo do balanceamento: ${custo}`);
 
-      // Gerar sugestões de substituições
-      const rotacoes = gerarSugerirRotacoes(balancedTimes, reservas);
+      const rotacoes = []; // Pode gerar rotações se necessário
 
-      // Ajusta nomes se estiverem vazios
       balancedTimes.forEach((time) => {
         time.jogadores.forEach((jogador) => {
           if (!jogador.nome) {
@@ -439,10 +395,8 @@ router.post(
       // Salvar no DB
       await client.query('BEGIN');
 
-      // Apaga times antigos
       await client.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
 
-      // Insere times
       for (const [index, time] of balancedTimes.entries()) {
         const numeroTime = index + 1;
         const { totalScore, totalAltura } = calcularTotais(time);
@@ -468,7 +422,6 @@ router.post(
         }
       }
 
-      // Insere reservas (numero_time = 99)
       for (const reserva of reservas) {
         await client.query(
           `
@@ -487,14 +440,12 @@ router.post(
         status,
         times: balancedTimes,
         reservas,
-        rotacoes, // Adiciona as sugestões no retorno
+        rotacoes,
       });
     } catch (err) {
       console.error('Erro ao iniciar balanceamento:', err);
-      console.error('Stacktrace do erro:', err.stack);
       await client.query('ROLLBACK');
       client.release();
-      console.error('Erro ao iniciar balanceamento:', err);
       return res.status(500).json({
         error: 'Erro ao iniciar balanceamento',
         details: err.message,
@@ -557,7 +508,6 @@ router.post(
         });
       }
 
-      // Atualiza o status do jogo para "finalizado"
       await client.query(
         `
         UPDATE jogos 
@@ -569,10 +519,8 @@ router.post(
 
       await client.query('BEGIN');
 
-      // Remove times existentes
       await client.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
 
-      // Inserir novos times
       for (const [index, time] of times.entries()) {
         const numeroTime = index + 1;
         const { totalScore, totalAltura } = calcularTotais(time);
@@ -620,7 +568,7 @@ router.post(
 
 /**
  * POST /api/balanceamento/atualizar-times
- * (ONLINE) Permite sobrescrever a lista de times no DB.
+ * Permite sobrescrever a lista de times no DB.
  */
 router.post(
   '/atualizar-times',
@@ -643,7 +591,6 @@ router.post(
 
       await client.query('BEGIN');
 
-      // Verifica jogo
       const jogoQuery = await client.query(
         `
         SELECT id_jogo, status
@@ -657,10 +604,8 @@ router.post(
         throw new Error('Jogo não encontrado.');
       }
 
-      // Remove times antigos
       await client.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
 
-      // Inserir novos times
       for (const [index, time] of times.entries()) {
         const numeroTime = index + 1;
         const { totalScore, totalAltura } = calcularTotais(time);
@@ -689,7 +634,6 @@ router.post(
       return res.status(200).json({
         message: 'Times atualizados com sucesso!',
         times,
-        // rotacoes: Não estamos gerando rotacoes aqui, remover se não for necessário
       });
     } catch (error) {
       await client.query('ROLLBACK');
