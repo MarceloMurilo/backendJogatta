@@ -1,6 +1,5 @@
 // src/server.js
 const path = require('path');
-// 1) Carregar as variáveis DO .env que está NA RAIZ do projeto:
 require('dotenv').config({
   path: path.join(__dirname, '..', '.env'),
 });
@@ -10,15 +9,13 @@ const cors = require('cors');
 const cron = require('node-cron');
 const db = require('./db.js');
 const fs = require('fs');
-
-// Se você usa passaporte em arquivo separado (passport.js), importe aqui:
 const passport = require('./config/passport.js');
 
 const app = express();
 
-// ------------------------------------------------
-//  Rotas estáticas / verificações
-// ------------------------------------------------
+// Se você tiver um service de push, importe aqui (exemplo):
+// const { enviarPush } = require('./services/pushService');
+
 app.get('/', (req, res) => {
   res.status(200).send('Backend do Jogatta está online! 🚀');
 });
@@ -37,19 +34,15 @@ app.get('/termos-servico', (req, res) => {
   `);
 });
 
-// Se quiser servir arquivos estáticos, incluindo
-// aquele google-site-verification .html:
+// Servir arquivos estáticos (ex.: google-site-verification.html)
 app.use(express.static(path.join(__dirname, 'public')));
 
-
-// ------------------------------------------------
-//  Middlewares globais
-// ------------------------------------------------
+// Middlewares globais
 app.use(express.json());
 app.use(cors());
 app.use(passport.initialize());
 
-//  Logging
+// Logging básico
 app.use((req, res, next) => {
   console.log(`\n=== Nova requisição recebida ===`);
   console.log(`Método: ${req.method}`);
@@ -60,7 +53,7 @@ app.use((req, res, next) => {
 });
 
 // ------------------------------------------------
-//  Importação de rotas
+// Importação de rotas
 // ------------------------------------------------
 const jogadorRoutes = require('./routes/jogador/jogadorRoutes');
 const reservationRoutes = require('./routes/jogador/reservationRoutes');
@@ -82,16 +75,14 @@ const balanceamentoRoutes = require('./routes/jogador/balanceamentoRoutes');
 const temporariosRoutes = require('./routes/jogador/temporariosRoutes');
 const pdfRoutes = require('./routes/pdfRoutes');
 
-// ------------------------------------------------
-//  Diretório PDF (opcional no seu caso)
-// ------------------------------------------------
+// Se não existir diretório pdf, cria
 if (!fs.existsSync(path.join(__dirname, 'pdf'))) {
   fs.mkdirSync(path.join(__dirname, 'pdf'), { recursive: true });
   console.log('Diretório "pdf" criado automaticamente.');
 }
 
 // ------------------------------------------------
-//  Registro de rotas
+// Registro de rotas
 // ------------------------------------------------
 app.use(
   '/api/jogador',
@@ -109,7 +100,6 @@ app.use(
   require('./middlewares/roleMiddleware')(['owner']),
   courtManagementRoutes
 );
-
 app.use('/api/owner/reservas', require('./middlewares/authMiddleware'), ownerReservationsRoutes);
 
 // Rotas de autenticação
@@ -131,7 +121,7 @@ app.use('/api/temporarios', temporariosRoutes);
 app.use('/api/pdf', pdfRoutes);
 
 // ------------------------------------------------
-//  CRON (encerrar jogos, etc.)
+// CRON 1: Encerrar jogos cujo horário_fim < NOW()
 // ------------------------------------------------
 cron.schedule('*/5 * * * *', async () => {
   console.log('Verificando jogos que precisam ser encerrados...');
@@ -148,6 +138,69 @@ cron.schedule('*/5 * * * *', async () => {
   }
 });
 
+// ------------------------------------------------
+// CRON 2: Notificar automaticamente se habilitar_notificacao = true
+// Roda a cada 1 minuto
+// ------------------------------------------------
+cron.schedule('* * * * *', async () => {
+  console.log('Verificando jogos para notificações automáticas...');
+  try {
+    const agora = new Date();
+
+    // Buscar jogos com habilitar_notificacao = true, status 'aberto', e notificado_automatico = false
+    const jogos = await db.query(`
+      SELECT id_jogo, nome_jogo, data_jogo, horario_inicio,
+             tempo_notificacao, notificado_automatico
+        FROM jogos
+       WHERE habilitar_notificacao = true
+         AND status = 'aberto'
+         AND (notificado_automatico = false OR notificado_automatico IS NULL)
+    `);
+
+    for (const row of jogos.rows) {
+      const { id_jogo, nome_jogo, data_jogo, horario_inicio, tempo_notificacao, notificado_automatico } = row;
+
+      const jogoDate = new Date(`${data_jogo}T${horario_inicio}`);
+      const diffMs = jogoDate - agora;
+      const diffMin = diffMs / 1000 / 60; // diferença em minutos
+
+      // Se faltar <= tempo_notificacao minutos (mas ainda > 0) -> dispara notificação
+      if (diffMin <= tempo_notificacao && diffMin > 0) {
+        // Buscar jogadores não confirmados
+        const naoConfirmados = await db.query(`
+          SELECT pj.id_usuario, u.device_token
+            FROM participacao_jogos pj
+            JOIN usuario u ON pj.id_usuario = u.id_usuario
+           WHERE pj.id_jogo = $1
+             AND pj.status = 'ativo'
+             AND pj.confirmado = false
+        `, [id_jogo]);
+
+        for (const row2 of naoConfirmados.rows) {
+          const { device_token } = row2;
+          if (device_token) {
+            // Exemplo de envio push:
+            // await enviarPush(device_token, 'Jogatta', `Faltam ~${Math.round(diffMin)}min para o jogo ${nome_jogo}!`);
+            console.log(`[NOTIF] Enviando push para token ${device_token} - Jogo: ${nome_jogo}`);
+          }
+        }
+
+        // Marcar como notificado_automatico = true
+        await db.query(
+          `UPDATE jogos
+             SET notificado_automatico = true
+           WHERE id_jogo = $1`,
+          [id_jogo]
+        );
+
+        console.log(`Notificação automática enviada para jogo ID: ${id_jogo}`);
+      }
+    }
+  } catch (error) {
+    console.error('Erro ao enviar notificações automáticas:', error);
+  }
+});
+
 // Exibir rotas (debug)
 app._router.stack.forEach((layer) => {
   if (layer.route) {
@@ -156,9 +209,7 @@ app._router.stack.forEach((layer) => {
   }
 });
 
-// ------------------------------------------------
-//  Iniciar Servidor
-// ------------------------------------------------
+// Iniciar servidor
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Servidor rodando na porta ${PORT}`);
