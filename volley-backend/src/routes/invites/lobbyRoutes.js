@@ -6,7 +6,7 @@ const { v4: uuidv4 } = require('uuid');
 const db = require('../../db');
 const authMiddleware = require('../../middlewares/authMiddleware');
 
-// Substitua "backendjogatta.onrender.com" pela sua URL do Render
+// Exemplo de BASE_URL para convites - ajuste se necessário
 const BASE_URL = 'https://backendjogatta.onrender.com';
 
 // Aplica o middleware de autenticação a todas as rotas deste router
@@ -91,7 +91,7 @@ router.post('/convites/gerar', async (req, res) => {
     // Gerar convite_uuid único
     const convite_uuid = uuidv4();
 
-    // Gerar link baseado no convite_uuid e na URL do Render
+    // Gerar link baseado no convite_uuid e na URL do Render (ou outro host)
     const link = `${BASE_URL}/invite/${convite_uuid}`;
 
     // Gerar id_numerico único
@@ -266,20 +266,6 @@ router.post('/entrar', async (req, res) => {
 /**
  * Rota para listar jogadores do lobby
  * GET /api/lobby/:id_jogo/jogadores
- * 
- * Response:
- * {
- *   jogadores: [
- *     {
- *       id_usuario: number,
- *       nome: string,
- *       status: string,
- *       confirmado: boolean,
- *       pago: boolean
- *     },
- *     // ... outros jogadores
- *   ]
- * }
  */
 router.get('/:id_jogo/jogadores', async (req, res) => {
   const { id_jogo } = req.params;
@@ -329,17 +315,6 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
 /**
  * Rota para confirmar presença
  * POST /api/lobby/confirmar-presenca
- * 
- * Body:
- * {
- *   id_jogo: number,
- *   id_usuario: number
- * }
- * 
- * Response:
- * {
- *   message: "Presença confirmada com sucesso."
- * }
  */
 router.post('/confirmar-presenca', async (req, res) => {
   try {
@@ -369,17 +344,6 @@ router.post('/confirmar-presenca', async (req, res) => {
 /**
  * Rota para confirmar pagamento
  * POST /api/lobby/confirmar-pagamento
- * 
- * Body:
- * {
- *   id_jogo: number,
- *   id_usuario: number
- * }
- * 
- * Response:
- * {
- *   message: "Pagamento confirmado com sucesso."
- * }
  */
 router.post('/confirmar-pagamento', async (req, res) => {
   try {
@@ -399,35 +363,19 @@ router.post('/confirmar-pagamento', async (req, res) => {
       [id_jogo, id_usuario]
     );
 
-    return res
-      .status(200)
-      .json({ message: 'Pagamento confirmado com sucesso.' });
+    return res.status(200).json({ message: 'Pagamento confirmado com sucesso.' });
   } catch (error) {
     console.error('Erro ao confirmar pagamento:', error.message);
-    return res
-      .status(500)
-      .json({ error: 'Erro ao confirmar pagamento.' });
+    return res.status(500).json({ error: 'Erro ao confirmar pagamento.' });
   }
 });
 
 /**
  * Rota para sair do lobby
  * POST /api/lobby/sair
- * 
- * Body:
- * {
- *   id_jogo: number,
- *   id_usuario: number
- * }
- * 
- * Response:
- * {
- *   message: string
- * }
  */
 router.post('/sair', async (req, res) => {
   const client = await db.getClient();
-
   try {
     const { id_jogo, id_usuario } = req.body;
 
@@ -509,22 +457,9 @@ router.post('/sair', async (req, res) => {
 /**
  * Rota para remover usuário (apenas organizador)
  * POST /api/lobby/remover
- * 
- * Body:
- * {
- *   id_jogo: number,
- *   id_usuario_remover: number,
- *   id_usuario_organizador: number
- * }
- * 
- * Response:
- * {
- *   message: string
- * }
  */
 router.post('/remover', async (req, res) => {
   const client = await db.getClient();
-
   try {
     const { id_jogo, id_usuario_remover, id_usuario_organizador } = req.body;
 
@@ -541,14 +476,12 @@ router.post('/remover', async (req, res) => {
       'SELECT id_usuario FROM jogos WHERE id_jogo = $1',
       [id_jogo]
     );
-
     if (organizadorQuery.rowCount === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Jogo não encontrado.' });
     }
 
     const organizador_id = parseInt(organizadorQuery.rows[0].id_usuario, 10);
-
     if (organizador_id !== parseInt(id_usuario_organizador, 10)) {
       await client.query('ROLLBACK');
       return res
@@ -626,18 +559,6 @@ router.post('/remover', async (req, res) => {
 /**
  * Rota para alternar status da sala (aberto/privado)
  * POST /api/lobby/toggle-status
- * 
- * Body:
- * {
- *   id_jogo: number,
- *   id_usuario_organizador: number
- * }
- * 
- * Response:
- * {
- *   message: string,
- *   status: string
- * }
  */
 router.post('/toggle-status', async (req, res) => {
   try {
@@ -703,18 +624,6 @@ router.post('/toggle-status', async (req, res) => {
 /**
  * Rota para fechar a sala
  * POST /api/lobby/fechar-sala
- * 
- * Body:
- * {
- *   id_jogo: number,
- *   id_usuario_organizador: number
- * }
- * 
- * Response:
- * {
- *   message: string,
- *   status: string
- * }
  */
 router.post('/fechar-sala', async (req, res) => {
   const { id_jogo, id_usuario_organizador } = req.body;
@@ -736,7 +645,9 @@ router.post('/fechar-sala', async (req, res) => {
 
     const organizador_id = organizadorQuery.rows[0].id_usuario;
     if (parseInt(organizador_id) !== parseInt(id_usuario_organizador)) {
-      return res.status(403).json({ error: 'Apenas o organizador pode encerrar a sala.' });
+      return res
+        .status(403)
+        .json({ error: 'Apenas o organizador pode encerrar a sala.' });
     }
 
     // Atualizar o status do jogo para 'finalizado'
@@ -755,18 +666,6 @@ router.post('/fechar-sala', async (req, res) => {
 /**
  * Rota para estender o tempo da sala
  * POST /api/lobby/estender-tempo
- * 
- * Body:
- * {
- *   id_jogo: number,
- *   id_usuario_organizador: number,
- *   novo_termino: string (ISO 8601 format)
- * }
- * 
- * Response:
- * {
- *   message: string
- * }
  */
 router.post('/estender-tempo', async (req, res) => {
   const { id_jogo, id_usuario_organizador, novo_termino } = req.body;
@@ -788,7 +687,9 @@ router.post('/estender-tempo', async (req, res) => {
 
     const organizador_id = organizadorQuery.rows[0].id_usuario;
     if (parseInt(organizador_id) !== parseInt(id_usuario_organizador)) {
-      return res.status(403).json({ error: 'Apenas o organizador pode estender o tempo.' });
+      return res
+        .status(403)
+        .json({ error: 'Apenas o organizador pode estender o tempo.' });
     }
 
     // Validar novo término
@@ -806,7 +707,9 @@ router.post('/estender-tempo', async (req, res) => {
     const terminoAtualDate = new Date(terminoAtual);
 
     if (novoTerminodata <= terminoAtualDate) {
-      return res.status(400).json({ error: 'O novo término deve ser maior que o término atual.' });
+      return res
+        .status(400)
+        .json({ error: 'O novo término deve ser maior que o término atual.' });
     }
 
     // Atualizar o horário de término
@@ -815,32 +718,20 @@ router.post('/estender-tempo', async (req, res) => {
       [novo_termino, id_jogo]
     );
 
-    return res.status(200).json({ message: 'Tempo da sala estendido com sucesso.' });
+    return res
+      .status(200)
+      .json({ message: 'Tempo da sala estendido com sucesso.' });
   } catch (error) {
     console.error('Erro ao estender o tempo da sala:', error.message);
-    return res.status(500).json({ error: 'Erro ao processar sua solicitação.' });
+    return res
+      .status(500)
+      .json({ error: 'Erro ao processar sua solicitação.' });
   }
 });
 
 /**
  * Rota para obter salas ativas do usuário
  * GET /api/lobby/me
- * 
- * Response:
- * {
- *   salas: [
- *     {
- *       id_jogo: number,
- *       nome_jogo: string,
- *       data_jogo: string (YYYY-MM-DD),
- *       horario_inicio: string (HH:MM:SS),
- *       horario_fim: string (HH:MM:SS),
- *       status: string,
- *       participacao_status: string
- *     },
- *     // ... outras salas
- *   ]
- * }
  */
 router.get('/me', async (req, res) => {
   const id_usuario = req.user.id;
@@ -848,23 +739,22 @@ router.get('/me', async (req, res) => {
   try {
     const salasQuery = await db.query(
       `SELECT j.id_jogo,
-       j.nome_jogo AS nome_jogo,
-       to_char(j.data_jogo, 'YYYY-MM-DD') AS data_jogo,
-       to_char(j.horario_inicio, 'HH24:MI:SS') AS horario_inicio,
-       to_char(j.horario_fim, 'HH24:MI:SS') AS horario_fim,
-       j.status,
-       p.status AS participacao_status
-FROM participacao_jogos p
-JOIN jogos j ON p.id_jogo = j.id_jogo
-WHERE p.id_usuario = $1
-  AND p.status = 'ativo'  -- Participação ativa
-  AND j.status IN ('aberto', 'balanceando times', 'finalizado')  -- Status do jogo
-ORDER BY j.data_jogo, j.horario_inicio;`,
+              j.nome_jogo AS nome_jogo,
+              to_char(j.data_jogo, 'YYYY-MM-DD') AS data_jogo,
+              to_char(j.horario_inicio, 'HH24:MI:SS') AS horario_inicio,
+              to_char(j.horario_fim, 'HH24:MI:SS') AS horario_fim,
+              j.status,
+              p.status AS participacao_status
+         FROM participacao_jogos p
+         JOIN jogos j ON p.id_jogo = j.id_jogo
+        WHERE p.id_usuario = $1
+          AND p.status = 'ativo'
+          AND j.status IN ('aberto', 'balanceando times', 'finalizado')
+        ORDER BY j.data_jogo, j.horario_inicio;`,
       [id_usuario]
     );
 
     const salas = salasQuery.rows;
-
     return res.status(200).json({ salas });
   } catch (error) {
     console.error('Erro ao obter salas do usuário:', error.message);
@@ -875,14 +765,6 @@ ORDER BY j.data_jogo, j.horario_inicio;`,
 /**
  * Rota para visualizar convite via link
  * GET /api/lobby/invite/:uuid
- * 
- * Esta rota exibe informações sobre o convite quando o link é acessado.
- * 
- * Exemplo de Acesso:
- * https://backendjogatta.onrender.com/invite/9e3534e6-a20a-4ef2-a2cd-1005c8bb06df
- * 
- * Response:
- * HTML simples com detalhes do convite
  */
 router.get('/invite/:uuid', async (req, res) => {
   const { uuid } = req.params;
@@ -929,6 +811,75 @@ router.get('/invite/:uuid', async (req, res) => {
   } catch (error) {
     console.error('Erro ao buscar convite:', error.message);
     return res.status(500).send('Erro ao processar a solicitação.');
+  }
+});
+
+/**
+ * (EXEMPLO) Rota para notificar manualmente os não confirmados
+ * POST /api/lobby/notificar-na-confirmados
+ * Body: { id_jogo: number }
+ */
+router.post('/notificar-na-confirmados', async (req, res) => {
+  try {
+    const { id_jogo } = req.body;
+    const id_organizador = req.user.id; // Para verificar se é organizador
+
+    if (!id_jogo) {
+      return res.status(400).json({ error: 'id_jogo é obrigatório.' });
+    }
+
+    // Verificar se req.user.id é organizador
+    const organizadorQuery = await db.query(
+      'SELECT id_usuario FROM jogos WHERE id_jogo = $1',
+      [id_jogo]
+    );
+    if (organizadorQuery.rowCount === 0) {
+      return res.status(404).json({ error: 'Jogo não encontrado.' });
+    }
+    const organizador_id = organizadorQuery.rows[0].id_usuario;
+    if (parseInt(organizador_id, 10) !== parseInt(id_organizador, 10)) {
+      return res.status(403).json({
+        error: 'Apenas o organizador pode notificar os não confirmados.'
+      });
+    }
+
+    // Buscar jogadores ativos que não confirmaram
+    const naoConfirmados = await db.query(`
+      SELECT pj.id_usuario, u.nome, u.device_token
+        FROM participacao_jogos pj
+        JOIN usuario u ON pj.id_usuario = u.id_usuario
+       WHERE pj.id_jogo = $1
+         AND pj.status = 'ativo'
+         AND pj.confirmado = false
+    `, [id_jogo]);
+
+    if (naoConfirmados.rowCount === 0) {
+      return res.status(200).json({
+        success: false,
+        message: 'Nenhum jogador pendente de confirmação.'
+      });
+    }
+
+    // Exemplo de loop para enviar push
+    for (const row of naoConfirmados.rows) {
+      const { device_token, nome } = row;
+      if (device_token) {
+        // Aqui você chamaria sua função de envio push, ex.:
+        // await enviarPush(device_token, 'Jogatta', `Ei ${nome}, confirme sua presença!`);
+        console.log(`[NOTIF] Enviando notificação para token: ${device_token} (Jogador: ${nome})`);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Notificações enviadas aos usuários que não confirmaram.'
+    });
+  } catch (error) {
+    console.error('Erro ao notificar não confirmados:', error.message);
+    return res.status(500).json({
+      success: false,
+      error: error.message
+    });
   }
 });
 
