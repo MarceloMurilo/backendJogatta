@@ -1,10 +1,10 @@
-// routes/userRoutes.js
+// src/routes/userRoutes.js
 
 const express = require('express');
-const pool = require('../db'); // Importando a conexão com o banco de dados
+const pool = require('../db'); // Conexão com o banco de dados
 const router = express.Router();
 
-// Middleware para logar todas as requisições (já presente no server.js, pode remover duplicata)
+// Middleware para logar todas as requisições (opcional, se já estiver no server.js, pode remover)
 router.use((req, res, next) => {
   console.log(`\n=== Nova requisição recebida ===`);
   console.log(`Método: ${req.method}`);
@@ -79,7 +79,7 @@ router.get('/:id', async (req, res) => {
       user.isfriend = false; // Se o organizador_id não for passado, assume que não é amigo
     }
 
-    console.log(`Usuário encontrado:`, user);
+    console.log('Usuário encontrado:', user);
     res.status(200).json(user);
   } catch (error) {
     console.error('Erro ao buscar o usuário:', error);
@@ -153,6 +153,30 @@ router.put('/:id/foto', async (req, res) => {
   }
 });
 
+// NOVA Rota para atualizar o device_token do usuário
+router.put('/device-token', async (req, res) => {
+  try {
+    const { device_token } = req.body;
+    const userId = req.user.id; // Supõe que o authMiddleware adiciona o usuário ao req.user
+
+    if (!device_token) {
+      return res.status(400).json({ error: 'device_token é obrigatório.' });
+    }
+
+    await pool.query(
+      `UPDATE public.usuario
+         SET device_token = $1
+       WHERE id_usuario = $2`,
+      [device_token, userId]
+    );
+
+    return res.status(200).json({ message: 'Token de notificação salvo com sucesso.' });
+  } catch (error) {
+    console.error('Erro ao salvar device_token:', error.message);
+    return res.status(500).json({ error: 'Erro ao salvar device_token.', details: error.message });
+  }
+});
+
 // Rota para deletar um usuário por ID (Delete)
 router.delete('/:id', async (req, res) => {
   const { id } = req.params;
@@ -188,10 +212,7 @@ router.delete('/:id', async (req, res) => {
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Erro ao deletar o usuário:', error);
-    res.status(500).json({
-      error: 'Erro ao deletar o usuário',
-      details: error.detail || error.message,
-    });
+    res.status(500).json({ error: 'Erro ao deletar o usuário', details: error.message });
   } finally {
     client.release();
   }
