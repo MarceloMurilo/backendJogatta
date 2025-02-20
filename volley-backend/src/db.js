@@ -1,7 +1,7 @@
 // db.js
 
 const { Pool } = require('pg');
-require('dotenv').config(); // Certifique-se de que o arquivo .env esteja carregado corretamente
+// require('dotenv').config(); // Certifique-se de que o arquivo .env esteja carregado corretamente
 
 // Configuração da conexão com o banco de dados
 const pool = new Pool({
