@@ -75,6 +75,9 @@ const balanceamentoRoutes = require('./routes/jogador/balanceamentoRoutes');
 const temporariosRoutes = require('./routes/jogador/temporariosRoutes');
 const pdfRoutes = require('./routes/pdfRoutes');
 
+// (1) Import do novo arquivo de rotas para quadras de superadmin
+const quadrasAdminRoutes = require('./routes/quadras/quadrasAdminRoutes');
+
 // Se não existir diretório pdf, cria
 if (!fs.existsSync(path.join(__dirname, 'pdf'))) {
   fs.mkdirSync(path.join(__dirname, 'pdf'), { recursive: true });
@@ -120,6 +123,14 @@ app.use('/api/chat', require('./middlewares/authMiddleware'), chatRoutes);
 app.use('/api/temporarios', temporariosRoutes);
 app.use('/api/pdf', pdfRoutes);
 
+// (2) Registro da rota para superadmin de quadras
+app.use(
+  '/api/superadmin/quadras',
+  require('./middlewares/authMiddleware'),
+  require('./middlewares/roleMiddleware')(['superadmin']),
+  quadrasAdminRoutes
+);
+
 // ------------------------------------------------
 // CRON 1: Encerrar jogos cujo horário_fim < NOW()
 // ------------------------------------------------
@@ -158,7 +169,7 @@ cron.schedule('* * * * *', async () => {
     `);
 
     for (const row of jogos.rows) {
-      const { id_jogo, nome_jogo, data_jogo, horario_inicio, tempo_notificacao, notificado_automatico } = row;
+      const { id_jogo, nome_jogo, data_jogo, horario_inicio, tempo_notificacao } = row;
 
       const jogoDate = new Date(`${data_jogo}T${horario_inicio}`);
       const diffMs = jogoDate - agora;

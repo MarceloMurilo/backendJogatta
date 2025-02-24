@@ -1,12 +1,10 @@
-// routes/authRoutes.js
-
+// src/routes/authRoutes.js
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const pool = require('../db');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
-// require('dotenv').config();
 
 const router = express.Router();
 
