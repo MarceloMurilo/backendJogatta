@@ -45,8 +45,20 @@ router.get('/', async (req, res) => {
     const empRes = await pool.query('SELECT * FROM public.empresas');
     const empresas = empRes.rows;
 
-    // 2) Buscar todas as quadras
-    const quadRes = await pool.query('SELECT * FROM public.quadras');
+    // 2) Buscar todas as quadras – aqui usamos SELECT com as colunas desejadas, incluindo "foto"
+    const quadRes = await pool.query(`
+      SELECT id_quadra,
+             id_empresa,
+             nome,
+             preco_hora,
+             promocao_ativa,
+             descricao_promocao,
+             rede_disponivel,
+             bola_disponivel,
+             observacoes,
+             foto
+        FROM public.quadras
+    `);
 
     // 3) Agrupar quadras por id_empresa
     const quadrasMap = {};
@@ -86,11 +98,21 @@ router.get('/:id', async (req, res) => {
     }
     const empresa = empRes.rows[0];
 
-    // Buscar as quadras associadas à empresa
-    const quadRes = await pool.query(
-      'SELECT * FROM public.quadras WHERE id_empresa = $1',
-      [id]
-    );
+    // Buscar as quadras associadas à empresa – usando SELECT com as colunas desejadas
+    const quadRes = await pool.query(`
+      SELECT id_quadra,
+             id_empresa,
+             nome,
+             preco_hora,
+             promocao_ativa,
+             descricao_promocao,
+             rede_disponivel,
+             bola_disponivel,
+             observacoes,
+             foto
+        FROM public.quadras
+       WHERE id_empresa = $1
+    `, [id]);
     empresa.quadras = quadRes.rows;
 
     return res.json(empresa);
@@ -107,7 +129,18 @@ router.get('/:id/quadras', async (req, res) => {
     const { id } = req.params;
     // Buscar todas as quadras dessa empresa
     const quadRes = await pool.query(
-      'SELECT * FROM public.quadras WHERE id_empresa = $1',
+      `SELECT id_quadra,
+              id_empresa,
+              nome,
+              preco_hora,
+              promocao_ativa,
+              descricao_promocao,
+              rede_disponivel,
+              bola_disponivel,
+              observacoes,
+              foto
+         FROM public.quadras
+        WHERE id_empresa = $1`,
       [id]
     );
     return res.status(200).json(quadRes.rows);
