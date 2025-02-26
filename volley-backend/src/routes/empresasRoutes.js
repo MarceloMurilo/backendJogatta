@@ -1,4 +1,5 @@
 // src/routes/empresasRoutes.js
+
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
@@ -96,6 +97,23 @@ router.get('/:id', async (req, res) => {
   } catch (error) {
     console.error('Erro ao buscar empresa e quadras:', error);
     return res.status(500).json({ message: 'Erro ao buscar empresa e quadras' });
+  }
+});
+
+// [GET] /api/empresas/:id/quadras
+// Retorna apenas as quadras da empresa (sem os dados da empresa)
+router.get('/:id/quadras', async (req, res) => {
+  try {
+    const { id } = req.params;
+    // Buscar todas as quadras dessa empresa
+    const quadRes = await pool.query(
+      'SELECT * FROM public.quadras WHERE id_empresa = $1',
+      [id]
+    );
+    return res.status(200).json(quadRes.rows);
+  } catch (error) {
+    console.error('Erro ao buscar quadras da empresa:', error);
+    return res.status(500).json({ message: 'Erro ao buscar quadras' });
   }
 });
 
