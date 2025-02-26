@@ -1,5 +1,4 @@
 // src/routes/empresasRoutes.js
-
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
@@ -8,13 +7,14 @@ const pool = require('../db');
 router.post('/', async (req, res) => {
   try {
     const { nome, localizacao, contato } = req.body;
+    // Se a coluna na tabela é "endereco", atribuímos localizacao a endereco.
+    const endereco = localizacao;
 
-    // Ajuste nomes de colunas/tabela conforme seu banco
     const result = await pool.query(
-      `INSERT INTO public.empresas (nome, localizacao, contato)
+      `INSERT INTO public.empresas (nome, endereco, contato)
        VALUES ($1, $2, $3)
        RETURNING *`,
-      [nome, localizacao, contato]
+      [nome, endereco, contato]
     );
 
     return res.status(201).json(result.rows[0]);
@@ -34,12 +34,12 @@ router.get('/', async (req, res) => {
     const includeQuadras = req.query.includeQuadras === 'true';
 
     if (!includeQuadras) {
-      // Só retorna a lista de empresas
+      // Retorna apenas a lista de empresas
       const empRes = await pool.query('SELECT * FROM public.empresas');
       return res.json(empRes.rows);
     }
 
-    // Se includeQuadras = true, retorna cada empresa com suas quadras
+    // Se includeQuadras=true, retorna cada empresa com suas quadras associadas.
     // 1) Buscar todas as empresas
     const empRes = await pool.query('SELECT * FROM public.empresas');
     const empresas = empRes.rows;
@@ -56,7 +56,7 @@ router.get('/', async (req, res) => {
       quadrasMap[q.id_empresa].push(q);
     });
 
-    // 4) Montar objeto final
+    // 4) Montar objeto final para cada empresa
     const resultado = empresas.map((emp) => ({
       ...emp,
       quadras: quadrasMap[emp.id_empresa] || [],
@@ -70,22 +70,26 @@ router.get('/', async (req, res) => {
 });
 
 // [GET] /api/empresas/:id
-// Retorna 1 empresa (se existir) e suas quadras no campo "quadras"
+// Retorna uma empresa (se existir) e suas quadras no campo "quadras"
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Buscar a empresa
-    const empRes = await pool.query('SELECT * FROM public.empresas WHERE id_empresa = $1', [id]);
+    // Buscar a empresa pelo ID
+    const empRes = await pool.query(
+      'SELECT * FROM public.empresas WHERE id_empresa = $1',
+      [id]
+    );
     if (empRes.rows.length === 0) {
       return res.status(404).json({ message: 'Empresa não encontrada' });
     }
     const empresa = empRes.rows[0];
 
-    // Buscar as quadras dessa empresa
-    const quadRes = await pool.query('SELECT * FROM public.quadras WHERE id_empresa = $1', [id]);
-
-    // Anexar ao objeto
+    // Buscar as quadras associadas à empresa
+    const quadRes = await pool.query(
+      'SELECT * FROM public.quadras WHERE id_empresa = $1',
+      [id]
+    );
     empresa.quadras = quadRes.rows;
 
     return res.json(empresa);
