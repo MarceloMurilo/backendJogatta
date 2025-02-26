@@ -59,7 +59,7 @@ const courtManagementRoutes = require('./routes/owner/courtManagementRoutes');
 const ownerReservationsRoutes = require('./routes/owner/ownerReservationsRoutes');
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
-const companyRoutes = require('./routes/companyRoutes');
+const empresasRoutes = require('./routes/empresasRoutes'); // Renomeado
 const convitesRoutes = require('./routes/invites/inviteRoutes');
 const convitesUserRoutes = require('./routes/invites/inviteUserRoutes');
 const cepRoutes = require('./routes/cepRoutes/cepRoutes');
@@ -112,7 +112,11 @@ app.use('/api/auth', authRoutes);
 
 // Rotas gerais
 app.use('/api/usuario', userRoutes);
-app.use('/api/empresas', require('./middlewares/authMiddleware'), companyRoutes);
+
+// (3) Rotas de empresas (estilo iFood), sem exigir login (pode exigir se quiser)
+app.use('/api/empresas', empresasRoutes);
+
+// Convites, avaliações, etc.
 app.use('/api/convites', require('./middlewares/authMiddleware'), convitesRoutes);
 app.use('/api/convites/usuario', require('./middlewares/authMiddleware'), convitesUserRoutes);
 app.use('/api/avaliacoes', require('./middlewares/authMiddleware'), avaliacoesRoutes);
@@ -125,7 +129,7 @@ app.use('/api/chat', require('./middlewares/authMiddleware'), chatRoutes);
 app.use('/api/temporarios', temporariosRoutes);
 app.use('/api/pdf', pdfRoutes);
 
-// (3) Rota de quadras para superadmin
+// (4) Rota de quadras para superadmin
 app.use(
   '/api/superadmin/quadras',
   require('./middlewares/authMiddleware'),
@@ -133,7 +137,7 @@ app.use(
   quadrasAdminRoutes
 );
 
-// (4) Rota de quadras públicas (qualquer usuário pode ver)
+// (5) Rota de quadras públicas (qualquer usuário pode ver)
 app.use('/api/quadras', quadrasPublicRoutes);
 
 // ------------------------------------------------
@@ -197,7 +201,7 @@ cron.schedule('* * * * *', async () => {
         for (const row2 of naoConfirmados.rows) {
           const { device_token } = row2;
           if (device_token) {
-            // Exemplo de envio push (comente ou implemente):
+            // Exemplo de envio push:
             // await enviarPush(device_token, 'Jogatta', `Faltam ~${Math.round(diffMin)}min para o jogo ${nome_jogo}!`);
             console.log(`[NOTIF] Enviando push para token ${device_token} - Jogo: ${nome_jogo}`);
           }

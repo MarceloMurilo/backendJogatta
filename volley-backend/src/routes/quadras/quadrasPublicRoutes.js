@@ -1,13 +1,18 @@
 // src/routes/quadras/quadrasPublicRoutes.js
 const express = require('express');
 const router = express.Router();
-const db = require('../../db'); // Ajuste o caminho se necessário
+const db = require('../../db');
 
-// [GET] /api/quadras -> Lista quadras para qualquer usuário (ou usuário logado, se preferir)
+// [GET] /api/quadras -> Lista de TODAS as quadras (ou filtra por status, etc.)
 router.get('/', async (req, res) => {
   try {
-    // Ajuste a query conforme seu schema do banco
-    const result = await db.query('SELECT * FROM quadras');
+    // Se quiser juntar o nome da empresa, faça JOIN:
+    const result = await db.query(`
+      SELECT q.*,
+             e.nome AS nome_empresa
+        FROM public.quadras q
+   LEFT JOIN public.empresas e ON q.id_empresa = e.id_empresa
+    `);
     return res.json(result.rows);
   } catch (error) {
     console.error('Erro ao listar quadras (public):', error);
