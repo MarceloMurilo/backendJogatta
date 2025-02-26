@@ -7,22 +7,22 @@ const router = express.Router();
 // Rota para cadastrar uma nova quadra (Create)
 router.post('/', async (req, res) => {
   const {
+    id_empresa,
     nome,
     endereco,
     capacidade,
     preco_hora,
     promocao_ativa,
     descricao_promocao
-    // Adicione outros campos se precisar, como telefone, fotos, etc.
   } = req.body;
 
   try {
     const result = await pool.query(
       `INSERT INTO public.quadras
-        (nome, endereco, capacidade, preco_hora, promocao_ativa, descricao_promocao)
-       VALUES ($1, $2, $3, $4, $5, $6)
+        (id_empresa, nome, endereco, capacidade, preco_hora, promocao_ativa, descricao_promocao)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [nome, endereco, capacidade, preco_hora, promocao_ativa, descricao_promocao]
+      [id_empresa, nome, endereco, capacidade, preco_hora, promocao_ativa, descricao_promocao]
     );
 
     res.status(201).json(result.rows[0]);
@@ -74,7 +74,6 @@ router.put('/:id', async (req, res) => {
     preco_hora,
     promocao_ativa,
     descricao_promocao
-    // Adicione outros campos se precisar
   } = req.body;
 
   try {
