@@ -13,9 +13,6 @@ const passport = require('./config/passport.js');
 
 const app = express();
 
-// Se você tiver um service de push, importe aqui (exemplo):
-// const { enviarPush } = require('./services/pushService');
-
 app.get('/', (req, res) => {
   res.status(200).send('Backend do Jogatta está online! 🚀');
 });
@@ -75,8 +72,11 @@ const balanceamentoRoutes = require('./routes/jogador/balanceamentoRoutes');
 const temporariosRoutes = require('./routes/jogador/temporariosRoutes');
 const pdfRoutes = require('./routes/pdfRoutes');
 
-// (1) Import do novo arquivo de rotas para quadras de superadmin
+// (1) Import do arquivo de rotas para quadras de superadmin
 const quadrasAdminRoutes = require('./routes/quadras/quadrasAdminRoutes');
+
+// (2) Import do arquivo de rotas públicas de quadras
+const quadrasPublicRoutes = require('./routes/quadras/quadrasPublicRoutes');
 
 // Se não existir diretório pdf, cria
 if (!fs.existsSync(path.join(__dirname, 'pdf'))) {
@@ -87,16 +87,18 @@ if (!fs.existsSync(path.join(__dirname, 'pdf'))) {
 // ------------------------------------------------
 // Registro de rotas
 // ------------------------------------------------
+
+// Exemplo de rota para jogador e organizador
 app.use(
   '/api/jogador',
   require('./middlewares/authMiddleware'),
   require('./middlewares/roleMiddleware')(['jogador', 'organizador']),
   jogadorRoutes
 );
-
 app.use('/api/jogador/reservas', require('./middlewares/authMiddleware'), reservationRoutes);
 app.use('/api/jogos', require('./middlewares/authMiddleware'), jogosRoutes);
 
+// Exemplo de rota para owner
 app.use(
   '/api/owner/quadras',
   require('./middlewares/authMiddleware'),
@@ -123,13 +125,16 @@ app.use('/api/chat', require('./middlewares/authMiddleware'), chatRoutes);
 app.use('/api/temporarios', temporariosRoutes);
 app.use('/api/pdf', pdfRoutes);
 
-// (2) Registro da rota para superadmin de quadras
+// (3) Rota de quadras para superadmin
 app.use(
   '/api/superadmin/quadras',
   require('./middlewares/authMiddleware'),
   require('./middlewares/roleMiddleware')(['superadmin']),
   quadrasAdminRoutes
 );
+
+// (4) Rota de quadras públicas (qualquer usuário pode ver)
+app.use('/api/quadras', quadrasPublicRoutes);
 
 // ------------------------------------------------
 // CRON 1: Encerrar jogos cujo horário_fim < NOW()
@@ -170,7 +175,6 @@ cron.schedule('* * * * *', async () => {
 
     for (const row of jogos.rows) {
       const { id_jogo, nome_jogo, data_jogo, horario_inicio, tempo_notificacao } = row;
-
       const jogoDate = new Date(`${data_jogo}T${horario_inicio}`);
       const diffMs = jogoDate - agora;
       const diffMin = diffMs / 1000 / 60; // diferença em minutos
@@ -178,19 +182,22 @@ cron.schedule('* * * * *', async () => {
       // Se faltar <= tempo_notificacao minutos (mas ainda > 0) -> dispara notificação
       if (diffMin <= tempo_notificacao && diffMin > 0) {
         // Buscar jogadores não confirmados
-        const naoConfirmados = await db.query(`
+        const naoConfirmados = await db.query(
+          `
           SELECT pj.id_usuario, u.device_token
             FROM participacao_jogos pj
             JOIN usuario u ON pj.id_usuario = u.id_usuario
            WHERE pj.id_jogo = $1
              AND pj.status = 'ativo'
              AND pj.confirmado = false
-        `, [id_jogo]);
+        `,
+          [id_jogo]
+        );
 
         for (const row2 of naoConfirmados.rows) {
           const { device_token } = row2;
           if (device_token) {
-            // Exemplo de envio push:
+            // Exemplo de envio push (comente ou implemente):
             // await enviarPush(device_token, 'Jogatta', `Faltam ~${Math.round(diffMin)}min para o jogo ${nome_jogo}!`);
             console.log(`[NOTIF] Enviando push para token ${device_token} - Jogo: ${nome_jogo}`);
           }
@@ -198,9 +205,11 @@ cron.schedule('* * * * *', async () => {
 
         // Marcar como notificado_automatico = true
         await db.query(
-          `UPDATE jogos
+          `
+          UPDATE jogos
              SET notificado_automatico = true
-           WHERE id_jogo = $1`,
+           WHERE id_jogo = $1
+        `,
           [id_jogo]
         );
 
