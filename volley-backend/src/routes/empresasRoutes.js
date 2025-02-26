@@ -1,11 +1,34 @@
 // src/routes/empresasRoutes.js
+
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 
+// [POST] /api/empresas
+router.post('/', async (req, res) => {
+  try {
+    const { nome, localizacao, contato } = req.body;
+
+    // Ajuste nomes de colunas/tabela conforme seu banco
+    const result = await pool.query(
+      `INSERT INTO public.empresas (nome, localizacao, contato)
+       VALUES ($1, $2, $3)
+       RETURNING *`,
+      [nome, localizacao, contato]
+    );
+
+    return res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Erro ao criar empresa:', error);
+    return res.status(500).json({
+      message: 'Erro ao criar empresa',
+      details: error.message,
+    });
+  }
+});
+
 // [GET] /api/empresas
-//    Se passar ?includeQuadras=true, retorna cada empresa com um array "quadras".
-//    Se não passar, retorna apenas as empresas.
+// Se passar ?includeQuadras=true, retorna cada empresa com um array "quadras".
 router.get('/', async (req, res) => {
   try {
     const includeQuadras = req.query.includeQuadras === 'true';
@@ -47,7 +70,7 @@ router.get('/', async (req, res) => {
 });
 
 // [GET] /api/empresas/:id
-//    Retorna 1 empresa (se existir) e suas quadras no campo "quadras"
+// Retorna 1 empresa (se existir) e suas quadras no campo "quadras"
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
