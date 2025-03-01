@@ -70,15 +70,72 @@ const calcularDistancia = (jogador1, jogador2) => {
  * - Os jogadores marcados como "isLevantador" serão distribuídos em round-robin,
  *   ficando fixos em seus times.
  * - Os demais jogadores serão embaralhados e alocados para completar os times.
+ *
+ * Modificação: Com 80% de chance, força que os jogadores "Mavis" e "Dantas" caiam no mesmo time.
  */
 function balancearJogadores(jogadores, tamanhoTime) {
   // Separa jogadores fixos (levantadores) e flexíveis
   const fixed = jogadores.filter(j => j.isLevantador);
   const flexible = jogadores.filter(j => !j.isLevantador);
 
-  const totalPlayers = jogadores.length;
+  // Variável para armazenar o par forçado (se aplicável)
+  let forcedPair;
+
+  // Função auxiliar para buscar jogador por nome (trim e case-insensitive)
+  const getPlayerByName = (name, arr) =>
+    arr.find(j => j.nome && j.nome.trim().toLowerCase() === name.toLowerCase());
+
+  // Busca Mavis e Dantas nos arrays fixed e flexible
+  const mavisFixed = getPlayerByName("Mavis", fixed);
+  const dantasFixed = getPlayerByName("Dantas", fixed);
+  const mavisFlexible = getPlayerByName("Mavis", flexible);
+  const dantasFlexible = getPlayerByName("Dantas", flexible);
+
+  let mavis, dantas, mavisSource, dantasSource;
+  if (mavisFixed) { mavis = mavisFixed; mavisSource = fixed; }
+  else if (mavisFlexible) { mavis = mavisFlexible; mavisSource = flexible; }
+  if (dantasFixed) { dantas = dantasFixed; dantasSource = fixed; }
+  else if (dantasFlexible) { dantas = dantasFlexible; dantasSource = flexible; }
+
+  // Se ambos foram encontrados e com 80% de chance, força a juntá-los
+  if (mavis && dantas && Math.random() < 0.8) {
+    // Se um dos dois já for fixo, força o outro a se juntar ao mesmo grupo
+    if (mavisSource === fixed || dantasSource === fixed) {
+      let fixedPlayer, flexiblePlayer, flexibleSource;
+      if (mavisSource === fixed) {
+        fixedPlayer = mavis;
+        flexiblePlayer = dantas;
+        flexibleSource = dantasSource;
+      } else {
+        fixedPlayer = dantas;
+        flexiblePlayer = mavis;
+        flexibleSource = mavisSource;
+      }
+      // Remove o jogador flexível do seu array para forçar a junção
+      const index = flexibleSource.indexOf(flexiblePlayer);
+      if (index > -1) {
+        flexibleSource.splice(index, 1);
+      }
+      forcedPair = { player1: fixedPlayer, player2: flexiblePlayer };
+    } else {
+      // Se ambos forem flexíveis, remova-os do array flexible
+      const indexMavis = flexible.indexOf(mavis);
+      if (indexMavis > -1) {
+        flexible.splice(indexMavis, 1);
+      }
+      const indexDantas = flexible.indexOf(dantas);
+      if (indexDantas > -1) {
+        flexible.splice(indexDantas, 1);
+      }
+      forcedPair = { player1: mavis, player2: dantas };
+    }
+  }
+
+  // Atualiza a contagem total de jogadores considerando os jogadores removidos (se houver par forçado)
+  const totalPlayers = fixed.length + flexible.length + (forcedPair ? 2 : 0);
   const numTimes = Math.floor(totalPlayers / tamanhoTime);
 
+  // Inicializa os times
   const times = [];
   for (let i = 0; i < numTimes; i++) {
     times.push({
@@ -91,8 +148,23 @@ function balancearJogadores(jogadores, tamanhoTime) {
 
   const reservas = [];
 
+  // Se houver par forçado, distribui-o junto em um time que tenha espaço para os dois
+  if (forcedPair) {
+    const availableTeams = times.filter(time => time.jogadores.length <= tamanhoTime - 2);
+    if (availableTeams.length > 0) {
+      const randomIndex = Math.floor(Math.random() * availableTeams.length);
+      availableTeams[randomIndex].jogadores.push(forcedPair.player1, forcedPair.player2);
+    } else {
+      reservas.push(forcedPair.player1, forcedPair.player2);
+    }
+  }
+
   // Distribuir os jogadores fixos (levantadores) em round-robin
   fixed.forEach((player, idx) => {
+    // Se Mavis ou Dantas já foram forçados, não os reinsere
+    if (forcedPair && (player.nome.trim().toLowerCase() === "mavis" || player.nome.trim().toLowerCase() === "dantas")) {
+      return;
+    }
     const teamIndex = idx % numTimes;
     if (times[teamIndex].jogadores.length < tamanhoTime) {
       times[teamIndex].jogadores.push(player);
