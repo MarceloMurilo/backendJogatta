@@ -71,7 +71,7 @@ const calcularDistancia = (jogador1, jogador2) => {
  *   ficando fixos em seus times.
  * - Os demais jogadores serão embaralhados e alocados para completar os times.
  *
- * Modificação: Com 80% de chance, força que os jogadores "Mavis" (ex.: "Mavis 🍎") e 
+ * Modificação: Com 75% de chance, força que os jogadores "Mavis" (ex.: "Mavis 🍎") e 
  * "Dantas" (ex.: "Dantas", "Dante", "dante", "Dantas 🦝") caiam no mesmo time – inclusive
  * quando Dantas estiver como levantador.
  */
@@ -100,8 +100,9 @@ function balancearJogadores(jogadores, tamanhoTime) {
   if (dantasFixed) { dantas = dantasFixed; dantasSource = fixed; }
   else if (dantasFlexible) { dantas = dantasFlexible; dantasSource = flexible; }
 
-  // Se ambos forem encontrados e com 80% de chance, força a juntá-los
-  if (mavis && dantas && Math.random() < 0.8) {
+  // Se ambos forem encontrados e com 75% de chance, força a juntá-los
+  let forcedPair;
+  if (mavis && dantas && Math.random() < 0.75) {
     // Se um dos dois já for fixo, força o outro a se juntar ao mesmo grupo
     if (mavisSource === fixed || dantasSource === fixed) {
       let fixedPlayer, flexiblePlayer, flexibleSource;
@@ -119,7 +120,7 @@ function balancearJogadores(jogadores, tamanhoTime) {
       if (index > -1) {
         flexibleSource.splice(index, 1);
       }
-      var forcedPair = { player1: fixedPlayer, player2: flexiblePlayer };
+      forcedPair = { player1: fixedPlayer, player2: flexiblePlayer };
     } else {
       // Se ambos forem flexíveis, remova-os do array flexible
       const indexMavis = flexible.indexOf(mavis);
@@ -130,7 +131,7 @@ function balancearJogadores(jogadores, tamanhoTime) {
       if (indexDantas > -1) {
         flexible.splice(indexDantas, 1);
       }
-      var forcedPair = { player1: mavis, player2: dantas };
+      forcedPair = { player1: mavis, player2: dantas };
     }
   }
 
