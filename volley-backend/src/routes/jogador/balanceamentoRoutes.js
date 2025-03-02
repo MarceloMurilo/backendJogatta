@@ -66,80 +66,19 @@ const calcularDistancia = (jogador1, jogador2) => {
  * Função principal de balanceamento (fixando os levantadores)
  * ======================================
  *
- * - Separa os jogadores fixos (levantadores) dos demais.
- * - Garante que cada time receba, no máximo, UM fixo (jogador marcado como levantador).
- * - Distribui os jogadores flexíveis nos times restantes.
- *
- * Além disso, com 75% de chance força que os jogadores "Mavis" (ex.: "Mavis 🍎") e 
- * "Dantas" (ex.: "Dantas", "Dante", "dante", "Dantas 🦝") caiam no mesmo time – inclusive
- * quando um deles for fixo. Nesse caso, se um dos jogadores já for fixo, o outro só é alocado
- * junto em um time que ainda não possua um fixo. Caso contrário, eles são inseridos juntos.
+ * Separa os jogadores fixos (levantadores) dos demais e os distribui:
+ * - Os jogadores marcados como "isLevantador" serão distribuídos em round-robin,
+ *   ficando fixos em seus times.
+ * - Os demais jogadores serão embaralhados e alocados para completar os times.
  */
 function balancearJogadores(jogadores, tamanhoTime) {
   // Separa jogadores fixos (levantadores) e flexíveis
   const fixed = jogadores.filter(j => j.isLevantador);
   const flexible = jogadores.filter(j => !j.isLevantador);
 
-  // Funções auxiliares para identificar variantes de nomes
-  const isMavisName = (nome) => nome.toLowerCase().includes("mavis");
-  const isDantasName = (nome) => nome.toLowerCase().includes("dant");
-
-  // Função para buscar jogador usando um predicado
-  const getPlayerByPredicate = (predicate, arr) =>
-    arr.find(j => j.nome && predicate(j.nome));
-
-  // Busca Mavis e Dantas nos arrays fixed e flexible
-  const mavisFixed = getPlayerByPredicate(isMavisName, fixed);
-  const dantasFixed = getPlayerByPredicate(isDantasName, fixed);
-  const mavisFlexible = getPlayerByPredicate(isMavisName, flexible);
-  const dantasFlexible = getPlayerByPredicate(isDantasName, flexible);
-
-  let mavis, dantas, mavisSource, dantasSource;
-  if (mavisFixed) { mavis = mavisFixed; mavisSource = fixed; }
-  else if (mavisFlexible) { mavis = mavisFlexible; mavisSource = flexible; }
-  if (dantasFixed) { dantas = dantasFixed; dantasSource = fixed; }
-  else if (dantasFlexible) { dantas = dantasFlexible; dantasSource = flexible; }
-
-  // Se ambos forem encontrados e com 75% de chance, força a juntá-los
-  let forcedPair;
-  if (mavis && dantas && Math.random() < 0.75) {
-    // Se um dos dois for fixo, queremos alocá-lo com o outro somente em time sem fixo
-    if (mavisSource === fixed || dantasSource === fixed) {
-      let fixedPlayer, flexiblePlayer, flexibleSource;
-      if (mavisSource === fixed) {
-        fixedPlayer = mavis;
-        flexiblePlayer = dantas;
-        flexibleSource = dantasSource;
-      } else {
-        fixedPlayer = dantas;
-        flexiblePlayer = mavis;
-        flexibleSource = mavisSource;
-      }
-      // Remove o jogador flexível de seu array para forçar a junção
-      const index = flexibleSource.indexOf(flexiblePlayer);
-      if (index > -1) {
-        flexibleSource.splice(index, 1);
-      }
-      forcedPair = { player1: fixedPlayer, player2: flexiblePlayer };
-    } else {
-      // Se ambos forem flexíveis, remova-os do array flexible
-      const indexMavis = flexible.indexOf(mavis);
-      if (indexMavis > -1) {
-        flexible.splice(indexMavis, 1);
-      }
-      const indexDantas = flexible.indexOf(dantas);
-      if (indexDantas > -1) {
-        flexible.splice(indexDantas, 1);
-      }
-      forcedPair = { player1: mavis, player2: dantas };
-    }
-  }
-
-  // Total de jogadores considerando os removidos caso haja par forçado
-  const totalPlayers = fixed.length + flexible.length + (forcedPair ? 2 : 0);
+  const totalPlayers = jogadores.length;
   const numTimes = Math.floor(totalPlayers / tamanhoTime);
 
-  // Inicializa os times e adiciona propriedade para marcar se já possuem um fixo
   const times = [];
   for (let i = 0; i < numTimes; i++) {
     times.push({
@@ -147,57 +86,25 @@ function balancearJogadores(jogadores, tamanhoTime) {
       jogadores: [],
       totalScore: 0,
       totalAltura: 0,
-      hasFixed: false // indica se o time já recebeu um jogador fixo
     });
   }
 
   const reservas = [];
 
-  // Se houver par forçado, distribui-o em um time apropriado
-  if (forcedPair) {
-    // Se algum dos dois for fixo, precisamos de um time sem fixo
-    if (forcedPair.player1.isLevantador || forcedPair.player2.isLevantador) {
-      const availableTeams = times.filter(time => !time.hasFixed && time.jogadores.length <= tamanhoTime - 2);
-      if (availableTeams.length > 0) {
-        const randomIndex = Math.floor(Math.random() * availableTeams.length);
-        availableTeams[randomIndex].jogadores.push(forcedPair.player1, forcedPair.player2);
-        availableTeams[randomIndex].hasFixed = true; // marca que o time recebeu um fixo
-      } else {
-        reservas.push(forcedPair.player1, forcedPair.player2);
-      }
-    } else {
-      // Se ambos forem flexíveis, basta colocá-los juntos se houver espaço
-      const availableTeams = times.filter(time => time.jogadores.length <= tamanhoTime - 2);
-      if (availableTeams.length > 0) {
-        const randomIndex = Math.floor(Math.random() * availableTeams.length);
-        availableTeams[randomIndex].jogadores.push(forcedPair.player1, forcedPair.player2);
-      } else {
-        reservas.push(forcedPair.player1, forcedPair.player2);
-      }
-    }
-  }
-
-  // Distribuir os jogadores fixos (levantadores) que não foram forçados
-  fixed.forEach((player) => {
-    // Se o jogador já foi alocado pelo forcedPair, pule-o
-    if (forcedPair && (isMavisName(player.nome) || isDantasName(player.nome))) {
-      return;
-    }
-    // Procura um time que ainda não possua um fixo e que tenha espaço
-    const team = times.find(t => !t.hasFixed && t.jogadores.length < tamanhoTime);
-    if (team) {
-      team.jogadores.push(player);
-      team.hasFixed = true;
+  // Distribuir os jogadores fixos (levantadores) em round-robin
+  fixed.forEach((player, idx) => {
+    const teamIndex = idx % numTimes;
+    if (times[teamIndex].jogadores.length < tamanhoTime) {
+      times[teamIndex].jogadores.push(player);
     } else {
       reservas.push(player);
     }
   });
 
-  // Distribuir os jogadores flexíveis restantes
+  // Embaralhar e distribuir os jogadores flexíveis
   const shuffledFlexible = embaralharJogadores([...flexible]);
   for (const player of shuffledFlexible) {
     let assigned = false;
-    // Procura um time que tenha espaço (não há restrição de fixo aqui)
     for (let i = 0; i < numTimes; i++) {
       if (times[i].jogadores.length < tamanhoTime) {
         times[i].jogadores.push(player);
@@ -210,12 +117,11 @@ function balancearJogadores(jogadores, tamanhoTime) {
     }
   }
 
-  // Calcula totais para cada time e remove a propriedade auxiliar hasFixed
+  // Calcula totais para cada time
   times.forEach(time => {
     const { totalScore, totalAltura } = calcularTotais(time);
     time.totalScore = totalScore;
     time.totalAltura = totalAltura;
-    delete time.hasFixed;
   });
 
   return { times, reservas };
