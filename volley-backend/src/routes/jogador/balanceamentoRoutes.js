@@ -77,22 +77,26 @@ const calcularDistancia = (jogador1, jogador2) => {
 
 /**
  * ======================================
- * Função principal de balanceamento (fixando os levantadores)
+ * Nova função de balanceamento considerando o gênero
  * ======================================
  *
- * Separa os jogadores fixos (levantadores) dos demais e os distribui:
- * - Os jogadores marcados como "isLevantador" serão distribuídos em round-robin,
- *   ficando fixos em seus times.
- * - Os demais jogadores serão embaralhados e alocados para completar os times.
+ * 1. Separa os jogadores fixos (levantadores) dos flexíveis.
+ * 2. Nos flexíveis, separa as jogadoras (genero === 'F'), os jogadores (genero === 'M')
+ *    e os demais.
+ * 3. Opcionalmente ordena cada lista por habilidade (soma de passe+ataque+levantamento).
+ * 4. Calcula um alvo de jogadoras por time (distribuição uniforme).
+ * 5. Distribui as jogadoras para atingir esse alvo.
+ * 6. Preenche as vagas restantes com jogadores masculinos e os demais.
  */
 function balancearJogadores(jogadores, tamanhoTime) {
-  // Separa jogadores fixos (levantadores) e flexíveis
+  // Separa fixos e flexíveis
   const fixed = jogadores.filter(j => j.isLevantador);
   const flexible = jogadores.filter(j => !j.isLevantador);
 
   const totalPlayers = jogadores.length;
   const numTimes = Math.floor(totalPlayers / tamanhoTime);
 
+  // Inicializa os times
   const times = [];
   for (let i = 0; i < numTimes; i++) {
     times.push({
@@ -102,10 +106,9 @@ function balancearJogadores(jogadores, tamanhoTime) {
       totalAltura: 0,
     });
   }
-
   const reservas = [];
 
-  // Distribuir os jogadores fixos (levantadores) em round-robin
+  // Distribuição dos fixos (round-robin)
   fixed.forEach((player, idx) => {
     const teamIndex = idx % numTimes;
     if (times[teamIndex].jogadores.length < tamanhoTime) {
@@ -115,9 +118,51 @@ function balancearJogadores(jogadores, tamanhoTime) {
     }
   });
 
-  // Embaralhar e distribuir os jogadores flexíveis
-  const shuffledFlexible = embaralharJogadores([...flexible]);
-  for (const player of shuffledFlexible) {
+  // Separar flexíveis por gênero
+  const flexibleFemales = flexible.filter(j => j.genero === 'F');
+  const flexibleMales = flexible.filter(j => j.genero === 'M');
+  const flexibleOthers = flexible.filter(j => j.genero !== 'F' && j.genero !== 'M');
+
+  // Opcional: ordenar por habilidade (soma dos atributos)
+  const sortByAbilityDesc = (a, b) =>
+    (b.passe + b.ataque + b.levantamento) - (a.passe + a.ataque + a.levantamento);
+  flexibleFemales.sort(sortByAbilityDesc);
+  flexibleMales.sort(sortByAbilityDesc);
+  flexibleOthers.sort(sortByAbilityDesc);
+
+  // Calcular quantas jogadoras já existem nos times (fixos)
+  const fixedFemalesCounts = times.map(team =>
+    team.jogadores.filter(j => j.genero === 'F').length
+  );
+  const totalFemales = flexibleFemales.length + fixedFemalesCounts.reduce((s, c) => s + c, 0);
+  const baseTarget = Math.floor(totalFemales / numTimes);
+  const remainder = totalFemales % numTimes;
+  // Alvo: os primeiros 'remainder' times terão +1 jogadora
+  const targetFemalesPerTeam = times.map((_, i) => (i < remainder ? baseTarget + 1 : baseTarget));
+
+  // Distribuir as jogadoras flexíveis para atingir o alvo
+  flexibleFemales.forEach(player => {
+    let bestTeamIndex = -1;
+    let maxDeficit = -Infinity;
+    for (let i = 0; i < numTimes; i++) {
+      if (times[i].jogadores.length < tamanhoTime) {
+        const currentFemales = times[i].jogadores.filter(j => j.genero === 'F').length;
+        const deficit = targetFemalesPerTeam[i] - currentFemales;
+        if (deficit > maxDeficit) {
+          maxDeficit = deficit;
+          bestTeamIndex = i;
+        }
+      }
+    }
+    if (bestTeamIndex !== -1) {
+      times[bestTeamIndex].jogadores.push(player);
+    } else {
+      reservas.push(player);
+    }
+  });
+
+  // Preencher as vagas restantes com jogadores masculinos
+  flexibleMales.forEach(player => {
     let assigned = false;
     for (let i = 0; i < numTimes; i++) {
       if (times[i].jogadores.length < tamanhoTime) {
@@ -129,9 +174,24 @@ function balancearJogadores(jogadores, tamanhoTime) {
     if (!assigned) {
       reservas.push(player);
     }
-  }
+  });
 
-  // Calcula totais para cada time
+  // Preencher com jogadores de outros gêneros, se houver
+  flexibleOthers.forEach(player => {
+    let assigned = false;
+    for (let i = 0; i < numTimes; i++) {
+      if (times[i].jogadores.length < tamanhoTime) {
+        times[i].jogadores.push(player);
+        assigned = true;
+        break;
+      }
+    }
+    if (!assigned) {
+      reservas.push(player);
+    }
+  });
+
+  // Recalcular totais para cada time
   times.forEach(time => {
     const { totalScore, totalAltura } = calcularTotais(time);
     time.totalScore = totalScore;
@@ -365,8 +425,7 @@ router.post(
         altura: parseFloat(j.altura) || 0,
       }));
 
-      // O frontend envia a flag isLevantador conforme seleção.
-      // Assim, fixamos os levantadores e balanceamos os demais.
+      // Fixar os levantadores conforme a flag enviada
       const { times: balancedTimes, reservas } = balancearJogadores(
         jogadores,
         tamanhoTimeFinal
@@ -389,7 +448,7 @@ router.post(
         }
       });
 
-      // Salvar no DB
+      // Salvar os times no DB
       await client.query('BEGIN');
 
       await client.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
