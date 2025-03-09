@@ -77,18 +77,34 @@ const calcularDistancia = (jogador1, jogador2) => {
 
 /**
  * ======================================
- * Nova função de balanceamento considerando o gênero:
- * FORÇA todas as jogadoras (genero "F") a serem agrupadas em um único time (Time 1).
- * Os jogadores fixos serão distribuídos normalmente; depois, todas as jogadoras
- * serão adicionadas ao Time 1; e os demais jogadores (não "F") serão distribuídos
- * nos demais times, respeitando o tamanho, na medida do possível.
- * OBS: Esse algoritmo é para teste e poderá ultrapassar o tamanhoTime no time 1.
+ * Nova função de balanceamento considerando o gênero
  * ======================================
+ *
+ * 1. Separa os jogadores fixos (levantadores) dos flexíveis.
+ * 2. Nos flexíveis, separa as jogadoras (genero === 'F'), os jogadores (genero === 'M')
+ *    e os demais.
+ * 3. Opcionalmente ordena cada lista por habilidade (soma de passe+ataque+levantamento).
+ * 4. Calcula um alvo de jogadoras por time (distribuição uniforme).
+ * 5. Distribui as jogadoras para atingir esse alvo.
+ * 6. Preenche as vagas restantes com jogadores masculinos e os demais.
  */
 function balancearJogadores(jogadores, tamanhoTime) {
-  // Separa fixos e flexíveis
-  const fixed = jogadores.filter(j => j.isLevantador);
-  const flexible = jogadores.filter(j => !j.isLevantador);
+  console.log('Iniciando balanceamento com jogadores:', 
+    jogadores.map(j => ({nome: j.nome, genero: j.genero}))
+  );
+
+  // Separa jogadores por gênero e função
+  const levantadoresF = jogadores.filter(j => j.isLevantador && j.genero === 'F');
+  const levantadoresM = jogadores.filter(j => j.isLevantador && j.genero === 'M');
+  const jogadoresF = jogadores.filter(j => !j.isLevantador && j.genero === 'F');
+  const jogadoresM = jogadores.filter(j => !j.isLevantador && j.genero === 'M');
+
+  console.log('Distribuição por gênero:', {
+    levantadoresF: levantadoresF.length,
+    levantadoresM: levantadoresM.length,
+    jogadoresF: jogadoresF.length,
+    jogadoresM: jogadoresM.length
+  });
 
   const totalPlayers = jogadores.length;
   const numTimes = Math.floor(totalPlayers / tamanhoTime);
@@ -106,7 +122,7 @@ function balancearJogadores(jogadores, tamanhoTime) {
   const reservas = [];
 
   // Distribuição dos fixos (round-robin)
-  fixed.forEach((player, idx) => {
+  levantadoresF.forEach((player, idx) => {
     const teamIndex = idx % numTimes;
     if (times[teamIndex].jogadores.length < tamanhoTime) {
       times[teamIndex].jogadores.push(player);
@@ -115,20 +131,74 @@ function balancearJogadores(jogadores, tamanhoTime) {
     }
   });
 
-  // Para os flexíveis, separe as jogadoras (F) e os demais
-  const flexibleFemales = flexible.filter(j => j.genero === 'F');
-  const flexibleOthers = flexible.filter(j => j.genero !== 'F');
+  levantadoresM.forEach((player, idx) => {
+    const teamIndex = idx % numTimes;
+    if (times[teamIndex].jogadores.length < tamanhoTime) {
+      times[teamIndex].jogadores.push(player);
+    } else {
+      reservas.push(player);
+    }
+  });
 
-  // (Opcional) Podemos ordenar os jogadores por habilidade – aqui, usamos soma dos atributos.
+  // Separar flexíveis por gênero
+  const flexibleFemales = jogadoresF.filter(j => j.genero === 'F');
+  const flexibleMales = jogadoresM.filter(j => j.genero === 'M');
+  const flexibleOthers = jogadores.filter(j => j.genero !== 'F' && j.genero !== 'M');
+
+  // Opcional: ordenar por habilidade (soma dos atributos)
   const sortByAbilityDesc = (a, b) =>
     (b.passe + b.ataque + b.levantamento) - (a.passe + a.ataque + a.levantamento);
   flexibleFemales.sort(sortByAbilityDesc);
+  flexibleMales.sort(sortByAbilityDesc);
   flexibleOthers.sort(sortByAbilityDesc);
 
-  // Force todas as jogadoras a ficarem no Time 1 (índice 0)
-  times[0].jogadores = times[0].jogadores.concat(flexibleFemales);
+  // Calcular quantas jogadoras já existem nos times (fixos)
+  const fixedFemalesCounts = times.map(team =>
+    team.jogadores.filter(j => j.genero === 'F').length
+  );
+  const totalFemales = flexibleFemales.length + fixedFemalesCounts.reduce((s, c) => s + c, 0);
+  const baseTarget = Math.floor(totalFemales / numTimes);
+  const remainder = totalFemales % numTimes;
+  // Alvo: os primeiros 'remainder' times terão +1 jogadora
+  const targetFemalesPerTeam = times.map((_, i) => (i < remainder ? baseTarget + 1 : baseTarget));
 
-  // Preencher as vagas restantes com os jogadores não femininos, distribuindo round-robin
+  // Distribuir as jogadoras flexíveis para atingir o alvo
+  flexibleFemales.forEach(player => {
+    let bestTeamIndex = -1;
+    let maxDeficit = -Infinity;
+    for (let i = 0; i < numTimes; i++) {
+      if (times[i].jogadores.length < tamanhoTime) {
+        const currentFemales = times[i].jogadores.filter(j => j.genero === 'F').length;
+        const deficit = targetFemalesPerTeam[i] - currentFemales;
+        if (deficit > maxDeficit) {
+          maxDeficit = deficit;
+          bestTeamIndex = i;
+        }
+      }
+    }
+    if (bestTeamIndex !== -1) {
+      times[bestTeamIndex].jogadores.push(player);
+    } else {
+      reservas.push(player);
+    }
+  });
+
+  // Preencher as vagas restantes com jogadores masculinos
+  flexibleMales.forEach(player => {
+    let assigned = false;
+    for (let i = 0; i < numTimes; i++) {
+      if (times[i].jogadores.length < tamanhoTime) {
+        times[i].jogadores.push(player);
+        assigned = true;
+        break;
+      }
+    }
+    if (!assigned) {
+      reservas.push(player);
+    }
+  });
+
+  // Preencher com jogadores de outros gêneros, se houver
   flexibleOthers.forEach(player => {
     let assigned = false;
     for (let i = 0; i < numTimes; i++) {
@@ -180,142 +250,81 @@ router.post(
   authMiddleware,
   balancearRole,
   async (req, res) => {
-    const client = await db.pool.connect();
     try {
-      console.log('=== POST /api/balanceamento/iniciar-balanceamento ===');
-      console.log('Body:', req.body);
-
-      const { id_jogo, tamanho_time, amigos_offline = [] } = req.body;
+      console.log('Dados recebidos no backend:', req.body);
+      const { tamanho_time, amigos_offline = [] } = req.body;
 
       // FLUXO OFFLINE
-      if (!id_jogo) {
-        if (!amigos_offline.length) {
-          client.release();
-          return res.status(400).json({
-            error: 'Nenhum jogador recebido no fluxo OFFLINE.',
-          });
-        }
-
-        // Separa jogadores oficiais e temporários
-        const offlineOficiais = amigos_offline.filter(j => typeof j.id_usuario === 'number');
-        const offlineTemporarios = amigos_offline.filter(j => !j.id_usuario);
-
-        let rowsAval = [];
-        if (offlineOficiais.length) {
-          const oficiaisIds = offlineOficiais.map(j => j.id_usuario);
-          const respAval = await client.query(
-            `
-              SELECT
-                u.id_usuario,
-                u.nome,
-                u.genero,
-                COALESCE(a.passe, 3) AS passe,
-                COALESCE(a.ataque, 3) AS ataque,
-                COALESCE(a.levantamento, 3) AS levantamento,
-                COALESCE(u.altura, 170) AS altura
-              FROM usuario u
-              LEFT JOIN avaliacoes a 
-                     ON a.usuario_id = u.id_usuario
-              WHERE u.id_usuario = ANY($1)
-            `,
-            [oficiaisIds]
-          );
-          rowsAval = respAval.rows;
-        }
-
-        const mapAval = new Map(rowsAval.map(row => [row.id_usuario, row]));
-
-        const jogadoresOficiaisProntos = offlineOficiais.map(frontJog => {
-          const dbJog = mapAval.get(frontJog.id_usuario);
-          return {
-            ...frontJog,
-            nome: frontJog.nome && frontJog.nome.trim() !== '' ? frontJog.nome : (dbJog ? (dbJog.nome || `Jogador Temporário ${frontJog.id_usuario}`) : `Jogador Temporário ${frontJog.id_usuario}`),
-            genero: dbJog ? (dbJog.genero || null) : (frontJog.genero || null),
-            passe: dbJog ? dbJog.passe : (parseInt(frontJog.passe, 10) || 3),
-            ataque: dbJog ? dbJog.ataque : (parseInt(frontJog.ataque, 10) || 3),
-            levantamento: dbJog ? dbJog.levantamento : (parseInt(frontJog.levantamento, 10) || 3),
-            altura: dbJog ? (parseFloat(dbJog.altura) || 170) : (parseFloat(frontJog.altura) || 170),
-          };
-        });
-
-        const jogadoresTemporariosProntos = offlineTemporarios.map(frontJog => ({
+      if (!req.body.id_jogo) {
+        console.log('Jogadores recebidos offline:', amigos_offline);
+        
+        const jogadoresTemporariosProntos = amigos_offline.map((frontJog) => ({
           ...frontJog,
-          nome: frontJog.nome && frontJog.nome.trim() !== '' ? frontJog.nome : `Jogador Temporário ${frontJog.id_temporario || frontJog.id}`,
-          genero: frontJog.genero || null,
+          nome: frontJog.nome?.trim() || `Jogador Temporário ${frontJog.id_usuario}`,
           passe: parseInt(frontJog.passe, 10) || 3,
           ataque: parseInt(frontJog.ataque, 10) || 3,
           levantamento: parseInt(frontJog.levantamento, 10) || 3,
           altura: parseFloat(frontJog.altura) || 170,
+          genero: frontJog.genero // Garantir que mantém o gênero
         }));
 
-        console.log('Jogadores recebidos para balanceamento:', amigos_offline);
-        console.log('Jogadores temporários processados:', jogadoresTemporariosProntos);
+        console.log('Jogadores processados:', jogadoresTemporariosProntos);
 
-        const todosJogadoresParaBalancear = [
-          ...jogadoresOficiaisProntos,
-          ...jogadoresTemporariosProntos,
-        ];
-
-        // O frontend já envia a flag isLevantador conforme seleção
         const { times, reservas } = balancearJogadores(
-          todosJogadoresParaBalancear,
+          jogadoresTemporariosProntos,
           tamanho_time || 4
         );
 
-        const rotacoes = []; // Pode gerar rotações se necessário
+        console.log('Times após balanceamento:', times);
+        console.log('Reservas após balanceamento:', reservas);
 
-        times.forEach(time => {
-          time.jogadores.forEach(j => {
-            if (!j.nome || !j.nome.trim()) {
-              j.nome = `Jogador Temporário ${j.id_usuario || j.id}`;
-            }
-          });
-        });
-        reservas.forEach(r => {
-          if (!r.nome || !r.nome.trim()) {
-            r.nome = `Jogador Temporário ${r.id_usuario || r.id}`;
-          }
-        });
-
-        client.release();
         return res.status(200).json({
-          message: 'Balanceamento (OFFLINE) realizado com sucesso!',
-          times,
-          reservas,
-          rotacoes,
+          message: 'Balanceamento realizado com sucesso!',
+          times: times.map(time => ({
+            ...time,
+            jogadores: time.jogadores.map(j => ({
+              ...j,
+              genero: j.genero // Garantir que mantém o gênero na resposta
+            }))
+          })),
+          reservas: reservas.map(r => ({
+            ...r,
+            genero: r.genero // Garantir que mantém o gênero nas reservas
+          }))
         });
       }
 
       // FLUXO ONLINE
-      console.log(`Verificando existência do jogo com id_jogo: ${id_jogo}`);
-      const jogoResp = await client.query(
+      console.log(`Verificando existência do jogo com id_jogo: ${req.body.id_jogo}`);
+      const jogoResp = await db.pool.connect();
+      const jogoQuery = await jogoResp.query(
         `
         SELECT id_jogo, id_usuario, status, tamanho_time
           FROM jogos
          WHERE id_jogo = $1
          LIMIT 1
       `,
-        [id_jogo]
+        [req.body.id_jogo]
       );
 
-      if (jogoResp.rowCount === 0) {
-        client.release();
+      if (jogoQuery.rowCount === 0) {
+        jogoResp.release();
         return res.status(404).json({
           error: 'Jogo não encontrado.',
         });
       }
 
-      const { status, id_usuario, tamanho_time: tamanhoTimeDB } = jogoResp.rows[0];
+      const { status, id_usuario, tamanho_time: tamanhoTimeDB } = jogoQuery.rows[0];
 
       if (status === 'finalizado') {
-        client.release();
+        jogoResp.release();
         return res.status(400).json({
           error: 'O jogo já foi finalizado e não pode ser balanceado novamente.',
         });
       }
 
       if (id_usuario !== req.user.id) {
-        client.release();
+        jogoResp.release();
         return res.status(403).json({
           error: 'Apenas o organizador do jogo pode iniciar o balanceamento.',
         });
@@ -323,26 +332,26 @@ router.post(
 
       let tamanhoTimeFinal = tamanhoTimeDB;
       if (typeof tamanho_time === 'number') {
-        await client.query(
+        await jogoResp.query(
           `
           UPDATE jogos
              SET tamanho_time = $1
            WHERE id_jogo = $2
         `,
-          [tamanho_time, id_jogo]
+          [tamanho_time, req.body.id_jogo]
         );
         tamanhoTimeFinal = tamanho_time;
       }
 
       if (!tamanhoTimeFinal) {
-        client.release();
+        jogoResp.release();
         return res.status(200).json({
           message: 'O tamanho_time ainda não foi definido. Configure-o na tela do jogo.',
           status: 'pendente',
         });
       }
 
-      const jogadoresResp = await client.query(
+      const jogadoresResp = await jogoResp.query(
         `
         SELECT 
           u.id_usuario,
@@ -362,11 +371,11 @@ router.post(
            WHERE id_jogo = $2
         )
       `,
-        [req.user.id, id_jogo]
+        [req.user.id, req.body.id_jogo]
       );
 
       if (jogadoresResp.rowCount === 0) {
-        client.release();
+        jogoResp.release();
         return res.status(400).json({
           error: 'Nenhum jogador encontrado para balanceamento.',
         });
@@ -377,7 +386,7 @@ router.post(
         altura: parseFloat(j.altura) || 0,
       }));
 
-      // Fixar os levantadores conforme a flag enviada e balancear os demais
+      // Fixar os levantadores conforme a flag enviada
       const { times: balancedTimes, reservas } = balancearJogadores(
         jogadores,
         tamanhoTimeFinal
@@ -401,9 +410,9 @@ router.post(
       });
 
       // Salvar os times no DB
-      await client.query('BEGIN');
+      await jogoResp.query('BEGIN');
 
-      await client.query('DELETE FROM times WHERE id_jogo = $1', [id_jogo]);
+      await jogoResp.query('DELETE FROM times WHERE id_jogo = $1', [req.body.id_jogo]);
 
       for (const [index, time] of balancedTimes.entries()) {
         const numeroTime = index + 1;
@@ -414,13 +423,13 @@ router.post(
             throw new Error(`id_usuario inválido no Time ${numeroTime}.`);
           }
 
-          await client.query(
+          await jogoResp.query(
             `
             INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
             VALUES ($1, $2, $3, $4, $5)
           `,
             [
-              id_jogo,
+              req.body.id_jogo,
               numeroTime,
               jogador.id_usuario,
               totalScore || 0,
@@ -431,17 +440,17 @@ router.post(
       }
 
       for (const reserva of reservas) {
-        await client.query(
+        await jogoResp.query(
           `
           INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
           VALUES ($1, 99, $2, 0, $3)
         `,
-          [id_jogo, reserva.id_usuario, reserva.altura]
+          [req.body.id_jogo, reserva.id_usuario, reserva.altura]
         );
       }
 
-      await client.query('COMMIT');
-      client.release();
+      await jogoResp.query('COMMIT');
+      jogoResp.release();
 
       return res.status(200).json({
         message: 'Balanceamento (ONLINE) realizado com sucesso!',
@@ -451,13 +460,8 @@ router.post(
         rotacoes,
       });
     } catch (err) {
-      console.error('Erro ao iniciar balanceamento:', err);
-      await client.query('ROLLBACK');
-      client.release();
-      return res.status(500).json({
-        error: 'Erro ao iniciar balanceamento',
-        details: err.message,
-      });
+      console.error('Erro no balanceamento:', err);
+      res.status(500).json({ error: err.message });
     }
   }
 );
