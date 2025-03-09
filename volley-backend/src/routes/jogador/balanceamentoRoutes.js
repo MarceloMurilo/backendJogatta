@@ -69,9 +69,9 @@ const calcularDistancia = (jogador1, jogador2) => {
 
   return Math.sqrt(
     Math.pow(alturaDiff, 2) +
-      Math.pow(passeDiff, 2) +
-      Math.pow(ataqueDiff, 2) +
-      Math.pow(levantamentoDiff, 2)
+    Math.pow(passeDiff, 2) +
+    Math.pow(ataqueDiff, 2) +
+    Math.pow(levantamentoDiff, 2)
   );
 };
 
@@ -185,21 +185,18 @@ router.post(
         }
 
         // Separa jogadores oficiais e temporários
-        const offlineOficiais = amigos_offline.filter(
-          (j) => typeof j.id_usuario === 'number'
-        );
-        const offlineTemporarios = amigos_offline.filter(
-          (j) => !j.id_usuario
-        );
+        const offlineOficiais = amigos_offline.filter(j => typeof j.id_usuario === 'number');
+        const offlineTemporarios = amigos_offline.filter(j => !j.id_usuario);
 
         let rowsAval = [];
         if (offlineOficiais.length) {
-          const oficiaisIds = offlineOficiais.map((j) => j.id_usuario);
+          const oficiaisIds = offlineOficiais.map(j => j.id_usuario);
           const respAval = await client.query(
             `
               SELECT
                 u.id_usuario,
                 u.nome,
+                u.genero,
                 COALESCE(a.passe, 3) AS passe,
                 COALESCE(a.ataque, 3) AS ataque,
                 COALESCE(a.levantamento, 3) AS levantamento,
@@ -214,48 +211,29 @@ router.post(
           rowsAval = respAval.rows;
         }
 
-        const mapAval = new Map(rowsAval.map((row) => [row.id_usuario, row]));
+        const mapAval = new Map(rowsAval.map(row => [row.id_usuario, row]));
 
-        const jogadoresOficiaisProntos = offlineOficiais.map((frontJog) => {
+        const jogadoresOficiaisProntos = offlineOficiais.map(frontJog => {
           const dbJog = mapAval.get(frontJog.id_usuario);
-          if (dbJog) {
-            return {
-              ...frontJog,
-              nome:
-                frontJog.nome && frontJog.nome.trim() !== ''
-                  ? frontJog.nome
-                  : dbJog.nome || `Jogador Temporário ${frontJog.id_usuario}`,
-              passe: dbJog.passe,
-              ataque: dbJog.ataque,
-              levantamento: dbJog.levantamento,
-              altura: parseFloat(dbJog.altura) || 170,
-            };
-          } else {
-            return {
-              ...frontJog,
-              nome:
-                frontJog.nome && frontJog.nome.trim() !== ''
-                  ? frontJog.nome
-                  : `Jogador Temporário ${frontJog.id_usuario}`,
-              passe: parseInt(frontJog.passe, 10) || 3,
-              ataque: parseInt(frontJog.ataque, 10) || 3,
-              levantamento: parseInt(frontJog.levantamento, 10) || 3,
-              altura: parseFloat(frontJog.altura) || 170,
-            };
-          }
+          return {
+            ...frontJog,
+            nome: frontJog.nome && frontJog.nome.trim() !== '' ? frontJog.nome : (dbJog ? (dbJog.nome || `Jogador Temporário ${frontJog.id_usuario}`) : `Jogador Temporário ${frontJog.id_usuario}`),
+            genero: dbJog ? (dbJog.genero || null) : (frontJog.genero || null),
+            passe: dbJog ? dbJog.passe : (parseInt(frontJog.passe, 10) || 3),
+            ataque: dbJog ? dbJog.ataque : (parseInt(frontJog.ataque, 10) || 3),
+            levantamento: dbJog ? dbJog.levantamento : (parseInt(frontJog.levantamento, 10) || 3),
+            altura: dbJog ? (parseFloat(dbJog.altura) || 170) : (parseFloat(frontJog.altura) || 170),
+          };
         });
 
-        const jogadoresTemporariosProntos = offlineTemporarios.map((frontJog) => ({
+        const jogadoresTemporariosProntos = offlineTemporarios.map(frontJog => ({
           ...frontJog,
-          nome:
-            frontJog.nome && frontJog.nome.trim() !== ''
-              ? frontJog.nome
-              : `Jogador Temporário ${frontJog.id_temporario || frontJog.id}`,
+          nome: frontJog.nome && frontJog.nome.trim() !== '' ? frontJog.nome : `Jogador Temporário ${frontJog.id_temporario || frontJog.id}`,
+          genero: frontJog.genero || null,
           passe: parseInt(frontJog.passe, 10) || 3,
           ataque: parseInt(frontJog.ataque, 10) || 3,
           levantamento: parseInt(frontJog.levantamento, 10) || 3,
           altura: parseFloat(frontJog.altura) || 170,
-          genero: frontJog.genero
         }));
 
         console.log('Jogadores recebidos para balanceamento:', amigos_offline);
@@ -274,14 +252,14 @@ router.post(
 
         const rotacoes = []; // Pode gerar rotações se necessário
 
-        times.forEach((time) => {
-          time.jogadores.forEach((j) => {
+        times.forEach(time => {
+          time.jogadores.forEach(j => {
             if (!j.nome || !j.nome.trim()) {
               j.nome = `Jogador Temporário ${j.id_usuario || j.id}`;
             }
           });
         });
-        reservas.forEach((r) => {
+        reservas.forEach(r => {
           if (!r.nome || !r.nome.trim()) {
             r.nome = `Jogador Temporário ${r.id_usuario || r.id}`;
           }
@@ -357,6 +335,7 @@ router.post(
         SELECT 
           u.id_usuario,
           u.nome,
+          u.genero,
           COALESCE(a.passe, 3) AS passe,
           COALESCE(a.ataque, 3) AS ataque,
           COALESCE(a.levantamento, 3) AS levantamento,
@@ -381,7 +360,7 @@ router.post(
         });
       }
 
-      const jogadores = jogadoresResp.rows.map((j) => ({
+      const jogadores = jogadoresResp.rows.map(j => ({
         ...j,
         altura: parseFloat(j.altura) || 0,
       }));
@@ -397,14 +376,14 @@ router.post(
 
       const rotacoes = []; // Pode gerar rotações se necessário
 
-      balancedTimes.forEach((time) => {
-        time.jogadores.forEach((jogador) => {
+      balancedTimes.forEach(time => {
+        time.jogadores.forEach(jogador => {
           if (!jogador.nome) {
             jogador.nome = `Jogador Temporário ${jogador.id_usuario}`;
           }
         });
       });
-      reservas.forEach((reserva) => {
+      reservas.forEach(reserva => {
         if (!reserva.nome) {
           reserva.nome = `Jogador Temporário ${reserva.id_usuario}`;
         }
@@ -549,9 +528,7 @@ router.post(
 
         for (const jogador of time.jogadores) {
           if (!jogador.id_usuario || typeof jogador.id_usuario !== 'number') {
-            throw new Error(
-              `id_usuario inválido ou ausente para um dos jogadores no Time ${numeroTime}.`
-            );
+            throw new Error(`id_usuario inválido ou ausente para um dos jogadores no Time ${numeroTime}.`);
           }
           await client.query(
             `
