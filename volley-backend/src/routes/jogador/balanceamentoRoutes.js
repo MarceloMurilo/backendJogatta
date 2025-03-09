@@ -37,14 +37,28 @@ const calcularVariancia = (valores) => {
   return valores.reduce((sum, v) => sum + Math.pow(v - media, 2), 0) / valores.length;
 };
 
-const calcularCusto = (times, pesoPontuacao = 1, pesoAltura = 1) => {
+const calcularBalanceamentoGenero = (times) => {
+  const distribuicaoGenero = times.map(time => ({
+    feminino: time.jogadores.filter(j => j.genero === 'F').length,
+    masculino: time.jogadores.filter(j => j.genero === 'M').length
+  }));
+  
+  const varFeminino = calcularVariancia(distribuicaoGenero.map(d => d.feminino));
+  const varMasculino = calcularVariancia(distribuicaoGenero.map(d => d.masculino));
+  
+  return varFeminino + varMasculino;
+};
+
+const calcularCusto = (times, pesoPontuacao = 1, pesoAltura = 1, pesoGenero = 2) => {
   const pontuacoes = times.map((t) => t.totalScore);
   const alturasMedias = times.map((t) =>
     t.jogadores.length > 0 ? t.totalAltura / t.jogadores.length : 0
   );
   const varPontuacao = calcularVariancia(pontuacoes);
   const varAltura = calcularVariancia(alturasMedias);
-  return pesoPontuacao * varPontuacao + pesoAltura * varAltura;
+  const varGenero = calcularBalanceamentoGenero(times);
+  
+  return pesoPontuacao * varPontuacao + pesoAltura * varAltura + pesoGenero * varGenero;
 };
 
 const calcularDistancia = (jogador1, jogador2) => {
