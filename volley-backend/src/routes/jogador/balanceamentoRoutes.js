@@ -77,14 +77,16 @@ const calcularDistancia = (jogador1, jogador2) => {
 
 /**
  * ======================================
- * Função de balanceamento com distribuição equilibrada de mulheres
+ * Função de balanceamento com distribuição equilibrada de mulheres,
+ * com randomização a cada chamada.
  * ======================================
  *
  * 1. Separa os jogadores fixos (levantadores) dos flexíveis.
- * 2. Nos times já formados com os fixos, conta quantas jogadoras já existem.
- * 3. Calcula a meta (alvo) de jogadoras por time (total mulheres / número de times).
- * 4. Distribui os jogadores flexíveis do gênero "F" nos times que estiverem abaixo da meta.
- * 5. Preenche as vagas restantes com os demais jogadores (flexíveis de gênero "M" ou outros).
+ * 2. Embaralha os fixos e flexíveis para que a ordem seja aleatória.
+ * 3. Nos times já formados com os fixos, conta quantas jogadoras já existem.
+ * 4. Calcula a meta de jogadoras por time (total de mulheres / número de times).
+ * 5. Embaralha os flexíveis do gênero "F" e os distribui para atingir a meta.
+ * 6. Embaralha os demais jogadores (não "F") e preenche as vagas restantes.
  */
 function balancearJogadores(jogadores, tamanhoTime) {
   console.log('Iniciando balanceamento com jogadores:', 
@@ -95,8 +97,12 @@ function balancearJogadores(jogadores, tamanhoTime) {
   const fixed = jogadores.filter(j => j.isLevantador);
   const flexible = jogadores.filter(j => !j.isLevantador);
 
+  // Embaralhar ambos os grupos para garantir randomização
+  embaralharJogadores(fixed);
+  embaralharJogadores(flexible);
+
   const totalPlayers = jogadores.length;
-  const numTimes = Math.floor(totalPlayers / tamanhoTime) || 1; // garante pelo menos 1 time
+  const numTimes = Math.floor(totalPlayers / tamanhoTime) || 1;
 
   // Inicializa os times
   const times = [];
@@ -129,16 +135,13 @@ function balancearJogadores(jogadores, tamanhoTime) {
   const flexibleFemales = flexible.filter(j => j.genero === 'F');
   const flexibleOthers = flexible.filter(j => j.genero !== 'F');
 
-  // Opcional: ordenar as jogadoras flexíveis por habilidade (soma dos atributos)
-  const sortByAbilityDesc = (a, b) =>
-    (b.passe + b.ataque + b.levantamento) - (a.passe + a.ataque + a.levantamento);
-  flexibleFemales.sort(sortByAbilityDesc);
-  // Também podemos ordenar os demais, se desejar:
-  flexibleOthers.sort(sortByAbilityDesc);
+  // Embaralhar as listas para que a ordem seja aleatória a cada clique
+  embaralharJogadores(flexibleFemales);
+  embaralharJogadores(flexibleOthers);
 
   // Calcular o total de mulheres (fixos + flexíveis)
   const totalFemales = flexibleFemales.length + fixedFemalesCounts.reduce((s, c) => s + c, 0);
-  // Meta de mulheres por time
+  // Meta de jogadoras por time
   const baseTarget = Math.floor(totalFemales / numTimes);
   const remainder = totalFemales % numTimes;
   const targetFemalesPerTeam = times.map((_, i) =>
@@ -152,7 +155,6 @@ function balancearJogadores(jogadores, tamanhoTime) {
     let bestTeamIndex = -1;
     let maxDeficit = -Infinity;
     for (let i = 0; i < numTimes; i++) {
-      // Só tenta se o time tiver vaga
       if (times[i].jogadores.length < tamanhoTime) {
         const currentFemales = times[i].jogadores.filter(j => j.genero === 'F').length;
         const deficit = targetFemalesPerTeam[i] - currentFemales;
@@ -241,7 +243,7 @@ router.post(
         ataque: parseInt(frontJog.ataque, 10) || 3,
         levantamento: parseInt(frontJog.levantamento, 10) || 3,
         altura: parseFloat(frontJog.altura) || 170,
-        genero: frontJog.genero // Aqui deve vir o valor definido
+        genero: frontJog.genero // Deve vir já definido (ex: "F" ou "M")
       }));
 
       console.log('Jogadores processados:', jogadoresTemporariosProntos);
