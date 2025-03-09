@@ -255,7 +255,11 @@ router.post(
           ataque: parseInt(frontJog.ataque, 10) || 3,
           levantamento: parseInt(frontJog.levantamento, 10) || 3,
           altura: parseFloat(frontJog.altura) || 170,
+          genero: frontJog.genero
         }));
+
+        console.log('Jogadores recebidos para balanceamento:', amigos_offline);
+        console.log('Jogadores temporários processados:', jogadoresTemporariosProntos);
 
         const todosJogadoresParaBalancear = [
           ...jogadoresOficiaisProntos,
