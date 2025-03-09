@@ -77,16 +77,13 @@ const calcularDistancia = (jogador1, jogador2) => {
 
 /**
  * ======================================
- * Nova função de balanceamento considerando o gênero
+ * Nova função de balanceamento considerando o gênero:
+ * FORÇA todas as jogadoras (genero "F") a serem agrupadas em um único time (Time 1).
+ * Os jogadores fixos serão distribuídos normalmente; depois, todas as jogadoras
+ * serão adicionadas ao Time 1; e os demais jogadores (não "F") serão distribuídos
+ * nos demais times, respeitando o tamanho, na medida do possível.
+ * OBS: Esse algoritmo é para teste e poderá ultrapassar o tamanhoTime no time 1.
  * ======================================
- *
- * 1. Separa os jogadores fixos (levantadores) dos flexíveis.
- * 2. Nos flexíveis, separa as jogadoras (genero === 'F'), os jogadores (genero === 'M')
- *    e os demais.
- * 3. Opcionalmente ordena cada lista por habilidade (soma de passe+ataque+levantamento).
- * 4. Calcula um alvo de jogadoras por time (distribuição uniforme).
- * 5. Distribui as jogadoras para atingir esse alvo.
- * 6. Preenche as vagas restantes com jogadores masculinos e os demais.
  */
 function balancearJogadores(jogadores, tamanhoTime) {
   // Separa fixos e flexíveis
@@ -118,65 +115,20 @@ function balancearJogadores(jogadores, tamanhoTime) {
     }
   });
 
-  // Separar flexíveis por gênero
+  // Para os flexíveis, separe as jogadoras (F) e os demais
   const flexibleFemales = flexible.filter(j => j.genero === 'F');
-  const flexibleMales = flexible.filter(j => j.genero === 'M');
-  const flexibleOthers = flexible.filter(j => j.genero !== 'F' && j.genero !== 'M');
+  const flexibleOthers = flexible.filter(j => j.genero !== 'F');
 
-  // Opcional: ordenar por habilidade (soma dos atributos)
+  // (Opcional) Podemos ordenar os jogadores por habilidade – aqui, usamos soma dos atributos.
   const sortByAbilityDesc = (a, b) =>
     (b.passe + b.ataque + b.levantamento) - (a.passe + a.ataque + a.levantamento);
   flexibleFemales.sort(sortByAbilityDesc);
-  flexibleMales.sort(sortByAbilityDesc);
   flexibleOthers.sort(sortByAbilityDesc);
 
-  // Calcular quantas jogadoras já existem nos times (fixos)
-  const fixedFemalesCounts = times.map(team =>
-    team.jogadores.filter(j => j.genero === 'F').length
-  );
-  const totalFemales = flexibleFemales.length + fixedFemalesCounts.reduce((s, c) => s + c, 0);
-  const baseTarget = Math.floor(totalFemales / numTimes);
-  const remainder = totalFemales % numTimes;
-  // Alvo: os primeiros 'remainder' times terão +1 jogadora
-  const targetFemalesPerTeam = times.map((_, i) => (i < remainder ? baseTarget + 1 : baseTarget));
+  // Force todas as jogadoras a ficarem no Time 1 (índice 0)
+  times[0].jogadores = times[0].jogadores.concat(flexibleFemales);
 
-  // Distribuir as jogadoras flexíveis para atingir o alvo
-  flexibleFemales.forEach(player => {
-    let bestTeamIndex = -1;
-    let maxDeficit = -Infinity;
-    for (let i = 0; i < numTimes; i++) {
-      if (times[i].jogadores.length < tamanhoTime) {
-        const currentFemales = times[i].jogadores.filter(j => j.genero === 'F').length;
-        const deficit = targetFemalesPerTeam[i] - currentFemales;
-        if (deficit > maxDeficit) {
-          maxDeficit = deficit;
-          bestTeamIndex = i;
-        }
-      }
-    }
-    if (bestTeamIndex !== -1) {
-      times[bestTeamIndex].jogadores.push(player);
-    } else {
-      reservas.push(player);
-    }
-  });
-
-  // Preencher as vagas restantes com jogadores masculinos
-  flexibleMales.forEach(player => {
-    let assigned = false;
-    for (let i = 0; i < numTimes; i++) {
-      if (times[i].jogadores.length < tamanhoTime) {
-        times[i].jogadores.push(player);
-        assigned = true;
-        break;
-      }
-    }
-    if (!assigned) {
-      reservas.push(player);
-    }
-  });
-
-  // Preencher com jogadores de outros gêneros, se houver
+  // Preencher as vagas restantes com os jogadores não femininos, distribuindo round-robin
   flexibleOthers.forEach(player => {
     let assigned = false;
     for (let i = 0; i < numTimes; i++) {
@@ -425,7 +377,7 @@ router.post(
         altura: parseFloat(j.altura) || 0,
       }));
 
-      // Fixar os levantadores conforme a flag enviada
+      // Fixar os levantadores conforme a flag enviada e balancear os demais
       const { times: balancedTimes, reservas } = balancearJogadores(
         jogadores,
         tamanhoTimeFinal
