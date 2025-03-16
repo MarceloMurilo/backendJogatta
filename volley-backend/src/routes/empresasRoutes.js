@@ -32,53 +32,35 @@ router.post('/', async (req, res) => {
 // Se passar ?includeQuadras=true, retorna cada empresa com um array "quadras".
 router.get('/', async (req, res) => {
   try {
-    const includeQuadras = req.query.includeQuadras === 'true';
-
-    if (!includeQuadras) {
-      // Retorna apenas a lista de empresas
-      const empRes = await pool.query('SELECT * FROM public.empresas');
-      return res.json(empRes.rows);
-    }
-
-    // Se includeQuadras=true, retorna cada empresa com suas quadras associadas.
-    // 1) Buscar todas as empresas
-    const empRes = await pool.query('SELECT * FROM public.empresas');
-    const empresas = empRes.rows;
-
-    // 2) Buscar todas as quadras – aqui usamos SELECT com as colunas desejadas, incluindo "foto"
-    const quadRes = await pool.query(`
-      SELECT id_quadra,
-             id_empresa,
-             nome,
-             preco_hora,
-             promocao_ativa,
-             descricao_promocao,
-             rede_disponivel,
-             bola_disponivel,
-             observacoes,
-             foto
-        FROM public.quadras
+    // Buscar empresas com informações básicas de quadras
+    const result = await pool.query(`
+      SELECT e.*,
+             COALESCE(json_agg(
+               json_build_object(
+                 'id', q.id_quadra,
+                 'nome', q.nome,
+                 'preco_hora', q.preco_hora,
+                 'promocao_ativa', q.promocao_ativa,
+                 'descricao_promocao', q.descricao_promocao,
+                 'rede_disponivel', q.rede_disponivel,
+                 'bola_disponivel', q.bola_disponivel,
+                 'observacoes', q.observacoes,
+                 'foto', q.foto
+               )
+             ) FILTER (WHERE q.id_quadra IS NOT NULL), '[]') as quadras
+        FROM empresas e
+        LEFT JOIN quadras q ON e.id_empresa = q.id_empresa
+       GROUP BY e.id_empresa
+       ORDER BY e.nome
     `);
 
-    // 3) Agrupar quadras por id_empresa
-    const quadrasMap = {};
-    quadRes.rows.forEach((q) => {
-      if (!quadrasMap[q.id_empresa]) {
-        quadrasMap[q.id_empresa] = [];
-      }
-      quadrasMap[q.id_empresa].push(q);
-    });
-
-    // 4) Montar objeto final para cada empresa
-    const resultado = empresas.map((emp) => ({
-      ...emp,
-      quadras: quadrasMap[emp.id_empresa] || [],
-    }));
-
-    return res.json(resultado);
+    return res.json(result.rows.map(empresa => ({
+      ...empresa,
+      quadras: empresa.quadras === '[]' ? [] : empresa.quadras
+    })));
   } catch (error) {
-    console.error('Erro ao listar empresas e quadras:', error);
-    return res.status(500).json({ message: 'Erro ao listar' });
+    console.error('Erro ao listar empresas:', error);
+    return res.status(500).json({ message: 'Erro ao listar empresas', error: error.message });
   }
 });
 

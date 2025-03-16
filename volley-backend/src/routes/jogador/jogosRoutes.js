@@ -27,10 +27,11 @@ router.post('/criar', authMiddleware, async (req, res) => {
     id_usuario,
     descricao,
     chave_pix,
-
-    // NOVOS CAMPOS PARA NOTIFICAÇÃO
     habilitar_notificacao,
-    tempo_notificacao
+    tempo_notificacao,
+    id_empresa,
+    id_quadra,
+    status_reserva
   } = req.body;
 
   console.log('[INFO] Recebida solicitação para criar jogo:', {
@@ -43,7 +44,10 @@ router.post('/criar', authMiddleware, async (req, res) => {
     descricao,
     chave_pix,
     habilitar_notificacao,
-    tempo_notificacao
+    tempo_notificacao,
+    id_empresa,
+    id_quadra,
+    status_reserva
   });
 
   // Verifica campos obrigatórios
@@ -98,19 +102,14 @@ router.post('/criar', authMiddleware, async (req, res) => {
 
     // Inserção do jogo na tabela 'jogos' com id_numerico + campos de notificação
     console.log('[INFO] Inserindo jogo na tabela `jogos`.');
-    const result = await client.query(
+    const jogoResult = await client.query(
       `INSERT INTO jogos (
          nome_jogo, data_jogo, horario_inicio, horario_fim,
          limite_jogadores, id_usuario, descricao, chave_pix,
          status, id_numerico,
          habilitar_notificacao, tempo_notificacao, notificado_automatico
        )
-       VALUES (
-         $1, $2, $3, $4,
-         $5, $6, $7, $8,
-         'aberto', $9,
-         $10, $11, false
-       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'aberto', $9, $10, $11, false)
        RETURNING id_jogo`,
       [
         nome_jogo,
@@ -127,11 +126,27 @@ router.post('/criar', authMiddleware, async (req, res) => {
       ]
     );
 
-    const id_jogo = result.rows[0]?.id_jogo;
+    const id_jogo = jogoResult.rows[0].id_jogo;
     if (!id_jogo) {
       throw new Error('Falha ao obter o ID do jogo recém-criado.');
     }
     console.log('[INFO] Jogo criado com ID:', id_jogo);
+
+    // Criar a reserva
+    if (id_empresa && id_quadra) {
+      await client.query(
+        `INSERT INTO reservas (
+           id_jogo,
+           id_empresa,
+           id_quadra,
+           data_reserva,
+           horario_inicio,
+           horario_fim,
+           status
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [id_jogo, id_empresa, id_quadra, data_jogo, horario_inicio, horario_fim, status_reserva || 'pendente']
+      );
+    }
 
     // Inserir convite inicial na tabela convites
     console.log('[INFO] Inserindo convite na tabela `convites`.');
