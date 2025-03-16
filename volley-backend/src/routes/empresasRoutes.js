@@ -105,10 +105,31 @@ router.get('/:id', async (req, res) => {
 });
 
 // [GET] /api/empresas/:id/quadras
-// Retorna apenas as quadras da empresa (sem os dados da empresa)
 router.get('/:id/quadras', async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Validar se o ID é um número válido
+    if (!id || isNaN(id)) {
+      return res.status(400).json({ 
+        message: 'ID da empresa inválido',
+        details: 'O ID da empresa deve ser um número válido'
+      });
+    }
+
+    // Primeiro verifica se a empresa existe
+    const empresaExists = await pool.query(
+      'SELECT 1 FROM empresas WHERE id_empresa = $1',
+      [id]
+    );
+
+    if (empresaExists.rowCount === 0) {
+      return res.status(404).json({ 
+        message: 'Empresa não encontrada',
+        details: 'Não existe empresa com o ID fornecido'
+      });
+    }
+
     // Buscar todas as quadras dessa empresa
     const quadRes = await pool.query(
       `SELECT id_quadra,
@@ -121,14 +142,22 @@ router.get('/:id/quadras', async (req, res) => {
               bola_disponivel,
               observacoes,
               foto
-         FROM public.quadras
-        WHERE id_empresa = $1`,
+         FROM quadras
+        WHERE id_empresa = $1
+        ORDER BY nome`,
       [id]
     );
+
+    // Log para debug
+    console.log(`Buscando quadras para empresa ${id}:`, quadRes.rows);
+
     return res.status(200).json(quadRes.rows);
   } catch (error) {
     console.error('Erro ao buscar quadras da empresa:', error);
-    return res.status(500).json({ message: 'Erro ao buscar quadras' });
+    return res.status(500).json({ 
+      message: 'Erro ao buscar quadras',
+      details: error.message
+    });
   }
 });
 
