@@ -161,4 +161,103 @@ router.get('/:id/quadras', async (req, res) => {
   }
 });
 
+// [GET] /api/empresas/:id/stats
+router.get('/:id/stats', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const hoje = new Date().toISOString().split('T')[0];
+
+    // Buscar estatísticas do dia
+    const reservasHojeQuery = await pool.query(
+      `SELECT COUNT(*) as total
+       FROM reservas r
+       JOIN quadras q ON r.id_quadra = q.id_quadra
+       WHERE q.id_empresa = $1
+       AND r.data_reserva = $2
+       AND r.status = 'confirmada'`,
+      [id, hoje]
+    );
+
+    // Calcular taxa de ocupação (horários reservados / horários totais)
+    const taxaOcupacaoQuery = await pool.query(
+      `WITH horarios_disponiveis AS (
+         SELECT COUNT(*) * 17 as total_slots -- 17 horários por dia (6h às 22h)
+         FROM quadras
+         WHERE id_empresa = $1
+       ),
+       horarios_ocupados AS (
+         SELECT COUNT(*) as slots_ocupados
+         FROM reservas r
+         JOIN quadras q ON r.id_quadra = q.id_quadra
+         WHERE q.id_empresa = $1
+         AND r.data_reserva = $2
+         AND r.status = 'confirmada'
+       )
+       SELECT 
+         CASE 
+           WHEN hd.total_slots > 0 
+           THEN ROUND((ho.slots_ocupados::float / hd.total_slots::float) * 100)
+           ELSE 0
+         END as taxa_ocupacao
+       FROM horarios_disponiveis hd, horarios_ocupados ho`,
+      [id, hoje]
+    );
+
+    // Calcular receita mensal
+    const primeiroDiaMes = new Date();
+    primeiroDiaMes.setDate(1);
+    const receitaMensalQuery = await pool.query(
+      `SELECT COALESCE(SUM(q.preco_hora), 0) as receita_mensal
+       FROM reservas r
+       JOIN quadras q ON r.id_quadra = q.id_quadra
+       WHERE q.id_empresa = $1
+       AND r.data_reserva >= $2
+       AND r.status = 'confirmada'`,
+      [id, primeiroDiaMes.toISOString().split('T')[0]]
+    );
+
+    res.json({
+      reservas_hoje: parseInt(reservasHojeQuery.rows[0].total),
+      taxa_ocupacao: parseInt(taxaOcupacaoQuery.rows[0].taxa_ocupacao),
+      receita_mensal: parseFloat(receitaMensalQuery.rows[0].receita_mensal)
+    });
+
+  } catch (error) {
+    console.error('Erro ao buscar estatísticas:', error);
+    res.status(500).json({ message: 'Erro ao buscar estatísticas' });
+  }
+});
+
+// [GET] /api/empresas/:id/reservas/pendentes
+router.get('/:id/reservas/pendentes', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      `SELECT 
+         r.*,
+         j.nome_jogo,
+         j.limite_jogadores,
+         j.descricao as descricao_jogo,
+         u.nome as nome_organizador,
+         u.email as email_organizador,
+         q.nome as nome_quadra,
+         q.preco_hora
+       FROM reservas r
+       JOIN jogos j ON r.id_jogo = j.id_jogo
+       JOIN usuario u ON j.id_usuario = u.id_usuario
+       JOIN quadras q ON r.id_quadra = q.id_quadra
+       WHERE q.id_empresa = $1
+       AND r.status = 'pendente'
+       ORDER BY r.data_reserva ASC, r.horario_inicio ASC`,
+      [id]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Erro ao buscar reservas pendentes:', error);
+    res.status(500).json({ message: 'Erro ao buscar reservas pendentes' });
+  }
+});
+
 module.exports = router;
