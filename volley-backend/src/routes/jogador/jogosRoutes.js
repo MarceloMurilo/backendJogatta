@@ -31,6 +31,7 @@ router.post('/criar', authMiddleware, async (req, res) => {
     tempo_notificacao,
     id_empresa,
     id_quadra,
+    status,
     status_reserva
   } = req.body;
 
@@ -47,6 +48,7 @@ router.post('/criar', authMiddleware, async (req, res) => {
     tempo_notificacao,
     id_empresa,
     id_quadra,
+    status,
     status_reserva
   });
 
@@ -109,7 +111,7 @@ router.post('/criar', authMiddleware, async (req, res) => {
          status, id_numerico,
          habilitar_notificacao, tempo_notificacao, notificado_automatico
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'aberto', $9, $10, $11, false)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, false)
        RETURNING id_jogo`,
       [
         nome_jogo,
@@ -120,6 +122,7 @@ router.post('/criar', authMiddleware, async (req, res) => {
         id_usuario,
         descricao || null,
         chave_pix || null,
+        status || 'aberto',
         idNumerico,
         habilitar_notificacao ?? false,
         tempo_notificacao ?? 0
@@ -144,7 +147,7 @@ router.post('/criar', authMiddleware, async (req, res) => {
            horario_fim,
            status
          ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [id_jogo, id_empresa, id_quadra, data_jogo, horario_inicio, horario_fim, status_reserva || 'pendente']
+        [id_jogo, id_empresa, id_quadra, data_jogo, horario_inicio, horario_fim, status_reserva || 'confirmada']
       );
     }
 
