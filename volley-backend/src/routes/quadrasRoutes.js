@@ -118,4 +118,85 @@ router.get('/:id/horarios-disponiveis', async (req, res) => {
   }
 });
 
+// [POST] /api/quadras
+router.post('/', async (req, res) => {
+  try {
+    const { 
+      nome, 
+      preco_hora, 
+      descricao, 
+      id_empresa,
+      horarios_config 
+    } = req.body;
+
+    // Validações básicas
+    if (!nome || !preco_hora || !id_empresa) {
+      return res.status(400).json({ 
+        message: 'Nome, preço por hora e ID da empresa são obrigatórios' 
+      });
+    }
+
+    // Validar estrutura do horarios_config
+    if (!horarios_config || typeof horarios_config !== 'object') {
+      return res.status(400).json({ 
+        message: 'Configuração de horários é obrigatória' 
+      });
+    }
+
+    // Validar cada dia configurado
+    for (const [dia, horarios] of Object.entries(horarios_config)) {
+      // Dia deve ser um número entre 0 e 6
+      if (isNaN(dia) || parseInt(dia) < 0 || parseInt(dia) > 6) {
+        return res.status(400).json({
+          message: 'Dia inválido na configuração de horários',
+          details: `Dia "${dia}" não é um número válido entre 0 e 6`
+        });
+      }
+
+      // Horários devem ser um objeto
+      if (typeof horarios !== 'object') {
+        return res.status(400).json({
+          message: 'Formato inválido de horários',
+          details: `Horários do dia ${dia} devem ser um objeto`
+        });
+      }
+
+      // Validar formato de cada horário
+      for (const [horario, disponivel] of Object.entries(horarios)) {
+        if (!/^([0-1][0-9]|2[0-3]):00$/.test(horario)) {
+          return res.status(400).json({
+            message: 'Formato de horário inválido',
+            details: `Horário "${horario}" não está no formato correto (HH:00)`
+          });
+        }
+
+        if (typeof disponivel !== 'boolean') {
+          return res.status(400).json({
+            message: 'Valor de disponibilidade inválido',
+            details: `Disponibilidade deve ser um booleano (true/false)`
+          });
+        }
+      }
+    }
+
+    // Criar a quadra
+    const result = await db.query(
+      `INSERT INTO quadras (
+        nome, 
+        preco_hora, 
+        descricao, 
+        id_empresa, 
+        horarios_config
+      ) VALUES ($1, $2, $3, $4, $5) 
+      RETURNING *`,
+      [nome, preco_hora, descricao, id_empresa, horarios_config]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Erro ao criar quadra:', error);
+    res.status(500).json({ message: 'Erro ao criar quadra' });
+  }
+});
+
 module.exports = router; 
