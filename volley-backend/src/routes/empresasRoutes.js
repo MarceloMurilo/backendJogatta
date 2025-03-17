@@ -235,25 +235,59 @@ router.get('/:id/reservas/pendentes', async (req, res) => {
 
     const result = await pool.query(
       `SELECT 
-         r.*,
+         r.id_reserva,
+         r.data_reserva,
+         r.horario_inicio,
+         r.horario_fim,
+         r.status,
+         j.id_jogo,
          j.nome_jogo,
          j.limite_jogadores,
          j.descricao as descricao_jogo,
+         u.id_usuario,
          u.nome as nome_organizador,
          u.email as email_organizador,
+         q.id_quadra,
          q.nome as nome_quadra,
-         q.preco_hora
+         q.preco_hora,
+         q.tipo_quadra
        FROM reservas r
-       JOIN jogos j ON r.id_jogo = j.id_jogo
-       JOIN usuario u ON j.id_usuario = u.id_usuario
-       JOIN quadras q ON r.id_quadra = q.id_quadra
+       LEFT JOIN jogos j ON r.id_jogo = j.id_jogo
+       LEFT JOIN usuario u ON j.id_usuario = u.id_usuario
+       LEFT JOIN quadras q ON r.id_quadra = q.id_quadra
        WHERE q.id_empresa = $1
        AND r.status = 'pendente'
        ORDER BY r.data_reserva ASC, r.horario_inicio ASC`,
       [id]
     );
 
-    res.json(result.rows);
+    // Formatar os dados para a estrutura que o frontend espera
+    const reservasFormatadas = result.rows.map(row => ({
+      id: row.id_reserva,
+      data: row.data_reserva,
+      horario_inicio: row.horario_inicio,
+      horario_fim: row.horario_fim,
+      status: row.status,
+      jogo: {
+        id: row.id_jogo,
+        nome_jogo: row.nome_jogo || `Reserva #${row.id_reserva}`,
+        limite_jogadores: row.limite_jogadores,
+        descricao: row.descricao_jogo
+      },
+      organizador: {
+        id: row.id_usuario,
+        nome: row.nome_organizador,
+        email: row.email_organizador
+      },
+      quadra: {
+        id: row.id_quadra,
+        nome: row.nome_quadra,
+        preco_hora: row.preco_hora,
+        tipo: row.tipo_quadra
+      }
+    }));
+
+    res.json(reservasFormatadas);
   } catch (error) {
     console.error('Erro ao buscar reservas pendentes:', error);
     res.status(500).json({ message: 'Erro ao buscar reservas pendentes' });
