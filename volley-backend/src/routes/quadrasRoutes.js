@@ -17,13 +17,13 @@ router.get('/:id/horarios-config', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Quadra não encontrada' });
+      return res.status(404).json({ message: 'Quadra não encontrada' });
     }
 
-    res.json(result.rows[0].horarios_config || {});
+    res.json(result.rows[0].horarios_config);
   } catch (error) {
     console.error('Erro ao buscar configuração de horários:', error);
-    res.status(500).json({ error: 'Erro ao buscar configuração de horários' });
+    res.status(500).json({ message: 'Erro ao buscar configuração de horários' });
   }
 });
 
@@ -42,13 +42,13 @@ router.post('/:id/horarios-config', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Quadra não encontrada' });
+      return res.status(404).json({ message: 'Quadra não encontrada' });
     }
 
     res.json(result.rows[0]);
   } catch (error) {
-    console.error('Erro ao salvar configuração de horários:', error);
-    res.status(500).json({ error: 'Erro ao salvar configuração de horários' });
+    console.error('Erro ao atualizar configuração de horários:', error);
+    res.status(500).json({ message: 'Erro ao atualizar configuração de horários' });
   }
 });
 
@@ -59,7 +59,7 @@ router.get('/:id/horarios-disponiveis', async (req, res) => {
     const { data } = req.query;
 
     if (!data) {
-      return res.status(400).json({ error: 'Data é obrigatória' });
+      return res.status(400).json({ message: 'Data é obrigatória' });
     }
 
     // Buscar configuração de horários da quadra
@@ -71,51 +71,50 @@ router.get('/:id/horarios-disponiveis', async (req, res) => {
     );
 
     if (configResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Quadra não encontrada' });
+      return res.status(404).json({ message: 'Quadra não encontrada' });
     }
 
-    const horariosConfig = configResult.rows[0].horarios_config || {};
-    const diaSemana = new Date(data).getDay();
-    const horariosPermitidos = horariosConfig[diaSemana] || {};
+    const horariosConfig = configResult.rows[0].horarios_config;
+    const diaSemana = new Date(data).getDay(); // 0 = Domingo, 1 = Segunda, etc.
 
-    // Buscar reservas existentes
+    // Buscar reservas existentes para o dia
     const reservasResult = await db.query(
       `SELECT horario_inicio, horario_fim
        FROM reservas
-       WHERE id_quadra = $1 
+       WHERE id_quadra = $1
        AND data_reserva = $2
-       AND status IN ('confirmada', 'pendente')
-       ORDER BY horario_inicio`,
+       AND status != 'rejeitada'`,
       [id, data]
     );
 
     // Criar array com todos os horários possíveis (6h às 22h)
-    const horarios = [];
-    for (let hora = 6; hora <= 22; hora++) {
-      const horaStr = hora.toString().padStart(2, '0') + ':00';
-      horarios.push({
-        horario: horaStr,
-        disponivel: horariosPermitidos[horaStr] === true
-      });
-    }
-
-    // Marcar horários já reservados como indisponíveis
-    reservasResult.rows.forEach(reserva => {
-      const inicio = parseInt(reserva.horario_inicio.split(':')[0]);
-      const fim = parseInt(reserva.horario_fim.split(':')[0]);
-
-      for (let hora = inicio; hora < fim; hora++) {
-        const index = hora - 6;
-        if (index >= 0 && index < horarios.length) {
-          horarios[index].disponivel = false;
-        }
-      }
+    const horarios = Array.from({ length: 17 }, (_, i) => {
+      const hora = i + 6;
+      return `${hora.toString().padStart(2, '0')}:00`;
     });
 
-    res.json(horarios);
+    // Marcar cada horário como disponível ou não
+    const horariosDisponiveis = horarios.map(horario => {
+      // Verificar se o horário está configurado como disponível para este dia da semana
+      const disponivelConfig = horariosConfig?.[diaSemana]?.[horario] ?? true;
+
+      // Verificar se existe alguma reserva que conflita com este horário
+      const temReserva = reservasResult.rows.some(reserva => {
+        const inicio = reserva.horario_inicio;
+        const fim = reserva.horario_fim;
+        return horario >= inicio && horario < fim;
+      });
+
+      return {
+        horario,
+        disponivel: disponivelConfig && !temReserva
+      };
+    });
+
+    res.json(horariosDisponiveis);
   } catch (error) {
     console.error('Erro ao buscar horários disponíveis:', error);
-    res.status(500).json({ error: 'Erro ao buscar horários disponíveis' });
+    res.status(500).json({ message: 'Erro ao buscar horários disponíveis' });
   }
 });
 
