@@ -78,6 +78,9 @@ const quadrasAdminRoutes = require('./routes/quadras/quadrasAdminRoutes');
 // (2) Import do arquivo de rotas públicas de quadras
 const quadrasPublicRoutes = require('./routes/quadras/quadrasPublicRoutes');
 
+// (3) Import do arquivo principal de rotas de quadras
+const quadrasRoutes = require('./routes/quadrasRoutes');
+
 // Se não existir diretório pdf, cria
 if (!fs.existsSync(path.join(__dirname, 'pdf'))) {
   fs.mkdirSync(path.join(__dirname, 'pdf'), { recursive: true });
@@ -139,6 +142,9 @@ app.use(
 
 // (5) Rota de quadras públicas (qualquer usuário pode ver)
 app.use('/api/quadras', quadrasPublicRoutes);
+
+// (6) Rota principal de quadras
+app.use('/api/quadras', quadrasRoutes);
 
 // ------------------------------------------------
 // CRON 1: Encerrar jogos cujo horário_fim < NOW()
