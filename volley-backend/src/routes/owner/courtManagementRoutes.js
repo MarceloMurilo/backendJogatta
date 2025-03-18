@@ -1,81 +1,167 @@
+// src/routes/owner/courtManagementRoutes.js
 const express = require('express');
-const pool = require('../../db');
 const router = express.Router();
-const authMiddleware = require('../../middlewares/authMiddleware');
-const roleMiddleware = require('../../middlewares/roleMiddleware');
+const pool = require('../../db');
 
-// Rota para cadastrar uma nova quadra (Create)
+/**
+ * [POST] Criar nova quadra (apenas "owner" pode usar).
+ *  Campos esperados:
+ *    id_empresa, nome, preco_hora, promocao_ativa, descricao_promocao,
+ *    rede_disponivel, bola_disponivel, observacoes, foto
+ */
 router.post('/', async (req, res) => {
-  const { nome, endereco, capacidade, preco_hora, promocao_ativa, descricao_promocao } = req.body;
   try {
+    const {
+      id_empresa,
+      nome,
+      preco_hora,
+      promocao_ativa = false,
+      descricao_promocao,
+      rede_disponivel = false,
+      bola_disponivel = false,
+      observacoes,
+      foto
+    } = req.body;
+
+    // Exemplo de verificação:
+    if (!id_empresa || !nome) {
+      return res.status(400).json({
+        message: 'id_empresa e nome são obrigatórios.'
+      });
+    }
+
     const result = await pool.query(
-      'INSERT INTO public.courts (nome, endereco, capacidade, preco_hora, promocao_ativa, descricao_promocao) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-      [nome, endereco, capacidade, preco_hora, promocao_ativa, descricao_promocao]
+      `INSERT INTO quadras
+        (id_empresa, nome, preco_hora, promocao_ativa, descricao_promocao,
+         rede_disponivel, bola_disponivel, observacoes, foto)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING *`,
+      [
+        id_empresa,
+        nome,
+        preco_hora,
+        promocao_ativa,
+        descricao_promocao,
+        rede_disponivel,
+        bola_disponivel,
+        observacoes,
+        foto || null
+      ]
     );
-    res.status(201).json(result.rows[0]);
+
+    return res.status(201).json(result.rows[0]);
   } catch (error) {
-    console.error('Erro ao cadastrar a quadra:', error);
-    res.status(500).json({ error: 'Erro ao cadastrar a quadra', details: error.message });
+    console.error('[owner/courtManagement] Erro ao criar quadra:', error);
+    return res.status(500).json({
+      message: 'Erro ao criar quadra',
+      details: error.message
+    });
   }
 });
 
-// Rota para listar todas as quadras (Read)
+/**
+ * [GET] Lista quadras do owner, filtrando por ID da empresa dele, etc.
+ *   - Se no seu fluxo cada "owner" só tem 1 empresa, possivelmente você
+ *     pega req.user.id, verifica qual é a empresa dele, etc.
+ */
 router.get('/', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM public.courts');
-    res.status(200).json(result.rows);
+    // Exemplificando sem filtro (lista tudo), mas idealmente filtra "owner" para retornar só as quadras da empresa dele
+    const query = `
+      SELECT q.*, e.nome AS nome_empresa
+        FROM quadras q
+   LEFT JOIN empresas e ON q.id_empresa = e.id_empresa
+       ORDER BY q.id_quadra DESC
+    `;
+    const result = await pool.query(query);
+
+    return res.json(result.rows);
   } catch (error) {
-    console.error('Erro ao listar as quadras:', error);
-    res.status(500).json({ error: 'Erro ao listar as quadras', details: error.message });
+    console.error('[owner/courtManagement] Erro ao listar quadras:', error);
+    return res.status(500).json({
+      message: 'Erro ao listar quadras',
+      details: error.message
+    });
   }
 });
 
-// Rota para listar uma única quadra por ID (Read)
-router.get('/:id', async (req, res) => {
-  const { id } = req.params;
+/**
+ * [PUT] Atualiza a quadra do owner
+ */
+router.put('/:id_quadra', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM public.courts WHERE id_quadra = $1', [id]);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Quadra não encontrada' });
-    }
-    res.status(200).json(result.rows[0]);
-  } catch (error) {
-    console.error('Erro ao buscar a quadra:', error);
-    res.status(500).json({ error: 'Erro ao buscar a quadra', details: error.message });
-  }
-});
+    const { id_quadra } = req.params;
+    const {
+      nome,
+      preco_hora,
+      promocao_ativa,
+      descricao_promocao,
+      rede_disponivel,
+      bola_disponivel,
+      observacoes,
+      foto
+    } = req.body;
 
-// Rota para atualizar uma quadra por ID (Update)
-router.put('/:id', async (req, res) => {
-  const { id } = req.params;
-  const { nome, endereco, capacidade, preco_hora, promocao_ativa, descricao_promocao } = req.body;
-  try {
+    // Exemplo simples
     const result = await pool.query(
-      'UPDATE public.courts SET nome = $1, endereco = $2, capacidade = $3, preco_hora = $4, promocao_ativa = $5, descricao_promocao = $6 WHERE id_quadra = $7 RETURNING *',
-      [nome, endereco, capacidade, preco_hora, promocao_ativa, descricao_promocao, id]
+      `UPDATE quadras
+         SET nome = COALESCE($1, nome),
+             preco_hora = COALESCE($2, preco_hora),
+             promocao_ativa = COALESCE($3, promocao_ativa),
+             descricao_promocao = COALESCE($4, descricao_promocao),
+             rede_disponivel = COALESCE($5, rede_disponivel),
+             bola_disponivel = COALESCE($6, bola_disponivel),
+             observacoes = COALESCE($7, observacoes),
+             foto = COALESCE($8, foto)
+       WHERE id_quadra = $9
+       RETURNING *`,
+      [
+        nome,
+        preco_hora,
+        promocao_ativa,
+        descricao_promocao,
+        rede_disponivel,
+        bola_disponivel,
+        observacoes,
+        foto,
+        id_quadra
+      ]
     );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Quadra não encontrada' });
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'Quadra não encontrada.' });
     }
-    res.status(200).json(result.rows[0]);
+    return res.json(result.rows[0]);
   } catch (error) {
-    console.error('Erro ao atualizar a quadra:', error);
-    res.status(500).json({ error: 'Erro ao atualizar a quadra', details: error.message });
+    console.error('[owner/courtManagement] Erro ao atualizar quadra:', error);
+    return res.status(500).json({
+      message: 'Erro ao atualizar quadra',
+      details: error.message
+    });
   }
 });
 
-// Rota para deletar uma quadra por ID (Delete)
-router.delete('/:id', async (req, res) => {
-  const { id } = req.params;
+/**
+ * [DELETE] Deleta a quadra
+ */
+router.delete('/:id_quadra', async (req, res) => {
   try {
-    const result = await pool.query('DELETE FROM public.courts WHERE id_quadra = $1 RETURNING *', [id]);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Quadra não encontrada' });
+    const { id_quadra } = req.params;
+
+    const result = await pool.query(
+      'DELETE FROM quadras WHERE id_quadra = $1 RETURNING *',
+      [id_quadra]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'Quadra não encontrada.' });
     }
-    res.status(200).json({ message: 'Quadra deletada com sucesso' });
+    return res.json({ message: 'Quadra deletada com sucesso.' });
   } catch (error) {
-    console.error('Erro ao deletar a quadra:', error);
-    res.status(500).json({ error: 'Erro ao deletar a quadra', details: error.message });
+    console.error('[owner/courtManagement] Erro ao deletar quadra:', error);
+    return res.status(500).json({
+      message: 'Erro ao deletar quadra',
+      details: error.message
+    });
   }
 });
 

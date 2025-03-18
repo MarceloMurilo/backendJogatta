@@ -95,14 +95,13 @@ router.post('/criar', authMiddleware, async (req, res) => {
 
     while (!isUnique) {
       idNumerico = Math.floor(100000 + Math.random() * 900000);
-      const existing = await client.query(
-        'SELECT 1 FROM jogos WHERE id_numerico = $1',
-        [idNumerico]
-      );
+      const existing = await client.query('SELECT 1 FROM jogos WHERE id_numerico = $1', [
+        idNumerico
+      ]);
       if (existing.rowCount === 0) isUnique = true;
     }
 
-    // Inserção do jogo na tabela 'jogos' com id_numerico + campos de notificação
+    // Inserção do jogo na tabela 'jogos'
     console.log('[INFO] Inserindo jogo na tabela `jogos`.');
     const jogoResult = await client.query(
       `INSERT INTO jogos (
@@ -129,13 +128,13 @@ router.post('/criar', authMiddleware, async (req, res) => {
       ]
     );
 
-    const id_jogo = jogoResult.rows[0].id_jogo;
-    if (!id_jogo) {
+    const newIdJogo = jogoResult.rows[0].id_jogo;
+    if (!newIdJogo) {
       throw new Error('Falha ao obter o ID do jogo recém-criado.');
     }
-    console.log('[INFO] Jogo criado com ID:', id_jogo);
+    console.log('[INFO] Jogo criado com ID:', newIdJogo);
 
-    // Criar a reserva
+    // Criar a reserva (opcional, se id_empresa e id_quadra vieram)
     if (id_empresa && id_quadra) {
       await client.query(
         `INSERT INTO reservas (
@@ -147,16 +146,25 @@ router.post('/criar', authMiddleware, async (req, res) => {
            horario_fim,
            status
          ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [id_jogo, id_empresa, id_quadra, data_jogo, horario_inicio, horario_fim, status_reserva || 'confirmada']
+        [
+          newIdJogo,
+          id_empresa,
+          id_quadra,
+          data_jogo,
+          horario_inicio,
+          horario_fim,
+          status_reserva || 'confirmada'
+        ]
       );
+      console.log('[INFO] Reserva criada na tabela `reservas` (jogo vinculado).');
     }
 
     // Inserir convite inicial na tabela convites
     console.log('[INFO] Inserindo convite na tabela `convites`.');
     await client.query(
       `INSERT INTO convites (id_jogo, id_numerico, status, data_envio, id_usuario)
-       VALUES ($1, $2, $3, NOW(), $4)`,
-      [id_jogo, idNumerico, 'aberto', id_usuario]
+       VALUES ($1, $2, 'aberto', NOW(), $3)`,
+      [newIdJogo, idNumerico, id_usuario]
     );
     console.log('[INFO] Convite criado com sucesso.');
 
@@ -165,16 +173,9 @@ router.post('/criar', authMiddleware, async (req, res) => {
     const participacaoResult = await client.query(
       `INSERT INTO participacao_jogos (id_jogo, id_usuario, lider_time, status)
        VALUES ($1, $2, $3, 'ativo')`,
-      [id_jogo, id_usuario, true]
-    );
-    console.log(
-      '[DEBUG] Resultado da inserção na tabela `participacao_jogos`:',
-      participacaoResult.rowCount
+      [newIdJogo, id_usuario, true]
     );
     if (participacaoResult.rowCount === 0) {
-      console.error(
-        '[ERROR] Falha ao inserir o organizador na tabela `participacao_jogos`.'
-      );
       throw new Error('Erro ao adicionar o organizador como participante.');
     }
 
@@ -186,22 +187,20 @@ router.post('/criar', authMiddleware, async (req, res) => {
     if (organizadorFuncao.rowCount === 0) {
       throw new Error('Função "organizador" não encontrada no banco de dados.');
     }
-    const id_funcao = organizadorFuncao.rows[0].id_funcao;
+    const idFuncaoOrganizador = organizadorFuncao.rows[0].id_funcao;
     await client.query(
       `INSERT INTO usuario_funcao (id_usuario, id_funcao, id_jogo)
        VALUES ($1, $2, $3)`,
-      [id_usuario, id_funcao, id_jogo]
+      [id_usuario, idFuncaoOrganizador, newIdJogo]
     );
-    console.log('[INFO] Organizador associado à função "organizador" com sucesso.');
 
     // Inserir o organizador na tabela `times` como parte do Time 1
     console.log('[INFO] Inserindo organizador na tabela `times` como parte do Time 1.');
     await client.query(
       `INSERT INTO times (id_jogo, numero_time, id_usuario, total_score, total_altura)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [id_jogo, 1, id_usuario, 0, 0]
+       VALUES ($1, 1, $2, 0, 0)`,
+      [newIdJogo, id_usuario]
     );
-    console.log('[INFO] Organizador inserido no Time 1 com sucesso.');
 
     await client.query('COMMIT');
     console.log('[INFO] Jogo criado com sucesso. Transação concluída.');
@@ -209,13 +208,13 @@ router.post('/criar', authMiddleware, async (req, res) => {
     // Log do Retorno da API
     console.log('Retorno da API:', {
       message: 'Jogo criado com sucesso.',
-      id_jogo,
+      id_jogo: newIdJogo,
       id_numerico: idNumerico
     });
 
     return res.status(201).json({
       message: 'Jogo criado com sucesso.',
-      id_jogo,
+      id_jogo: newIdJogo,
       id_numerico: idNumerico
     });
   } catch (error) {
@@ -273,7 +272,6 @@ router.post('/iniciar-balanceamento', authMiddleware, async (req, res) => {
     console.log('Times balanceados:', balancedTimes);
 
     // Inserir os jogadores balanceados na tabela `times`
-    console.log('[INFO] Inserindo jogadores balanceados na tabela `times`.');
     for (const time of balancedTimes) {
       for (const jogador of time.jogadores) {
         const exists = await client.query(
@@ -296,9 +294,7 @@ router.post('/iniciar-balanceamento', authMiddleware, async (req, res) => {
             `[INFO] Jogador ${jogador.nome} inserido no Time ${time.numero_time}.`
           );
         } else {
-          console.log(
-            `[INFO] Jogador ${jogador.nome} já está associado a um time.`
-          );
+          console.log(`[INFO] Jogador ${jogador.nome} já está em times.`);
         }
       }
     }
@@ -313,9 +309,10 @@ router.post('/iniciar-balanceamento', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('[ERROR] Erro ao balancear times:', error.message);
     await client.query('ROLLBACK');
-    return res
-      .status(500)
-      .json({ message: 'Erro interno ao balancear os times.', error: error.message });
+    return res.status(500).json({
+      message: 'Erro interno ao balancear os times.',
+      error: error.message
+    });
   } finally {
     client.release();
     console.log('[INFO] Conexão com o banco de dados liberada.');
@@ -367,8 +364,16 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
 
   try {
     const jogoResult = await db.query(
-      `SELECT j.id_jogo, j.nome_jogo, j.data_jogo, j.horario_inicio, j.horario_fim,
-              j.limite_jogadores, j.descricao, j.chave_pix, j.status, j.id_numerico,
+      `SELECT j.id_jogo,
+              j.nome_jogo,
+              j.data_jogo,
+              j.horario_inicio,
+              j.horario_fim,
+              j.limite_jogadores,
+              j.descricao,
+              j.chave_pix,
+              j.status,
+              j.id_numerico,
               (CASE WHEN j.id_usuario = $1 THEN true ELSE false END) AS "isOrganizer"
          FROM jogos j
          WHERE j.id_jogo = $2
@@ -382,8 +387,11 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
 
     const jogo = jogoResult.rows[0];
 
+    // Buscar jogadores
     const participacaoResult = await db.query(
-      `SELECT pj.id_usuario, u.nome, pj.status,
+      `SELECT pj.id_usuario,
+              u.nome,
+              pj.status,
               COALESCE(pj.confirmado, false) AS confirmado,
               COALESCE(pj.pago, false) AS pago
          FROM participacao_jogos pj
@@ -392,16 +400,17 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
          ORDER BY u.nome ASC`,
       [id_jogo]
     );
-
     const ativos = participacaoResult.rows.filter((row) => row.status === 'ativo');
-    const espera = participacaoResult.rows.filter(
-      (row) => row.status === 'na_espera'
-    );
+    const espera = participacaoResult.rows.filter((row) => row.status === 'na_espera');
 
-    // Consulta os times balanceados
+    // Buscar times
     const timesResult = await db.query(
-      `SELECT t.id AS id_time, t.numero_time, t.id_usuario,
-              u.nome AS nome_jogador, t.total_score, t.total_altura
+      `SELECT t.id AS id_time,
+              t.numero_time,
+              t.id_usuario,
+              u.nome AS nome_jogador,
+              t.total_score,
+              t.total_altura
          FROM times t
          LEFT JOIN usuario u ON t.id_usuario = u.id_usuario
         WHERE t.id_jogo = $1
@@ -410,28 +419,10 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
     );
     const times = timesResult.rows;
 
-    // Log dos detalhes do jogo e times
     console.log('Detalhes do jogo:', jogo);
     console.log('Times balanceados:', times);
 
-    // Log do Retorno da API
-    console.log('Retorno da API:', {
-      id_jogo: jogo.id_jogo,
-      nome_jogo: jogo.nome_jogo,
-      data_jogo: jogo.data_jogo,
-      horario_inicio: jogo.horario_inicio,
-      horario_fim: jogo.horario_fim,
-      limite_jogadores: jogo.limite_jogadores,
-      descricao: jogo.descricao,
-      chave_pix: jogo.chave_pix,
-      status: jogo.status,
-      id_numerico: jogo.id_numerico,
-      isOrganizer: jogo.isOrganizer,
-      jogadoresAtivos: ativos,
-      jogadoresEspera: espera,
-      timesBalanceados: times
-    });
-
+    // Retorno final
     return res.status(200).json({
       id_jogo: jogo.id_jogo,
       nome_jogo: jogo.nome_jogo,
@@ -450,9 +441,10 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao buscar detalhes do jogo:', error.message);
-    return res
-      .status(500)
-      .json({ message: 'Erro interno ao buscar detalhes do jogo.', error: error.message });
+    return res.status(500).json({
+      message: 'Erro interno ao buscar detalhes do jogo.',
+      error: error.message
+    });
   }
 });
 

@@ -1,4 +1,5 @@
 // src/server.js
+
 const path = require('path');
 require('dotenv').config({
   path: path.join(__dirname, '..', '.env'),
@@ -98,8 +99,16 @@ app.use(
   require('./middlewares/roleMiddleware')(['jogador', 'organizador']),
   jogadorRoutes
 );
-app.use('/api/jogador/reservas', require('./middlewares/authMiddleware'), reservationRoutes);
-app.use('/api/jogos', require('./middlewares/authMiddleware'), jogosRoutes);
+app.use(
+  '/api/jogador/reservas',
+  require('./middlewares/authMiddleware'),
+  reservationRoutes
+);
+app.use(
+  '/api/jogos',
+  require('./middlewares/authMiddleware'),
+  jogosRoutes
+);
 
 // Exemplo de rota para owner
 app.use(
@@ -108,7 +117,11 @@ app.use(
   require('./middlewares/roleMiddleware')(['owner']),
   courtManagementRoutes
 );
-app.use('/api/owner/reservas', require('./middlewares/authMiddleware'), ownerReservationsRoutes);
+app.use(
+  '/api/owner/reservas',
+  require('./middlewares/authMiddleware'),
+  ownerReservationsRoutes
+);
 
 // Rotas de autenticação
 app.use('/api/auth', authRoutes);

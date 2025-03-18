@@ -1,10 +1,10 @@
 // src/routes/quadras/quadrasAdminRoutes.js
 
 const express = require('express');
-const pool = require('../../db'); // Importa a conexão com o banco
+const pool = require('../../db');
 const router = express.Router();
 
-// [POST] Rota para cadastrar uma nova quadra (Create)
+// [POST] Criar quadra (superadmin)
 router.post('/', async (req, res) => {
   const {
     id_empresa,
@@ -20,7 +20,7 @@ router.post('/', async (req, res) => {
 
   try {
     const result = await pool.query(
-      `INSERT INTO public.quadras
+      `INSERT INTO quadras
         (id_empresa, nome, preco_hora, promocao_ativa, descricao_promocao,
          rede_disponivel, bola_disponivel, observacoes, foto)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -40,29 +40,29 @@ router.post('/', async (req, res) => {
 
     res.status(201).json(result.rows[0]);
   } catch (error) {
-    console.error('Erro ao cadastrar a quadra:', error);
+    console.error('Erro ao cadastrar a quadra (superadmin):', error);
     res.status(500).json({ error: 'Erro ao cadastrar a quadra', details: error.message });
   }
 });
 
-// [GET] Rota para listar todas as quadras (Read)
+// [GET] Listar todas as quadras
 router.get('/', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM public.quadras');
+    const result = await pool.query('SELECT * FROM quadras');
     res.status(200).json(result.rows);
   } catch (error) {
-    console.error('Erro ao listar as quadras:', error);
-    res.status(500).json({ error: 'Erro ao listar as quadras', details: error.message });
+    console.error('Erro ao listar quadras (superadmin):', error);
+    res.status(500).json({ error: 'Erro ao listar quadras', details: error.message });
   }
 });
 
-// [GET] Rota para listar uma única quadra por ID (Read)
+// [GET] Quadra específica
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
 
   try {
     const result = await pool.query(
-      'SELECT * FROM public.quadras WHERE id_quadra = $1',
+      'SELECT * FROM quadras WHERE id_quadra = $1',
       [id]
     );
 
@@ -72,12 +72,12 @@ router.get('/:id', async (req, res) => {
 
     res.status(200).json(result.rows[0]);
   } catch (error) {
-    console.error('Erro ao buscar a quadra:', error);
-    res.status(500).json({ error: 'Erro ao buscar a quadra', details: error.message });
+    console.error('Erro ao buscar quadra:', error);
+    res.status(500).json({ error: 'Erro ao buscar quadra', details: error.message });
   }
 });
 
-// [PUT] Rota para atualizar uma quadra por ID (Update)
+// [PUT] Atualizar quadra
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
   const {
@@ -93,7 +93,7 @@ router.put('/:id', async (req, res) => {
 
   try {
     const result = await pool.query(
-      `UPDATE public.quadras
+      `UPDATE quadras
          SET nome = $1,
              preco_hora = $2,
              promocao_ativa = $3,
@@ -123,18 +123,18 @@ router.put('/:id', async (req, res) => {
 
     res.status(200).json(result.rows[0]);
   } catch (error) {
-    console.error('Erro ao atualizar a quadra:', error);
-    res.status(500).json({ error: 'Erro ao atualizar a quadra', details: error.message });
+    console.error('Erro ao atualizar quadra:', error);
+    res.status(500).json({ error: 'Erro ao atualizar quadra', details: error.message });
   }
 });
 
-// [DELETE] Rota para deletar uma quadra por ID (Delete)
+// [DELETE] Excluir quadra
 router.delete('/:id', async (req, res) => {
   const { id } = req.params;
 
   try {
     const result = await pool.query(
-      'DELETE FROM public.quadras WHERE id_quadra = $1 RETURNING *',
+      'DELETE FROM quadras WHERE id_quadra = $1 RETURNING *',
       [id]
     );
 
@@ -144,8 +144,8 @@ router.delete('/:id', async (req, res) => {
 
     res.status(200).json({ message: 'Quadra deletada com sucesso' });
   } catch (error) {
-    console.error('Erro ao deletar a quadra:', error);
-    res.status(500).json({ error: 'Erro ao deletar a quadra', details: error.message });
+    console.error('Erro ao deletar quadra:', error);
+    res.status(500).json({ error: 'Erro ao deletar quadra', details: error.message });
   }
 });
 

@@ -4,11 +4,10 @@ const express = require('express');
 const router = express.Router();
 const db = require('../../db');
 
-// [GET] /api/quadras -> Lista de TODAS as quadras (ou filtra por status, etc.)
+// [GET] /api/quadras -> Lista de TODAS as quadras
 router.get('/', async (req, res) => {
   try {
-    // Seleciona as colunas desejadas, incluindo os novos campos
-    const result = await db.query(`
+    const query = `
       SELECT q.id_quadra,
              q.id_empresa,
              q.nome,
@@ -20,12 +19,14 @@ router.get('/', async (req, res) => {
              q.observacoes,
              q.foto,
              e.nome AS nome_empresa
-        FROM public.quadras q
-   LEFT JOIN public.empresas e ON q.id_empresa = e.id_empresa
-    `);
+        FROM quadras q
+   LEFT JOIN empresas e ON q.id_empresa = e.id_empresa
+       ORDER BY q.id_quadra DESC
+    `;
+    const result = await db.query(query);
     return res.json(result.rows);
   } catch (error) {
-    console.error('Erro ao listar quadras (public):', error);
+    console.error('Erro ao listar quadras (públicas):', error);
     return res.status(500).json({ message: 'Erro ao listar quadras' });
   }
 });

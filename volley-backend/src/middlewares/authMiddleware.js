@@ -1,4 +1,5 @@
-// /middlewares/authMiddleware.js
+// src/middlewares/authMiddleware.js
+
 const jwt = require('jsonwebtoken');
 
 const authMiddleware = (req, res, next) => {
@@ -19,6 +20,7 @@ const authMiddleware = (req, res, next) => {
 
     console.log('[authMiddleware] Token decodificado:', decoded);
 
+    // Exemplo: "papel_usuario" ou "role" – depende de como gerou o token
     if (!decoded.id || !decoded.papel_usuario) {
       console.error('[authMiddleware] Campos obrigatórios ausentes no token.');
       return res
