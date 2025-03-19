@@ -5,14 +5,11 @@ const router = express.Router();
 const db = require('../../db');
 
 /**
- * [GET] Listar reservas pendentes do dono (similar ao /api/empresas/:id/reservas/pendentes),
- * mas filtra via ID da empresa do owner. Se seu BD relacionar "owner" -> "empresa",
- * precisa identificar a ID da empresa do user. Exemplo simples:
+ * [GET] Listar reservas pendentes do dono
+ * Exemplo simples sem filtrar a empresa.
  */
 router.get('/pendentes', async (req, res) => {
   try {
-    // Exemplo: se no token não salvamos id_empresa, é preciso descobrir qual a "empresa" do owner
-    // Por enquanto, listamos TUDO que estiver pendente (caso de teste).
     const query = `
       SELECT r.id_reserva,
              r.data_reserva,
@@ -35,7 +32,6 @@ router.get('/pendentes', async (req, res) => {
        ORDER BY r.data_reserva, r.horario_inicio
     `;
     const result = await db.query(query);
-
     return res.json(result.rows);
   } catch (error) {
     console.error('[ownerReservations] Erro ao listar pendentes:', error);
@@ -47,13 +43,11 @@ router.get('/pendentes', async (req, res) => {
 });
 
 /**
- * [PUT] Confirmar ou rejeitar uma reserva
+ * [PUT] Confirmar uma reserva
  */
 router.put('/:id_reserva/confirmar', async (req, res) => {
   try {
     const { id_reserva } = req.params;
-
-    // Se quiser verificar se a reserva pertence à empresa do owner, faça join e compare
     const result = await db.query(
       `UPDATE reservas
          SET status = 'confirmada'
@@ -79,10 +73,12 @@ router.put('/:id_reserva/confirmar', async (req, res) => {
   }
 });
 
+/**
+ * [PUT] Rejeitar uma reserva
+ */
 router.put('/:id_reserva/rejeitar', async (req, res) => {
   try {
     const { id_reserva } = req.params;
-
     const result = await db.query(
       `UPDATE reservas
          SET status = 'rejeitada'

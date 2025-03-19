@@ -19,24 +19,50 @@ router.post('/', async (req, res) => {
       id_jogo
     } = req.body;
 
-    // Caso precise de validações
+    // Validação básica
     if (!id_quadra || !id_usuario || !data_reserva || !horario_inicio || !horario_fim) {
       return res.status(400).json({ error: 'Campos obrigatórios ausentes.' });
     }
 
+    // (A) Checar conflito
+    const conflictCheck = await db.query(
+      `SELECT 1
+         FROM reservas
+        WHERE id_quadra = $1
+          AND data_reserva = $2
+          AND status NOT IN ('cancelada','rejeitada')
+          AND ( (horario_inicio < $4 AND horario_fim > $3) )`,
+      [id_quadra, data_reserva, horario_inicio, horario_fim]
+    );
+    if (conflictCheck.rowCount > 0) {
+      return res.status(400).json({ error: 'Horário indisponível para esta quadra.' });
+    }
+
+    // (B) Verificar duração (máx 12h, opcional)
+    const start = new Date(`${data_reserva}T${horario_inicio}`);
+    const end = new Date(`${data_reserva}T${horario_fim}`);
+    const diff = end - start;
+    if (diff <= 0) {
+      return res.status(400).json({ error: 'Horário de término deve ser após o horário de início.' });
+    }
+    if (diff > 12 * 60 * 60 * 1000) {
+      return res.status(400).json({ error: 'A duração máxima da reserva é 12 horas.' });
+    }
+
+    // (C) Inserir reserva
     const result = await db.query(
       `INSERT INTO reservas (
-        id_quadra,
-        id_usuario,
-        data_reserva,
-        horario_inicio,
-        horario_fim,
-        status,
-        quantidade_jogadores,
-        reservation_price,
-        id_jogo
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      RETURNING *`,
+         id_quadra,
+         id_usuario,
+         data_reserva,
+         horario_inicio,
+         horario_fim,
+         status,
+         quantidade_jogadores,
+         reservation_price,
+         id_jogo
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING *`,
       [
         id_quadra,
         id_usuario,
@@ -110,7 +136,6 @@ router.get('/disponibilidade/:id_quadra', async (req, res) => {
       return res.status(400).json({ error: 'Data é obrigatória para verificar disponibilidade.' });
     }
 
-    // Buscar reservas confirmadas ou pendentes (não-canceladas) nesse dia
     const result = await db.query(
       `SELECT horario_inicio, horario_fim
          FROM reservas
@@ -121,8 +146,7 @@ router.get('/disponibilidade/:id_quadra', async (req, res) => {
       [id_quadra, data]
     );
 
-    // Retorna apenas os intervalos ocupados. No front você cruza com as "janelas" de funcionamento
-    // ou gera a array de slots livres/ocupados.
+    // Retorna os intervalos ocupados. O front pode comparar com "horarios_config" da quadra
     return res.json(result.rows);
   } catch (error) {
     console.error('[reservationRoutes] Erro ao verificar disponibilidade:', error);

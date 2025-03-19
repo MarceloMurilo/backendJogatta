@@ -16,6 +16,7 @@ router.post('/', async (req, res) => {
     bola_disponivel,
     observacoes,
     foto
+    // se quiser, horarios_config etc.
   } = req.body;
 
   try {

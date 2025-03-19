@@ -1,14 +1,10 @@
 // src/routes/owner/courtManagementRoutes.js
+
 const express = require('express');
 const router = express.Router();
 const pool = require('../../db');
 
-/**
- * [POST] Criar nova quadra (apenas "owner" pode usar).
- *  Campos esperados:
- *    id_empresa, nome, preco_hora, promocao_ativa, descricao_promocao,
- *    rede_disponivel, bola_disponivel, observacoes, foto
- */
+// [POST] Criar nova quadra
 router.post('/', async (req, res) => {
   try {
     const {
@@ -21,9 +17,9 @@ router.post('/', async (req, res) => {
       bola_disponivel = false,
       observacoes,
       foto
+      // se quiser 'horarios_config', adicione aqui
     } = req.body;
 
-    // Exemplo de verificação:
     if (!id_empresa || !nome) {
       return res.status(400).json({
         message: 'id_empresa e nome são obrigatórios.'
@@ -59,14 +55,9 @@ router.post('/', async (req, res) => {
   }
 });
 
-/**
- * [GET] Lista quadras do owner, filtrando por ID da empresa dele, etc.
- *   - Se no seu fluxo cada "owner" só tem 1 empresa, possivelmente você
- *     pega req.user.id, verifica qual é a empresa dele, etc.
- */
+// [GET] Lista quadras
 router.get('/', async (req, res) => {
   try {
-    // Exemplificando sem filtro (lista tudo), mas idealmente filtra "owner" para retornar só as quadras da empresa dele
     const query = `
       SELECT q.*, e.nome AS nome_empresa
         FROM quadras q
@@ -74,7 +65,6 @@ router.get('/', async (req, res) => {
        ORDER BY q.id_quadra DESC
     `;
     const result = await pool.query(query);
-
     return res.json(result.rows);
   } catch (error) {
     console.error('[owner/courtManagement] Erro ao listar quadras:', error);
@@ -85,9 +75,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-/**
- * [PUT] Atualiza a quadra do owner
- */
+// [PUT] Atualizar quadra
 router.put('/:id_quadra', async (req, res) => {
   try {
     const { id_quadra } = req.params;
@@ -102,7 +90,6 @@ router.put('/:id_quadra', async (req, res) => {
       foto
     } = req.body;
 
-    // Exemplo simples
     const result = await pool.query(
       `UPDATE quadras
          SET nome = COALESCE($1, nome),
@@ -141,9 +128,7 @@ router.put('/:id_quadra', async (req, res) => {
   }
 });
 
-/**
- * [DELETE] Deleta a quadra
- */
+// [DELETE] Deleta a quadra
 router.delete('/:id_quadra', async (req, res) => {
   try {
     const { id_quadra } = req.params;
