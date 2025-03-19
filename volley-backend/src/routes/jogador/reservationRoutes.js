@@ -83,6 +83,31 @@ router.post('/', async (req, res) => {
   }
 });
 
+// NOVA ROTA: Buscar detalhes de uma reserva específica
+router.get('/:id_reserva', async (req, res) => {
+  try {
+    const { id_reserva } = req.params;
+
+    const result = await db.query(
+      `SELECT r.*, q.nome as nome_quadra, e.nome as nome_empresa
+         FROM reservas r
+         JOIN quadras q ON r.id_quadra = q.id_quadra
+         JOIN empresas e ON q.id_empresa = e.id_empresa
+        WHERE r.id_reserva = $1`,
+      [id_reserva]
+    );
+    
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Reserva não encontrada' });
+    }
+    
+    return res.json(result.rows[0]);
+  } catch (error) {
+    console.error('[reservationRoutes] Erro ao buscar reserva:', error);
+    res.status(500).json({ error: 'Erro ao buscar reserva' });
+  }
+});
+
 // Buscar reservas de uma quadra específica
 router.get('/quadra/:id_quadra', async (req, res) => {
   try {
@@ -103,11 +128,28 @@ router.get('/quadra/:id_quadra', async (req, res) => {
   }
 });
 
-// Atualizar status
+// Atualizar status - MODIFICADO
 router.put('/:id_reserva/status', async (req, res) => {
   try {
     const { id_reserva } = req.params;
-    const { status } = req.body;
+    const { status, id_jogo } = req.body; // Agora aceita id_jogo no corpo
+
+    // Log para debug
+    console.log(`[reservationRoutes] Atualizando status da reserva ${id_reserva} para ${status}. ID do jogo: ${id_jogo || 'não informado'}`);
+
+    // Se não veio id_jogo tenta buscá-lo
+    let jogoId = id_jogo;
+    if (!jogoId) {
+      const reservaCheck = await db.query(
+        `SELECT id_jogo FROM reservas WHERE id_reserva = $1`,
+        [id_reserva]
+      );
+      
+      if (reservaCheck.rowCount > 0 && reservaCheck.rows[0].id_jogo) {
+        jogoId = reservaCheck.rows[0].id_jogo;
+        console.log(`[reservationRoutes] ID do jogo encontrado na consulta: ${jogoId}`);
+      }
+    }
 
     const result = await db.query(
       `UPDATE reservas
@@ -116,9 +158,47 @@ router.put('/:id_reserva/status', async (req, res) => {
        RETURNING *`,
       [status, id_reserva]
     );
+    
     if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Reserva não encontrada' });
     }
+
+    // Após atualizar com sucesso, tenta registrar uma notificação para o usuário
+    try {
+      // Buscar informações do usuário que fez a reserva e o jogo relacionado
+      const reservaInfo = await db.query(
+        `SELECT r.id_usuario, r.id_jogo, j.nome_jogo
+           FROM reservas r
+           LEFT JOIN jogos j ON r.id_jogo = j.id_jogo
+          WHERE r.id_reserva = $1`,
+        [id_reserva]
+      );
+      
+      if (reservaInfo.rowCount > 0) {
+        const { id_usuario, id_jogo, nome_jogo } = reservaInfo.rows[0];
+        const jogoNome = nome_jogo || 'Reserva';
+        
+        // Registrar uma notificação no banco para o usuário
+        await db.query(
+          `INSERT INTO notificacoes (id_usuario, tipo, titulo, mensagem, status, data_criacao)
+           VALUES ($1, $2, $3, $4, 'não_lida', NOW())`,
+          [
+            id_usuario, 
+            status === 'aprovada' ? 'reserva_aprovada' : 'reserva_rejeitada',
+            `Atualização de Reserva: ${jogoNome}`,
+            status === 'aprovada' ? 
+              `Sua reserva para ${jogoNome} foi aprovada!` : 
+              `Sua reserva para ${jogoNome} foi rejeitada.`
+          ]
+        );
+        
+        console.log(`[reservationRoutes] Notificação enviada para usuário ${id_usuario} sobre reserva ${id_reserva}`);
+      }
+    } catch (notifError) {
+      // Se falhar ao criar a notificação, apenas loga o erro mas continua o fluxo
+      console.error('[reservationRoutes] Erro ao registrar notificação:', notifError);
+    }
+    
     return res.json(result.rows[0]);
   } catch (error) {
     console.error('[reservationRoutes] Erro ao atualizar status da reserva:', error);
@@ -151,6 +231,31 @@ router.get('/disponibilidade/:id_quadra', async (req, res) => {
   } catch (error) {
     console.error('[reservationRoutes] Erro ao verificar disponibilidade:', error);
     res.status(500).json({ error: 'Erro ao verificar disponibilidade' });
+  }
+});
+
+// NOVA ROTA: Obter status da reserva para um jogo específico
+router.get('/jogo/:id_jogo/status', async (req, res) => {
+  try {
+    const { id_jogo } = req.params;
+    
+    const result = await db.query(
+      `SELECT id_reserva, status, data_reserva, horario_inicio, horario_fim
+         FROM reservas
+        WHERE id_jogo = $1
+        ORDER BY id_reserva DESC
+        LIMIT 1`,
+      [id_jogo]
+    );
+    
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Nenhuma reserva encontrada para este jogo' });
+    }
+    
+    return res.json(result.rows[0]);
+  } catch (error) {
+    console.error('[reservationRoutes] Erro ao buscar status da reserva:', error);
+    res.status(500).json({ error: 'Erro ao buscar status da reserva' });
   }
 });
 

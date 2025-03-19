@@ -17,6 +17,34 @@ router.use((req, res, next) => {
 });
 
 /**
+ * GET /api/jogos/:id_jogo/reserva-status
+ * Retorna o status da reserva associada ao jogo
+ */
+router.get('/:id_jogo/reserva-status', async (req, res) => {
+  const { id_jogo } = req.params;
+
+  try {
+    const result = await db.query(
+      `SELECT status
+         FROM reservas
+         WHERE id_jogo = $1
+         ORDER BY id_reserva DESC
+         LIMIT 1`,
+      [id_jogo]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Reserva não encontrada para este jogo' });
+    }
+
+    return res.json({ status: result.rows[0].status });
+  } catch (error) {
+    console.error('Erro ao buscar status da reserva:', error);
+    return res.status(500).json({ error: 'Erro ao buscar status da reserva' });
+  }
+});
+
+/**
  * [POST] Criar um jogo.
  *  - Campos obrigatórios para o jogo: nome_jogo, limite_jogadores, id_usuario
  *  - Campos opcionais para criar reserva ao mesmo tempo:

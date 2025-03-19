@@ -38,6 +38,22 @@ const roleMiddleware = (allowedRoles, options = {}) => {
     console.log(`[roleMiddleware] Body da requisição: ${JSON.stringify(req.body)}`);
 
     try {
+      // MODIFICADO: Exceção para superadmin
+      if (req.user?.papel_usuario === 'superadmin') {
+        console.log('[roleMiddleware] Usuário é superadmin. Acesso permitido automaticamente.');
+        return next();
+      }
+      
+      // NOVA VERIFICAÇÃO: Caso especial para rotas de reserva
+      if (req.path.includes('/reservas/') && req.path.includes('/status')) {
+        console.log('[roleMiddleware] Rota de gerenciamento de reserva detectada');
+        
+        if (['empresa', 'dono_quadra', 'admin'].includes(req.user?.papel_usuario)) {
+          console.log(`[roleMiddleware] Usuário é ${req.user.papel_usuario}. Permitindo acesso à rota de reserva.`);
+          return next();
+        }
+      }
+
       // Determina o fluxo ('online' ou 'offline')
       const fluxo = determinarFluxo(req);
       console.log('[roleMiddleware] Fluxo determinado:', fluxo);
@@ -112,7 +128,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
         return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
       }
 
-      // 5) Agora, valida se o user tem alguma função no jogo (seu snippet), se for “online”.
+      // 5) Agora, valida se o user tem alguma função no jogo (seu snippet), se for "online".
       const { id } = req.user;
       console.log(`[roleMiddleware] Checando função do user (ID: ${id}) no jogo (ID: ${id_jogo}).`);
 
