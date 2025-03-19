@@ -18,7 +18,7 @@ router.get('/:id_empresa/reservas', async (req, res) => {
   try {
     console.log('Executando consulta SQL: ', `
       SELECT r.id_reserva, r.id_jogo, r.data_reserva, r.horario_inicio, r.horario_fim, r.status,
-             r.descricao, j.id_usuario, u.nome AS organizador, j.limite_jogadores as quantidade_jogadores
+             j.descricao, j.id_usuario, u.nome AS organizador, j.limite_jogadores as quantidade_jogadores, j.nome_jogo
         FROM reservas r
         JOIN jogos j ON r.id_jogo = j.id_jogo
         JOIN usuario u ON j.id_usuario = u.id_usuario
@@ -29,7 +29,7 @@ router.get('/:id_empresa/reservas', async (req, res) => {
     
     const query = `
       SELECT r.id_reserva, r.id_jogo, r.data_reserva, r.horario_inicio, r.horario_fim, r.status,
-             r.descricao, j.id_usuario, u.nome AS organizador, j.limite_jogadores as quantidade_jogadores
+             j.descricao, j.id_usuario, u.nome AS organizador, j.limite_jogadores as quantidade_jogadores, j.nome_jogo
         FROM reservas r
         JOIN jogos j ON r.id_jogo = j.id_jogo
         JOIN usuario u ON j.id_usuario = u.id_usuario
