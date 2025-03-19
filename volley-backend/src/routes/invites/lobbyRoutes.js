@@ -151,8 +151,6 @@ router.post('/entrar', async (req, res) => {
     let status_jogo;
 
     if (convite_uuid || id_numerico) {
-      // Se for convite_uuid, busca na tabela convites + status = 'aberto'
-      // Se for id_numerico, busca diretamente no jogos + status
       const query = convite_uuid
         ? `
           SELECT c.id_jogo, j.status AS status_jogo,
@@ -170,7 +168,6 @@ router.post('/entrar', async (req, res) => {
              AND status IN ('aberto', 'balanceando times')
            LIMIT 1
         `;
-
       const param = convite_uuid || id_numerico;
       const jogoQuery = await client.query(query, [param]);
 
@@ -184,7 +181,6 @@ router.post('/entrar', async (req, res) => {
       }
 
       if (convite_uuid) {
-        // Se o convite for para um jogador específico:
         const { id_usuario_convidado } = jogoQuery.rows[0];
         if (
           id_usuario_convidado &&
@@ -201,7 +197,6 @@ router.post('/entrar', async (req, res) => {
       status_jogo = jogoQuery.rows[0].status_jogo;
     }
 
-    // Verificar limite de jogadores ativos
     const ativosCountQuery = await client.query(
       'SELECT COUNT(*) AS total_ativos FROM participacao_jogos WHERE id_jogo = $1 AND status = $2',
       [id_jogo, 'ativo']
@@ -215,7 +210,6 @@ router.post('/entrar', async (req, res) => {
     const limiteJogadores = jogoQueryDetalhes.rows[0]?.limite_jogadores || 0;
 
     if (numJogadoresAtivos >= limiteJogadores) {
-      // Verificar se já está na fila
       const usuarioFilaQuery = await client.query(
         'SELECT 1 FROM fila_jogos WHERE id_jogo = $1 AND id_usuario = $2',
         [id_jogo, id_usuario]
@@ -226,7 +220,6 @@ router.post('/entrar', async (req, res) => {
         return res.status(200).json({ message: 'Jogador já está na lista de espera.' });
       }
 
-      // Adicionar à fila
       const posicaoQuery = await client.query(
         'SELECT COUNT(*) + 1 AS posicao FROM fila_jogos WHERE id_jogo = $1',
         [id_jogo]
@@ -243,7 +236,6 @@ router.post('/entrar', async (req, res) => {
       return res.status(200).json({ message: 'Jogador adicionado à lista de espera.' });
     }
 
-    // Se couber no time, adiciona como participante ativo
     await client.query(
       `INSERT INTO participacao_jogos (id_jogo, id_usuario, status, confirmado, pago)
        VALUES ($1, $2, 'ativo', FALSE, FALSE)
@@ -275,11 +267,10 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
   }
 
   try {
-    // 1) Busca jogadores “ativos” ou “na_espera” em participacao_jogos
     const jogadoresParticipacao = await db.query(`
       SELECT pj.id_usuario, u.nome, pj.status,
              COALESCE(pj.confirmado, false) AS confirmado,
-             COALESCE(pj.pago, false)       AS pago
+             COALESCE(pj.pago, false) AS pago
         FROM participacao_jogos pj
         JOIN usuario u ON pj.id_usuario = u.id_usuario
        WHERE pj.id_jogo = $1
@@ -287,19 +278,17 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
        ORDER BY u.nome ASC
     `, [id_jogo]);
 
-    // 2) Busca quem está na fila_jogos
     const jogadoresFila = await db.query(`
       SELECT f.id_usuario, u.nome,
              'na_espera' AS status,
-             false       AS confirmado,
-             false       AS pago
+             false AS confirmado,
+             false AS pago
         FROM fila_jogos f
         JOIN usuario u ON f.id_usuario = u.id_usuario
        WHERE f.id_jogo = $1
        ORDER BY u.nome ASC
     `, [id_jogo]);
 
-    // 3) Combina tudo num array só
     const todosJogadores = [
       ...jogadoresParticipacao.rows,
       ...jogadoresFila.rows
@@ -471,7 +460,6 @@ router.post('/remover', async (req, res) => {
 
     await client.query('BEGIN');
 
-    // Verificar se o usuário que está tentando remover é o organizador
     const organizadorQuery = await client.query(
       'SELECT id_usuario FROM jogos WHERE id_jogo = $1',
       [id_jogo]
@@ -484,12 +472,9 @@ router.post('/remover', async (req, res) => {
     const organizador_id = parseInt(organizadorQuery.rows[0].id_usuario, 10);
     if (organizador_id !== parseInt(id_usuario_organizador, 10)) {
       await client.query('ROLLBACK');
-      return res
-        .status(403)
-        .json({ error: 'Somente o organizador pode remover usuários.' });
+      return res.status(403).json({ error: 'Somente o organizador pode remover usuários.' });
     }
 
-    // Atualizar o status do usuário para 'removido'
     await client.query(
       `UPDATE participacao_jogos
           SET status = 'removido'
@@ -498,7 +483,6 @@ router.post('/remover', async (req, res) => {
       [id_jogo, id_usuario_remover]
     );
 
-    // Verificar se há alguém na fila para promover
     const filaQuery = await client.query(
       `SELECT id_usuario
          FROM fila_jogos
@@ -570,7 +554,6 @@ router.post('/toggle-status', async (req, res) => {
       });
     }
 
-    // Verificar se o usuário que está tentando alterar o status é o organizador
     const jogoQuery = await db.query(
       `SELECT id_usuario, status
          FROM jogos
@@ -585,12 +568,9 @@ router.post('/toggle-status', async (req, res) => {
 
     const { id_usuario: organizador_id, status } = jogoQuery.rows[0];
     if (parseInt(organizador_id, 10) !== parseInt(id_usuario_organizador, 10)) {
-      return res
-        .status(403)
-        .json({ error: 'Somente o organizador pode alterar o status.' });
+      return res.status(403).json({ error: 'Somente o organizador pode alterar o status.' });
     }
 
-    // Alternar o status
     const novoStatus = status === 'aberto' ? 'finalizado' : 'aberto';
 
     await db.query(
@@ -600,7 +580,6 @@ router.post('/toggle-status', async (req, res) => {
       [novoStatus, id_jogo]
     );
 
-    // Se a sala for finalizada, atualizar convites para 'expirado'
     if (novoStatus === 'finalizado') {
       await db.query(
         `UPDATE convites
@@ -633,7 +612,6 @@ router.post('/fechar-sala', async (req, res) => {
   }
 
   try {
-    // Verificar se o usuário é organizador
     const organizadorQuery = await db.query(
       'SELECT id_usuario FROM jogos WHERE id_jogo = $1',
       [id_jogo]
@@ -644,13 +622,10 @@ router.post('/fechar-sala', async (req, res) => {
     }
 
     const organizador_id = organizadorQuery.rows[0].id_usuario;
-    if (parseInt(organizador_id) !== parseInt(id_usuario_organizador)) {
-      return res
-        .status(403)
-        .json({ error: 'Apenas o organizador pode encerrar a sala.' });
+    if (parseInt(organizador_id, 10) !== parseInt(id_usuario_organizador, 10)) {
+      return res.status(403).json({ error: 'Apenas o organizador pode encerrar a sala.' });
     }
 
-    // Atualizar o status do jogo para 'finalizado'
     await db.query(
       'UPDATE jogos SET status = $1 WHERE id_jogo = $2',
       ['finalizado', id_jogo]
@@ -675,7 +650,6 @@ router.post('/estender-tempo', async (req, res) => {
   }
 
   try {
-    // Verificar se o usuário é organizador
     const organizadorQuery = await db.query(
       'SELECT id_usuario FROM jogos WHERE id_jogo = $1',
       [id_jogo]
@@ -686,13 +660,10 @@ router.post('/estender-tempo', async (req, res) => {
     }
 
     const organizador_id = organizadorQuery.rows[0].id_usuario;
-    if (parseInt(organizador_id) !== parseInt(id_usuario_organizador)) {
-      return res
-        .status(403)
-        .json({ error: 'Apenas o organizador pode estender o tempo.' });
+    if (parseInt(organizador_id, 10) !== parseInt(id_usuario_organizador, 10)) {
+      return res.status(403).json({ error: 'Apenas o organizador pode estender o tempo.' });
     }
 
-    // Validar novo término
     const terminoAtualQuery = await db.query(
       'SELECT horario_fim FROM jogos WHERE id_jogo = $1',
       [id_jogo]
@@ -707,25 +678,18 @@ router.post('/estender-tempo', async (req, res) => {
     const terminoAtualDate = new Date(terminoAtual);
 
     if (novoTerminodata <= terminoAtualDate) {
-      return res
-        .status(400)
-        .json({ error: 'O novo término deve ser maior que o término atual.' });
+      return res.status(400).json({ error: 'O novo término deve ser maior que o término atual.' });
     }
 
-    // Atualizar o horário de término
     await db.query(
       'UPDATE jogos SET horario_fim = $1 WHERE id_jogo = $2',
       [novo_termino, id_jogo]
     );
 
-    return res
-      .status(200)
-      .json({ message: 'Tempo da sala estendido com sucesso.' });
+    return res.status(200).json({ message: 'Tempo da sala estendido com sucesso.' });
   } catch (error) {
     console.error('Erro ao estender o tempo da sala:', error.message);
-    return res
-      .status(500)
-      .json({ error: 'Erro ao processar sua solicitação.' });
+    return res.status(500).json({ error: 'Erro ao processar sua solicitação.' });
   }
 });
 
@@ -737,20 +701,22 @@ router.get('/me', async (req, res) => {
   const id_usuario = req.user.id;
 
   try {
+    // Alteramos a query para utilizar os dados da tabela reservas
     const salasQuery = await db.query(
       `SELECT j.id_jogo,
               j.nome_jogo AS nome_jogo,
-              to_char(j.data_jogo, 'YYYY-MM-DD') AS data_jogo,
-              to_char(j.horario_inicio, 'HH24:MI:SS') AS horario_inicio,
-              to_char(j.horario_fim, 'HH24:MI:SS') AS horario_fim,
+              to_char(r.data_reserva, 'YYYY-MM-DD') AS data_jogo,
+              to_char(r.horario_inicio, 'HH24:MI:SS') AS horario_inicio,
+              to_char(r.horario_fim, 'HH24:MI:SS') AS horario_fim,
               j.status,
               p.status AS participacao_status
          FROM participacao_jogos p
          JOIN jogos j ON p.id_jogo = j.id_jogo
+         JOIN reservas r ON j.id_jogo = r.id_jogo
         WHERE p.id_usuario = $1
           AND p.status = 'ativo'
           AND j.status IN ('aberto', 'balanceando times', 'finalizado')
-        ORDER BY j.data_jogo, j.horario_inicio;`,
+        ORDER BY r.data_reserva, r.horario_inicio;`,
       [id_usuario]
     );
 
@@ -770,7 +736,6 @@ router.get('/invite/:uuid', async (req, res) => {
   const { uuid } = req.params;
 
   try {
-    // Busca o convite no banco
     const conviteQuery = await db.query(
       `SELECT c.id_jogo, j.nome_jogo, u.nome AS organizador, c.status
          FROM convites c
@@ -786,7 +751,6 @@ router.get('/invite/:uuid', async (req, res) => {
 
     const convite = conviteQuery.rows[0];
 
-    // Retorna um HTML simples para teste
     return res.send(`
       <html>
         <head>
@@ -822,13 +786,12 @@ router.get('/invite/:uuid', async (req, res) => {
 router.post('/notificar-na-confirmados', async (req, res) => {
   try {
     const { id_jogo } = req.body;
-    const id_organizador = req.user.id; // Para verificar se é organizador
+    const id_organizador = req.user.id;
 
     if (!id_jogo) {
       return res.status(400).json({ error: 'id_jogo é obrigatório.' });
     }
 
-    // Verificar se req.user.id é organizador
     const organizadorQuery = await db.query(
       'SELECT id_usuario FROM jogos WHERE id_jogo = $1',
       [id_jogo]
@@ -843,7 +806,6 @@ router.post('/notificar-na-confirmados', async (req, res) => {
       });
     }
 
-    // Buscar jogadores ativos que não confirmaram
     const naoConfirmados = await db.query(`
       SELECT pj.id_usuario, u.nome, u.device_token
         FROM participacao_jogos pj
@@ -860,12 +822,9 @@ router.post('/notificar-na-confirmados', async (req, res) => {
       });
     }
 
-    // Exemplo de loop para enviar push
     for (const row of naoConfirmados.rows) {
       const { device_token, nome } = row;
       if (device_token) {
-        // Aqui você chamaria sua função de envio push, ex.:
-        // await enviarPush(device_token, 'Jogatta', `Ei ${nome}, confirme sua presença!`);
         console.log(`[NOTIF] Enviando notificação para token: ${device_token} (Jogador: ${nome})`);
       }
     }
