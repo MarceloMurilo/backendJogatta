@@ -1,5 +1,3 @@
-// src/server.js
-
 const path = require('path');
 require('dotenv').config({
   path: path.join(__dirname, '..', '.env'),
@@ -73,14 +71,15 @@ const balanceamentoRoutes = require('./routes/jogador/balanceamentoRoutes');
 const temporariosRoutes = require('./routes/jogador/temporariosRoutes');
 const pdfRoutes = require('./routes/pdfRoutes');
 
-// (1) Import do arquivo de rotas para quadras de superadmin
+// (1) Rotas para quadras de superadmin
 const quadrasAdminRoutes = require('./routes/quadras/quadrasAdminRoutes');
-
-// (2) Import do arquivo de rotas públicas de quadras
+// (2) Rotas públicas de quadras
 const quadrasPublicRoutes = require('./routes/quadras/quadrasPublicRoutes');
-
-// (3) Import do arquivo principal de rotas de quadras
+// (3) Rotas principais de quadras
 const quadrasRoutes = require('./routes/quadrasRoutes');
+
+// NOVA ROTA: Reservas por empresa
+const empresasReservasRoutes = require('./routes/empresasReservasRoutes');
 
 // Se não existir diretório pdf, cria
 if (!fs.existsSync(path.join(__dirname, 'pdf'))) {
@@ -91,8 +90,6 @@ if (!fs.existsSync(path.join(__dirname, 'pdf'))) {
 // ------------------------------------------------
 // Registro de rotas
 // ------------------------------------------------
-
-// Exemplo de rota para jogador e organizador
 app.use(
   '/api/jogador',
   require('./middlewares/authMiddleware'),
@@ -109,8 +106,6 @@ app.use(
   require('./middlewares/authMiddleware'),
   jogosRoutes
 );
-
-// Exemplo de rota para owner
 app.use(
   '/api/owner/quadras',
   require('./middlewares/authMiddleware'),
@@ -122,17 +117,9 @@ app.use(
   require('./middlewares/authMiddleware'),
   ownerReservationsRoutes
 );
-
-// Rotas de autenticação
 app.use('/api/auth', authRoutes);
-
-// Rotas gerais
 app.use('/api/usuario', userRoutes);
-
-// (3) Rotas de empresas (estilo iFood), sem exigir login (pode exigir se quiser)
 app.use('/api/empresas', empresasRoutes);
-
-// Convites, avaliações, etc.
 app.use('/api/convites', require('./middlewares/authMiddleware'), convitesRoutes);
 app.use('/api/convites/usuario', require('./middlewares/authMiddleware'), convitesUserRoutes);
 app.use('/api/avaliacoes', require('./middlewares/authMiddleware'), avaliacoesRoutes);
@@ -144,20 +131,17 @@ app.use('/api/balanceamento', balanceamentoRoutes);
 app.use('/api/chat', require('./middlewares/authMiddleware'), chatRoutes);
 app.use('/api/temporarios', temporariosRoutes);
 app.use('/api/pdf', pdfRoutes);
-
-// (4) Rota de quadras para superadmin
 app.use(
   '/api/superadmin/quadras',
   require('./middlewares/authMiddleware'),
   require('./middlewares/roleMiddleware')(['superadmin']),
   quadrasAdminRoutes
 );
-
-// (5) Rota de quadras públicas (qualquer usuário pode ver)
 app.use('/api/quadras', quadrasPublicRoutes);
-
-// (6) Rota principal de quadras
 app.use('/api/quadras', quadrasRoutes);
+
+// NOVA ROTA: Reservas por empresa
+app.use('/api/empresas/reservas', empresasReservasRoutes);
 
 // ------------------------------------------------
 // CRON 1: Encerrar jogos cujo horário_fim < NOW()
@@ -186,7 +170,6 @@ cron.schedule('* * * * *', async () => {
   try {
     const agora = new Date();
 
-    // Buscar jogos com habilitar_notificacao = true, status 'aberto', e notificado_automatico = false
     const jogos = await db.query(`
       SELECT id_jogo, nome_jogo, data_jogo, horario_inicio,
              tempo_notificacao, notificado_automatico
@@ -200,41 +183,30 @@ cron.schedule('* * * * *', async () => {
       const { id_jogo, nome_jogo, data_jogo, horario_inicio, tempo_notificacao } = row;
       const jogoDate = new Date(`${data_jogo}T${horario_inicio}`);
       const diffMs = jogoDate - agora;
-      const diffMin = diffMs / 1000 / 60; // diferença em minutos
+      const diffMin = diffMs / 1000 / 60;
 
-      // Se faltar <= tempo_notificacao minutos (mas ainda > 0) -> dispara notificação
       if (diffMin <= tempo_notificacao && diffMin > 0) {
-        // Buscar jogadores não confirmados
-        const naoConfirmados = await db.query(
-          `
+        const naoConfirmados = await db.query(`
           SELECT pj.id_usuario, u.device_token
             FROM participacao_jogos pj
             JOIN usuario u ON pj.id_usuario = u.id_usuario
            WHERE pj.id_jogo = $1
              AND pj.status = 'ativo'
              AND pj.confirmado = false
-        `,
-          [id_jogo]
-        );
+        `, [id_jogo]);
 
         for (const row2 of naoConfirmados.rows) {
           const { device_token } = row2;
           if (device_token) {
-            // Exemplo de envio push:
-            // await enviarPush(device_token, 'Jogatta', `Faltam ~${Math.round(diffMin)}min para o jogo ${nome_jogo}!`);
             console.log(`[NOTIF] Enviando push para token ${device_token} - Jogo: ${nome_jogo}`);
           }
         }
 
-        // Marcar como notificado_automatico = true
-        await db.query(
-          `
+        await db.query(`
           UPDATE jogos
              SET notificado_automatico = true
            WHERE id_jogo = $1
-        `,
-          [id_jogo]
-        );
+        `, [id_jogo]);
 
         console.log(`Notificação automática enviada para jogo ID: ${id_jogo}`);
       }
