@@ -18,18 +18,22 @@ router.use((req, res, next) => {
 
 /**
  * GET /api/jogos/:id_jogo/reserva-status
- * Retorna o status da reserva associada ao jogo
+ * Retorna o status da reserva associada ao jogo e detalhes adicionais
  */
 router.get('/:id_jogo/reserva-status', async (req, res) => {
   const { id_jogo } = req.params;
 
   try {
+    // Buscamos mais informações além do status para dar feedback completo ao usuário
     const result = await db.query(
-      `SELECT status
-         FROM reservas
-         WHERE id_jogo = $1
-         ORDER BY id_reserva DESC
-         LIMIT 1`,
+      `SELECT r.id_reserva, r.status, r.data_reserva, r.horario_inicio, r.horario_fim, 
+              q.nome AS nome_quadra, e.nome AS nome_empresa, e.id_empresa, q.id_quadra
+       FROM reservas r
+       LEFT JOIN quadras q ON r.id_quadra = q.id_quadra
+       LEFT JOIN empresas e ON q.id_empresa = e.id_empresa
+       WHERE r.id_jogo = $1
+       ORDER BY r.id_reserva DESC
+       LIMIT 1`,
       [id_jogo]
     );
 
@@ -37,7 +41,8 @@ router.get('/:id_jogo/reserva-status', async (req, res) => {
       return res.status(404).json({ message: 'Reserva não encontrada para este jogo' });
     }
 
-    return res.json({ status: result.rows[0].status });
+    // Retornamos o objeto completo com todas as informações da reserva
+    return res.json(result.rows[0]);
   } catch (error) {
     console.error('Erro ao buscar status da reserva:', error);
     return res.status(500).json({ error: 'Erro ao buscar status da reserva' });
@@ -128,6 +133,7 @@ router.post('/criar', authMiddleware, async (req, res) => {
     }
 
     // 3) Se vieram campos para criar reserva, faz a checagem de conflito e insere na tabela `reservas`
+    let idReserva = null;
     if (id_empresa && id_quadra && data_reserva && reserva_hora_inicio && reserva_hora_fim) {
       // (A) Checar se o horário está livre
       const conflictCheck = await client.query(
@@ -155,26 +161,35 @@ router.post('/criar', authMiddleware, async (req, res) => {
       }
 
       // (C) Inserir na tabela `reservas`
-      await client.query(
+      const reservaResult = await client.query(
         `INSERT INTO reservas (
            id_jogo,
+           id_usuario,
            id_empresa,
            id_quadra,
            data_reserva,
            horario_inicio,
            horario_fim,
-           status
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+           status,
+           quantidade_jogadores
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING id_reserva`,
         [
           newIdJogo,
+          id_usuario,
           id_empresa,
           id_quadra,
           data_reserva,
           reserva_hora_inicio,
           reserva_hora_fim,
-          status_reserva || 'pendente'
+          status_reserva || 'pendente',
+          limite_jogadores
         ]
       );
+      
+      if (reservaResult.rows.length > 0) {
+        idReserva = reservaResult.rows[0].id_reserva;
+      }
     }
 
     // 4) Inserir convite inicial na tabela `convites`
@@ -217,7 +232,8 @@ router.post('/criar', authMiddleware, async (req, res) => {
     return res.status(201).json({
       message: 'Jogo criado com sucesso.',
       id_jogo: newIdJogo,
-      id_numerico: idNumerico
+      id_numerico: idNumerico,
+      id_reserva: idReserva
     });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -241,9 +257,40 @@ router.get('/:id_jogo/times', authMiddleware, async (req, res) => {
   // ... permanece igual ...
 });
 
-// Rota para detalhes do jogo
-// -> Removemos a leitura de data_jogo, horario_inicio, horario_fim de "jogos",
-//    pois essas colunas não existem mais. O resto permanece.
+/**
+ * GET /api/jogos/:id_jogo/reserva
+ * Retorna todos os detalhes da reserva associada ao jogo
+ */
+router.get('/:id_jogo/reserva', authMiddleware, async (req, res) => {
+  const { id_jogo } = req.params;
+
+  try {
+    // Buscamos todas as informações da reserva incluindo dados da quadra e empresa
+    const result = await db.query(
+      `SELECT r.*, 
+              q.nome AS nome_quadra, q.preco_hora, q.capacidade,
+              e.nome AS nome_empresa, e.endereco, e.telefone, e.email
+       FROM reservas r
+       LEFT JOIN quadras q ON r.id_quadra = q.id_quadra
+       LEFT JOIN empresas e ON q.id_empresa = e.id_empresa
+       WHERE r.id_jogo = $1
+       ORDER BY r.id_reserva DESC
+       LIMIT 1`,
+      [id_jogo]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Reserva não encontrada para este jogo' });
+    }
+
+    return res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Erro ao buscar detalhes da reserva:', error);
+    return res.status(500).json({ error: 'Erro ao buscar detalhes da reserva' });
+  }
+});
+
+// Rota para detalhes do jogo - ATUALIZADA para incluir dados da reserva
 router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
   const { id_jogo } = req.params;
 
@@ -252,7 +299,7 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
   }
 
   try {
-    // Note que removemos j.data_jogo, j.horario_inicio, j.horario_fim
+    // Buscar informações do jogo
     const jogoResult = await db.query(
       `SELECT j.id_jogo,
               j.nome_jogo,
@@ -273,6 +320,29 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
     }
 
     const jogo = jogoResult.rows[0];
+
+    // Buscar informações da reserva associada (se existir)
+    const reservaResult = await db.query(
+      `SELECT r.id_reserva, r.status, r.data_reserva, r.horario_inicio, r.horario_fim,
+              q.nome AS nome_quadra, e.nome AS nome_empresa, e.endereco AS local
+       FROM reservas r
+       LEFT JOIN quadras q ON r.id_quadra = q.id_quadra
+       LEFT JOIN empresas e ON q.id_empresa = e.id_empresa
+       WHERE r.id_jogo = $1
+       ORDER BY r.id_reserva DESC
+       LIMIT 1`,
+      [id_jogo]
+    );
+
+    // Extrair dados da reserva se encontrada
+    const reserva = reservaResult.rows.length > 0 ? reservaResult.rows[0] : null;
+    const data_jogo = reserva ? reserva.data_reserva : null;
+    const horario_inicio = reserva ? reserva.horario_inicio : null;
+    const horario_fim = reserva ? reserva.horario_fim : null;
+    const local = reserva ? reserva.local : null;
+    const nome_quadra = reserva ? reserva.nome_quadra : null;
+    const nome_empresa = reserva ? reserva.nome_empresa : null;
+    const status_reserva = reserva ? reserva.status : null;
 
     // Buscar jogadores
     const participacaoResult = await db.query(
@@ -315,6 +385,15 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
       status: jogo.status,
       id_numerico: jogo.id_numerico,
       isOrganizer: jogo.isOrganizer,
+      // Dados da reserva
+      data_jogo,
+      horario_inicio,
+      horario_fim,
+      local,
+      nome_quadra,
+      nome_empresa,
+      status_reserva,
+      // Jogadores e times
       jogadoresAtivos: ativos,
       jogadoresEspera: espera,
       timesBalanceados: times
@@ -325,6 +404,94 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
       message: 'Erro interno ao buscar detalhes do jogo.',
       error: error.message
     });
+  }
+});
+
+/**
+ * POST /api/jogos/:id_jogo/cancelar
+ * Cancela um jogo e sua reserva associada
+ */
+router.post('/:id_jogo/cancelar', authMiddleware, async (req, res) => {
+  const { id_jogo } = req.params;
+  const userId = req.user.id;
+
+  if (!id_jogo) {
+    return res.status(400).json({ message: 'ID do jogo é obrigatório.' });
+  }
+
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+
+    // Verificar se o usuário é o organizador do jogo
+    const jogoResult = await client.query(
+      `SELECT id_usuario
+       FROM jogos
+       WHERE id_jogo = $1`,
+      [id_jogo]
+    );
+
+    if (jogoResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Jogo não encontrado.' });
+    }
+
+    const jogoOrganizadorId = jogoResult.rows[0].id_usuario;
+
+    // Verificar se o usuário atual é o organizador do jogo
+    if (jogoOrganizadorId !== userId && req.user.papel_usuario !== 'superadmin') {
+      return res.status(403).json({ message: 'Apenas o organizador pode cancelar o jogo.' });
+    }
+
+    // Atualizar status do jogo para 'cancelado'
+    await client.query(
+      `UPDATE jogos
+       SET status = 'cancelado'
+       WHERE id_jogo = $1`,
+      [id_jogo]
+    );
+
+    // Cancelar a reserva associada (se existir)
+    await client.query(
+      `UPDATE reservas
+       SET status = 'cancelada'
+       WHERE id_jogo = $1`,
+      [id_jogo]
+    );
+
+    // Enviar notificações aos jogadores (opcional)
+    const jogadoresResult = await client.query(
+      `SELECT u.id_usuario, u.nome
+       FROM participacao_jogos pj
+       JOIN usuario u ON pj.id_usuario = u.id_usuario
+       WHERE pj.id_jogo = $1 AND pj.id_usuario != $2`,
+      [id_jogo, userId]
+    );
+
+    // Registrar notificações para todos os jogadores
+    const jogadores = jogadoresResult.rows;
+    for (const jogador of jogadores) {
+      await client.query(
+        `INSERT INTO notificacoes (id_usuario, tipo, titulo, mensagem, status, data_criacao)
+         VALUES ($1, 'jogo_cancelado', 'Jogo Cancelado', 'O jogo que você participava foi cancelado pelo organizador.', 'não_lida', NOW())`,
+        [jogador.id_usuario]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    return res.status(200).json({ 
+      message: 'Jogo e reserva cancelados com sucesso.',
+      notificacoes_enviadas: jogadores.length
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Erro ao cancelar jogo:', error.message);
+    return res.status(500).json({
+      message: 'Erro interno ao cancelar o jogo.',
+      error: error.message
+    });
+  } finally {
+    client.release();
   }
 });
 
