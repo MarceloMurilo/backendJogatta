@@ -1,5 +1,3 @@
-// src/routes/empresasRoutes.js
-
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
@@ -8,16 +6,13 @@ const pool = require('../db');
 router.post('/', async (req, res) => {
   try {
     const { nome, localizacao, contato } = req.body;
-    // Se a coluna na tabela é "endereco", atribuímos localizacao a endereco.
     const endereco = localizacao;
-
     const result = await pool.query(
       `INSERT INTO public.empresas (nome, endereco, contato)
        VALUES ($1, $2, $3)
        RETURNING *`,
       [nome, endereco, contato]
     );
-
     return res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Erro ao criar empresa:', error);
@@ -32,7 +27,6 @@ router.post('/', async (req, res) => {
 // Se passar ?includeQuadras=true, retorna cada empresa com um array "quadras".
 router.get('/', async (req, res) => {
   try {
-    // Buscar empresas com informações básicas de quadras
     const result = await pool.query(`
       SELECT e.*,
              COALESCE(json_agg(
@@ -53,7 +47,6 @@ router.get('/', async (req, res) => {
        GROUP BY e.id_empresa
        ORDER BY e.nome
     `);
-
     return res.json(result.rows.map(empresa => ({
       ...empresa,
       quadras: empresa.quadras === '[]' ? [] : empresa.quadras
@@ -65,12 +58,10 @@ router.get('/', async (req, res) => {
 });
 
 // [GET] /api/empresas/:id
-// Retorna uma empresa (se existir) e suas quadras no campo "quadras"
+// Retorna uma empresa e suas quadras
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-
-    // Buscar a empresa pelo ID
     const empRes = await pool.query(
       'SELECT * FROM public.empresas WHERE id_empresa = $1',
       [id]
@@ -79,8 +70,6 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Empresa não encontrada' });
     }
     const empresa = empRes.rows[0];
-
-    // Buscar as quadras associadas à empresa – usando SELECT com as colunas desejadas
     const quadRes = await pool.query(`
       SELECT id_quadra,
              id_empresa,
@@ -96,7 +85,6 @@ router.get('/:id', async (req, res) => {
        WHERE id_empresa = $1
     `, [id]);
     empresa.quadras = quadRes.rows;
-
     return res.json(empresa);
   } catch (error) {
     console.error('Erro ao buscar empresa e quadras:', error);
@@ -108,52 +96,41 @@ router.get('/:id', async (req, res) => {
 router.get('/:id/quadras', async (req, res) => {
   try {
     const { id } = req.params;
-
-    // Validar se o ID é um número válido
     if (!id || isNaN(id)) {
       return res.status(400).json({ 
         message: 'ID da empresa inválido',
         details: 'O ID da empresa deve ser um número válido'
       });
     }
-
-    // Primeiro verifica se a empresa existe
     const empresaExists = await pool.query(
       'SELECT 1 FROM empresas WHERE id_empresa = $1',
       [id]
     );
-
     if (empresaExists.rowCount === 0) {
       return res.status(404).json({ 
         message: 'Empresa não encontrada',
         details: 'Não existe empresa com o ID fornecido'
       });
     }
-
-   // Buscar todas as quadras dessa empresa
-const quadRes = await pool.query(
-  `SELECT id_quadra,
-          id_empresa,
-          nome,
-          preco_hora,
-          promocao_ativa,
-          descricao_promocao,
-          rede_disponivel,
-          bola_disponivel,
-          observacoes,
-          foto,
-          hora_abertura,
-          hora_fechamento
-     FROM quadras
-    WHERE id_empresa = $1
-    ORDER BY nome`,
-  [id]
-);
-
-
-    // Log para debug
+    const quadRes = await pool.query(
+      `SELECT id_quadra,
+              id_empresa,
+              nome,
+              preco_hora,
+              promocao_ativa,
+              descricao_promocao,
+              rede_disponivel,
+              bola_disponivel,
+              observacoes,
+              foto,
+              hora_abertura,
+              hora_fechamento
+         FROM quadras
+        WHERE id_empresa = $1
+        ORDER BY nome`,
+      [id]
+    );
     console.log(`Buscando quadras para empresa ${id}:`, quadRes.rows);
-
     return res.status(200).json(quadRes.rows);
   } catch (error) {
     console.error('Erro ao buscar quadras da empresa:', error);
@@ -169,8 +146,6 @@ router.get('/:id/stats', async (req, res) => {
   try {
     const { id } = req.params;
     const hoje = new Date().toISOString().split('T')[0];
-
-    // Buscar estatísticas do dia
     const reservasHojeQuery = await pool.query(
       `SELECT COUNT(*) as total
        FROM reservas r
@@ -180,11 +155,9 @@ router.get('/:id/stats', async (req, res) => {
        AND r.status = 'confirmada'`,
       [id, hoje]
     );
-
-    // Calcular taxa de ocupação (horários reservados / horários totais)
     const taxaOcupacaoQuery = await pool.query(
       `WITH horarios_disponiveis AS (
-         SELECT COUNT(*) * 17 as total_slots -- 17 horários por dia (6h às 22h)
+         SELECT COUNT(*) * 17 as total_slots
          FROM quadras
          WHERE id_empresa = $1
        ),
@@ -205,8 +178,6 @@ router.get('/:id/stats', async (req, res) => {
        FROM horarios_disponiveis hd, horarios_ocupados ho`,
       [id, hoje]
     );
-
-    // Calcular receita mensal
     const primeiroDiaMes = new Date();
     primeiroDiaMes.setDate(1);
     const receitaMensalQuery = await pool.query(
@@ -218,13 +189,11 @@ router.get('/:id/stats', async (req, res) => {
        AND r.status = 'confirmada'`,
       [id, primeiroDiaMes.toISOString().split('T')[0]]
     );
-
     res.json({
       reservas_hoje: parseInt(reservasHojeQuery.rows[0].total),
       taxa_ocupacao: parseInt(taxaOcupacaoQuery.rows[0].taxa_ocupacao),
       receita_mensal: parseFloat(receitaMensalQuery.rows[0].receita_mensal)
     });
-
   } catch (error) {
     console.error('Erro ao buscar estatísticas:', error);
     res.status(500).json({ message: 'Erro ao buscar estatísticas' });
@@ -235,7 +204,6 @@ router.get('/:id/stats', async (req, res) => {
 router.get('/:id/reservas/pendentes', async (req, res) => {
   try {
     const { id } = req.params;
-
     const result = await pool.query(
       `SELECT 
          r.id_reserva,
@@ -263,8 +231,6 @@ router.get('/:id/reservas/pendentes', async (req, res) => {
        ORDER BY r.data_reserva ASC, r.horario_inicio ASC`,
       [id]
     );
-
-    // Formatar os dados para a estrutura que o frontend espera
     const reservasFormatadas = result.rows.map(row => ({
       id: row.id_reserva,
       data: row.data_reserva,
@@ -289,7 +255,6 @@ router.get('/:id/reservas/pendentes', async (req, res) => {
         tipo: row.tipo_quadra
       }
     }));
-
     res.json(reservasFormatadas);
   } catch (error) {
     console.error('Erro ao buscar reservas pendentes:', error);
