@@ -130,23 +130,26 @@ router.get('/:id/quadras', async (req, res) => {
       });
     }
 
-    // Buscar todas as quadras dessa empresa
-    const quadRes = await pool.query(
-      `SELECT id_quadra,
-              id_empresa,
-              nome,
-              preco_hora,
-              promocao_ativa,
-              descricao_promocao,
-              rede_disponivel,
-              bola_disponivel,
-              observacoes,
-              foto
-         FROM quadras
-        WHERE id_empresa = $1
-        ORDER BY nome`,
-      [id]
-    );
+   // Buscar todas as quadras dessa empresa
+const quadRes = await pool.query(
+  `SELECT id_quadra,
+          id_empresa,
+          nome,
+          preco_hora,
+          promocao_ativa,
+          descricao_promocao,
+          rede_disponivel,
+          bola_disponivel,
+          observacoes,
+          foto,
+          hora_abertura,
+          hora_fechamento
+     FROM quadras
+    WHERE id_empresa = $1
+    ORDER BY nome`,
+  [id]
+);
+
 
     // Log para debug
     console.log(`Buscando quadras para empresa ${id}:`, quadRes.rows);
