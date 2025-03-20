@@ -15,16 +15,23 @@ router.post('/', async (req, res) => {
     rede_disponivel,
     bola_disponivel,
     observacoes,
-    foto
-    // se quiser, horarios_config etc.
+    foto,
+    hora_abertura,
+    hora_fechamento
   } = req.body;
 
   try {
+    if (!id_empresa || !nome || !hora_abertura || !hora_fechamento) {
+      return res.status(400).json({
+        message: 'id_empresa, nome, hora_abertura e hora_fechamento são obrigatórios.'
+      });
+    }
+
     const result = await pool.query(
       `INSERT INTO quadras
         (id_empresa, nome, preco_hora, promocao_ativa, descricao_promocao,
-         rede_disponivel, bola_disponivel, observacoes, foto)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         rede_disponivel, bola_disponivel, observacoes, foto, hora_abertura, hora_fechamento)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING *`,
       [
         id_empresa,
@@ -35,7 +42,9 @@ router.post('/', async (req, res) => {
         rede_disponivel,
         bola_disponivel,
         observacoes,
-        foto
+        foto,
+        hora_abertura,
+        hora_fechamento
       ]
     );
 
