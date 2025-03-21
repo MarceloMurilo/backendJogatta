@@ -10,7 +10,7 @@ const db = require('./config/db.js');
 const fs = require('fs');
 const passport = require('./config/passport.js');
 const paymentRoutes = require('./routes/paymentRoutes');
-const stripeWebhook = require('./src/routes/stripeWebhook');
+const stripeWebhook = require('./routes/stripeWebhook.js');
 
 
 const app = express();
