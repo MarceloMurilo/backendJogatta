@@ -9,8 +9,11 @@ const cron = require('node-cron');
 const db = require('./config/db.js');
 const fs = require('fs');
 const passport = require('./config/passport.js');
+
+// Stripe rotas
 const paymentRoutes = require('./routes/paymentRoutes');
 const stripeWebhook = require('./routes/stripeWebhook.js');
+const stripeConnectRoutes = require('./routes/stripeConnectRoutes');
 
 
 const app = express();
@@ -55,6 +58,8 @@ app.use((req, res, next) => {
 // Stripe
 app.use('/api/payments', paymentRoutes);
 app.use('/api/stripe', stripeWebhook);
+
+app.use('/api/connect', stripeConnectRoutes);
 
 // ------------------------------------------------
 // Importação de rotas
