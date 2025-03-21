@@ -10,6 +10,8 @@ const db = require('./config/db.js');
 const fs = require('fs');
 const passport = require('./config/passport.js');
 const paymentRoutes = require('./routes/paymentRoutes');
+const stripeWebhook = require('./src/routes/stripeWebhook');
+
 
 const app = express();
 
@@ -52,6 +54,7 @@ app.use((req, res, next) => {
 
 // Stripe
 app.use('/api/payments', paymentRoutes);
+app.use('/api/stripe', stripeWebhook);
 
 // ------------------------------------------------
 // Importação de rotas
