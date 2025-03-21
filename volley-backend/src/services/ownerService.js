@@ -9,7 +9,8 @@ async function getOwnerById(ownerId) {
 }
 
 async function getOwnerStripeAccountId(ownerId) {
-  const result = await db.query('SELECT stripe_account_id FROM owners WHERE id = $1', [ownerId]);
+    const result = await db.query('SELECT stripe_account_id FROM empresas WHERE id_empresa = $1', [ownerId]);
+
   return result.rows[0]?.stripe_account_id || null;
 }
 
