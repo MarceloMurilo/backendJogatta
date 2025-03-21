@@ -2,7 +2,7 @@
 
 const express = require('express');
 const router = express.Router();
-const pool = require('../../db'); // Conexão com o banco de dados
+const pool = require('../../config/db'); // Conexão com o banco de dados
 const authMiddleware = require('../../middlewares/authMiddleware');
 const { v4: uuidv4 } = require('uuid');
 

@@ -2,7 +2,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const pool = require('../db');
+const pool = require('../config/db');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 

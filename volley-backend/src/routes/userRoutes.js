@@ -1,7 +1,7 @@
 // src/routes/userRoutes.js
 
 const express = require('express');
-const pool = require('../db'); // Conexão com o banco de dados
+const pool = require('../config/db');
 const router = express.Router();
 
 // Middleware para logar todas as requisições (opcional, se já estiver no server.js, pode remover)

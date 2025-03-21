@@ -2,7 +2,7 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../db'); // Conexão com o banco de dados
+const db = require('../config/db');
 
 // Criar grupo
 router.post('/criar', async (req, res) => {

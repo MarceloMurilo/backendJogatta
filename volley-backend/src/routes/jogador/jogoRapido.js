@@ -2,7 +2,7 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../../db');
+const db = require('../../config/db'); // Conexão com o banco de dados
 
 // Rota para criar jogo rápido
 router.post('/criar-rapido', async (req, res) => {

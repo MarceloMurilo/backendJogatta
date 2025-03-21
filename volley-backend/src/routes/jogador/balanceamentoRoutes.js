@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../../db');
+const db = require('../../config/db'); // Conexão com o banco de dados
 
 // Middlewares
 const authMiddleware = require('../../middlewares/authMiddleware');

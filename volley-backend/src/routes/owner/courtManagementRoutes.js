@@ -1,8 +1,11 @@
 // src/routes/owner/courtManagementRoutes.js
 
+
+// Esse arquivo é relacionado as permissões do dono de quadra
+
 const express = require('express');
 const router = express.Router();
-const pool = require('../../db');
+const pool = require('../../config/db'); // Conexão com o banco de dados
 
 // [POST] Criar nova quadra
 router.post('/', async (req, res) => {

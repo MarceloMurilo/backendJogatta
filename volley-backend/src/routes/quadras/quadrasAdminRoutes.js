@@ -1,7 +1,9 @@
 // src/routes/quadras/quadrasAdminRoutes.js
 
+// Esse arquivo é relacionado as permissões do superadmin
+
 const express = require('express');
-const pool = require('../../db');
+const pool = require('../../config/db');
 const router = express.Router();
 
 // [POST] Criar quadra (superadmin)

@@ -3,7 +3,7 @@
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const jwt = require('jsonwebtoken');
-const pool = require('../db.js');
+const pool = require('./db');
 
 // NÃO chame require('dotenv').config(); aqui (já foi no server.js)
 

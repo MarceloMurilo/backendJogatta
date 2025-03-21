@@ -6,7 +6,7 @@ require('dotenv').config({
 const express = require('express');
 const cors = require('cors');
 const cron = require('node-cron');
-const db = require('./db.js');
+const db = require('./config/db.js');
 const fs = require('fs');
 const passport = require('./config/passport.js');
 const paymentRoutes = require('./routes/paymentRoutes');

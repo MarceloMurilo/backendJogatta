@@ -2,7 +2,8 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../../db');
+const db = require('../../config/db');
+
 
 // [GET] /api/quadras -> Lista de TODAS as quadras
 router.get('/', async (req, res) => {

@@ -3,7 +3,7 @@
 const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
-const db = require('../../db');
+const db = require('../../config/db'); // Conexão com o banco de dados
 const authMiddleware = require('../../middlewares/authMiddleware');
 
 // Exemplo de BASE_URL para convites - ajuste se necessário
