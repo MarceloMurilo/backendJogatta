@@ -10,7 +10,7 @@ const db = require('./config/db.js');
 const fs = require('fs');
 const passport = require('./config/passport.js');
 // Cron job
-const { verificarReservasExpiradas } = require('./src/cron/reservationCron');
+const { verificarReservasExpiradas } = require('./cron/reservationCron.js');
 
 // Stripe rotas
 const paymentRoutes = require('./routes/paymentRoutes');
