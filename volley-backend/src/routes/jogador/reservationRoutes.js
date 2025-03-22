@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../../config/db');
-const filaReservasService = require('../../src/services/filaReservasService'); // Lógica da fila
+const filaReservasService = require('../../services/filaReservasService'); // Lógica da fila
 const roleMiddleware = require('../../middlewares/roleMiddleware');
 
 // =============================================================================
