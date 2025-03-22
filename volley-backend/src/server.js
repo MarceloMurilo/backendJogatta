@@ -14,6 +14,7 @@ const passport = require('./config/passport.js');
 const paymentRoutes = require('./routes/paymentRoutes');
 const stripeWebhook = require('./routes/stripeWebhook.js');
 const stripeConnectRoutes = require('./routes/stripeConnectRoutes');
+const stripeConnectOwnerRoutes = require('./routes/owner/stripeConnectRoutes');
 
 
 const app = express();
@@ -59,6 +60,8 @@ app.use((req, res, next) => {
 app.use('/api/payments', paymentRoutes);
 app.use('/api/stripe', stripeWebhook);
 
+
+app.use('/api/owner/connect', stripeConnectOwnerRoutes);
 app.use('/api/connect', stripeConnectRoutes);
 
 // ------------------------------------------------
