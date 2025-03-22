@@ -89,9 +89,9 @@ const pdfRoutes = require('./routes/pdfRoutes');
 // (1) Rotas para quadras de superadmin
 const quadrasAdminRoutes = require('./routes/quadras/quadrasAdminRoutes');
 // (2) Rotas públicas de quadras
-const quadrasPublicRoutes = require('./routes/quadrasPublicRoutes');
+const quadrasPublicRoutes = require('./routes/quadras/quadrasPublicRoutes.js');
 // (3) Rotas principais de quadras
-const quadrasRoutes = require('./routes/quadrasRoutes');
+const quadrasRoutes = require('./routes/quadrasRoutes.js');
 
 // NOVA ROTA: Reservas por empresa
 const empresasReservasRoutes = require('./routes/empresasReservasRoutes');
