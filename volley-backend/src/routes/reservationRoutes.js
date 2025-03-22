@@ -53,6 +53,9 @@ router.get('/disponibilidade/:id_quadra', async (req, res) => {
 
 // 2️⃣ Criar nova reserva pendente
 router.post('/criar', async (req, res) => {
+  console.log('\n✅ [reservationRoutes] Chamada na ROTA POST /criar');
+  console.log('➡️ Body recebido:', req.body);
+
   const { id_quadra, id_empresa, id_usuario, data_reserva, horario_inicio, horario_fim, quantidade_jogadores } = req.body;
 
   try {
@@ -89,8 +92,7 @@ router.post('/criar', async (req, res) => {
   }
 });
 
-// ⚠️ Obs: Ainda vamos adicionar aqui:
-// Organizador entra na fila
+// 3️⃣ Organizador entra na fila
 router.post('/entrar-fila', async (req, res) => {
   const { reserva_id, organizador_id } = req.body;
 
@@ -114,8 +116,7 @@ router.post('/entrar-fila', async (req, res) => {
   }
 });
 
-
-// Participante paga valor parcial
+// 4️⃣ Participante paga valor parcial
 router.post('/pagar', async (req, res) => {
   const { reserva_id, valor_pago } = req.body;
 
@@ -159,8 +160,7 @@ router.post('/pagar', async (req, res) => {
   }
 });
 
-
-// Dono envia ultimato (opcional, pra pressionar organizador)
+// 5️⃣ Dono envia ultimato (opcional, pra pressionar organizador)
 router.post('/enviar-ultimato', async (req, res) => {
   const { reserva_id, prazo_horas } = req.body;
 
@@ -182,6 +182,5 @@ router.post('/enviar-ultimato', async (req, res) => {
     res.status(500).json({ error: 'Erro ao enviar ultimato' });
   }
 });
-
 
 module.exports = router;

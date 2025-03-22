@@ -18,10 +18,6 @@ const stripeWebhook = require('./routes/stripeWebhook.js');
 const stripeConnectRoutes = require('./routes/stripeConnectRoutes');
 const stripeConnectOwnerRoutes = require('./routes/owner/stripeConnectRoutes');
 
-
-
-
-
 const app = express();
 
 app.get('/', (req, res) => {
@@ -60,11 +56,9 @@ app.use((req, res, next) => {
   next();
 });
 
-
 // Stripe
 app.use('/api/payments', paymentRoutes);
 app.use('/api/stripe', stripeWebhook);
-
 
 app.use('/api/owner/connect', stripeConnectOwnerRoutes);
 app.use('/api/connect', stripeConnectRoutes);
@@ -95,7 +89,7 @@ const pdfRoutes = require('./routes/pdfRoutes');
 // (1) Rotas para quadras de superadmin
 const quadrasAdminRoutes = require('./routes/quadras/quadrasAdminRoutes');
 // (2) Rotas públicas de quadras
-const quadrasPublicRoutes = require('./routes/quadras/quadrasPublicRoutes');
+const quadrasPublicRoutes = require('./routes/quadrasPublicRoutes');
 // (3) Rotas principais de quadras
 const quadrasRoutes = require('./routes/quadrasRoutes');
 
@@ -246,11 +240,14 @@ cron.schedule('0 * * * *', async () => {
   await verificarReservasExpiradas();
 });
 
-// Exibir rotas (debug)
+// ------------------------------------------------
+// Exibir rotas registradas (debug)
+// ------------------------------------------------
+console.log('\n🚀 ROTAS REGISTRADAS:');
 app._router.stack.forEach((layer) => {
   if (layer.route) {
     const methods = Object.keys(layer.route.methods).join(', ').toUpperCase();
-    console.log(`[ROTA] ${layer.route.path} (${methods})`);
+    console.log(`[${methods}] ${layer.route.path}`);
   }
 });
 

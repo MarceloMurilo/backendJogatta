@@ -1,5 +1,4 @@
 // src/middlewares/authMiddleware.js
-
 const jwt = require('jsonwebtoken');
 
 const authMiddleware = (req, res, next) => {
@@ -51,6 +50,9 @@ const authMiddleware = (req, res, next) => {
     console.log(
       `[authMiddleware] Usuário autenticado: ID ${decoded.id}, Nome ${decoded.nome}, Email ${decoded.email}, Papel ${decoded.papel_usuario}`
     );
+    // Log adicional explícito
+    console.log(`[authMiddleware] Autenticado com sucesso -> ${decoded.nome}, Papel: ${decoded.papel_usuario}`);
+    
     next();
   } catch (err) {
     console.error(`[authMiddleware] Erro ao verificar token:`, err.message);

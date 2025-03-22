@@ -1,5 +1,4 @@
 // src/middlewares/roleMiddleware.js
-
 const db = require('../config/db');
 
 /**
@@ -39,6 +38,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
       // Exceção para superadmin
       if (req.user?.papel_usuario === 'superadmin') {
         console.log('[roleMiddleware] Usuário é superadmin. Acesso permitido automaticamente.');
+        console.log(`[roleMiddleware] Permissão CONCEDIDA para papel '${req.user.papel_usuario}'`);
         return next();
       }
       
@@ -47,6 +47,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
         console.log('[roleMiddleware] Rota de gerenciamento de reserva detectada');
         if (['empresa', 'dono_quadra', 'admin'].includes(req.user?.papel_usuario)) {
           console.log(`[roleMiddleware] Usuário é ${req.user.papel_usuario}. Permitindo acesso à rota de reserva.`);
+          console.log(`[roleMiddleware] Permissão CONCEDIDA para papel '${req.user.papel_usuario}'`);
           return next();
         }
       }
@@ -71,6 +72,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
       // Se o body indicar que o usuário é o organizador, libera
       if (req.body?.id_usuario_organizador && req.body.id_usuario_organizador === req.user.id) {
         console.log('[roleMiddleware] Usuário é o organizador no corpo da requisição. OK.');
+        console.log(`[roleMiddleware] Permissão CONCEDIDA para papel '${req.user.papel_usuario}'`);
         return next();
       }
 
@@ -78,14 +80,14 @@ const roleMiddleware = (allowedRoles, options = {}) => {
       if (skipIdJogo) {
         const userRole = req.user?.papel_usuario;
         if (fluxo === 'offline' && allowedRoles.includes(userRole)) {
-          console.log(`[roleMiddleware] Permissão concedida (offline) para papel '${userRole}'.`);
+          console.log(`[roleMiddleware] Permissão CONCEDIDA para papel '${userRole}'`);
           return next();
         }
         if (!allowedRoles.includes(userRole)) {
           console.log(`[roleMiddleware] Papel '${userRole}' não autorizado no fluxo '${fluxo}' (skipIdJogo).`);
           return res.status(403).json({ message: 'Acesso negado - Papel do usuário não autorizado (skipIdJogo).' });
         }
-        console.log('[roleMiddleware] Permissão concedida (skipIdJogo ativo).');
+        console.log(`[roleMiddleware] Permissão CONCEDIDA para papel '${userRole}' (skipIdJogo ativo).`);
         return next();
       }
 
@@ -96,7 +98,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
           console.log(`[roleMiddleware] Papel '${userRole}' não autorizado sem id_jogo.`);
           return res.status(403).json({ message: 'Acesso negado - Papel do usuário não autorizado (id_jogo ausente).' });
         }
-        console.log('[roleMiddleware] Permissão concedida (id_jogo é opcional e não veio).');
+        console.log(`[roleMiddleware] Permissão CONCEDIDA para papel '${userRole}' (id_jogo opcional não fornecido).`);
         return next();
       }
 
@@ -145,7 +147,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
         return res.status(403).json({ message: 'Acesso negado - Papel do usuário não autorizado neste jogo.' });
       }
 
-      console.log(`[roleMiddleware] Permissão concedida. Roles do user: ${userRoles.join(', ')}`);
+      console.log(`[roleMiddleware] Permissão CONCEDIDA para papel '${req.user.papel_usuario}'. Roles do user: ${userRoles.join(', ')}`);
       next();
     } catch (error) {
       console.error(`[roleMiddleware] Erro ao processar middleware: ${error.message}`);
