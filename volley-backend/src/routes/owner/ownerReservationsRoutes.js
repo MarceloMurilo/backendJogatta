@@ -1,9 +1,6 @@
-// src/routes/owner/ownerReservationsRoutes.js
-
 const express = require('express');
 const router = express.Router();
 const db = require('../../config/db');
-
 
 /**
  * [GET] Listar reservas pendentes do dono
@@ -100,6 +97,64 @@ router.put('/:id_reserva/rejeitar', async (req, res) => {
     console.error('[ownerReservations] Erro ao rejeitar reserva:', error);
     return res.status(500).json({
       message: 'Erro ao rejeitar reserva',
+      details: error.message
+    });
+  }
+});
+
+/**
+ * [GET] Listar status da fila e financeiro da reserva
+ */
+router.get('/fila/:id_reserva', async (req, res) => {
+  const { id_reserva } = req.params;
+
+  try {
+    // Busca dados da reserva e quadra
+    const reservaResult = await db.query(
+      `SELECT r.valor_pago, q.preco_hora, q.percentual_antecipado
+         FROM reservas r
+         JOIN quadras q ON q.id_quadra = r.id_quadra
+        WHERE r.id_reserva = $1`,
+      [id_reserva]
+    );
+
+    if (reservaResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Reserva não encontrada.' });
+    }
+
+    const { valor_pago, preco_hora, percentual_antecipado } = reservaResult.rows[0];
+    const valorMinimo = (percentual_antecipado / 100) * preco_hora;
+    const percentualAtual = ((valor_pago / preco_hora) * 100).toFixed(1);
+
+    // Busca fila de organizadores
+    const filaResult = await db.query(
+      `SELECT f.id, f.organizador_id, u.nome as nome_organizador
+         FROM fila_reservas f
+         JOIN usuario u ON u.id_usuario = f.organizador_id
+        WHERE f.reserva_id = $1
+        ORDER BY f.data_entrada ASC`,
+      [id_reserva]
+    );
+
+    const fila = filaResult.rows.map((organizador) => ({
+      id: organizador.id,
+      organizador_id: organizador.organizador_id,
+      nome: organizador.nome_organizador,
+      metodo_pagamento_validado: true // Simulação, no futuro pode buscar real
+    }));
+
+    return res.json({
+      valor_pago,
+      preco_hora,
+      percentual_necessario: percentual_antecipado,
+      percentual_atual: percentualAtual,
+      valor_minimo_necessario: valorMinimo,
+      fila
+    });
+  } catch (error) {
+    console.error('[ownerReservations] Erro ao buscar fila:', error);
+    return res.status(500).json({
+      message: 'Erro ao buscar fila da reserva',
       details: error.message
     });
   }

@@ -9,12 +9,17 @@ const cron = require('node-cron');
 const db = require('./config/db.js');
 const fs = require('fs');
 const passport = require('./config/passport.js');
+// Cron job
+const { verificarReservasExpiradas } = require('./src/cron/reservationCron');
 
 // Stripe rotas
 const paymentRoutes = require('./routes/paymentRoutes');
 const stripeWebhook = require('./routes/stripeWebhook.js');
 const stripeConnectRoutes = require('./routes/stripeConnectRoutes');
 const stripeConnectOwnerRoutes = require('./routes/owner/stripeConnectRoutes');
+
+
+
 
 
 const app = express();
@@ -230,6 +235,15 @@ cron.schedule('* * * * *', async () => {
   } catch (error) {
     console.error('Erro ao enviar notificações automáticas:', error);
   }
+});
+
+// ------------------------------------------------
+// CRON 3: Verificar reservas expiradas e passar para o próximo organizador
+// Roda a cada 1 hora
+// ------------------------------------------------
+cron.schedule('0 * * * *', async () => {
+  console.log('⏰ Verificando reservas expiradas...');
+  await verificarReservasExpiradas();
 });
 
 // Exibir rotas (debug)
