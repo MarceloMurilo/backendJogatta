@@ -67,6 +67,7 @@ app.use('/api/connect', stripeConnectRoutes);
 // Importação de rotas
 // ------------------------------------------------
 const jogadorRoutes = require('./routes/jogador/jogadorRoutes');
+// Agora usamos o reservationRoutes centralizado dentro do jogador
 const reservationRoutes = require('./routes/jogador/reservationRoutes.js');
 const jogosRoutes = require('./routes/jogador/jogosRoutes');
 const courtManagementRoutes = require('./routes/owner/courtManagementRoutes');
