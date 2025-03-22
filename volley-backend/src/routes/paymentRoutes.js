@@ -21,9 +21,9 @@ router.post('/create-payment-intent', async (req, res) => {
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
       currency,
-      payment_method_types: ['card'],
-      payment_method: 'pm_card_visa', // <-- método de teste VISA
-      confirm: true, // confirma automaticamente
+      // payment_method_types: ['card'],
+      // payment_method: 'pm_card_visa', // <-- método de teste VISA
+      // confirm: true, // confirma automaticamente
       transfer_data: {
         destination: ownerStripeAccountId,
       },
