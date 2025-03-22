@@ -24,6 +24,7 @@ router.post('/create-stripe-account-link', async (req, res) => {
         country: 'BR',
         email: owner.email,
         capabilities: {
+          card_payments: { requested: true },
           transfers: { requested: true },
         },
       });
@@ -48,7 +49,7 @@ router.post('/create-stripe-account-link', async (req, res) => {
     res.json({ url: accountLink.url });
 
   } catch (err) {
-    console.error('🔥 Erro detalhado:', err); // Aqui vai trazer todo erro do Stripe ou banco
+    console.error('🔥 Erro detalhado:', err);
     res.status(500).json({ error: 'Erro ao criar link de onboarding.' });
   }
 });
