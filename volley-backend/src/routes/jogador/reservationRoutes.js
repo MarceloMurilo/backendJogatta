@@ -3,6 +3,8 @@ const router = express.Router();
 const db = require('../../config/db');
 const filaReservasService = require('../../services/filaReservasService'); // Lógica da fila
 const roleMiddleware = require('../../middlewares/roleMiddleware');
+const { liberarCofre } = require('../../services/cofreService'); // Serviço de liberação do cofre
+const authMiddleware = require('../../middlewares/authMiddleware');
 
 // =============================================================================
 // Seção 1: Criação de Reserva (Avançada)
@@ -290,6 +292,21 @@ router.post('/enviar-ultimato', roleMiddleware(['owner']), async (req, res) => {
   } catch (error) {
     console.error('[reservationRoutes] Erro ao enviar ultimato:', error);
     res.status(500).json({ error: 'Erro ao enviar ultimato' });
+  }
+});
+
+// =============================================================================
+// Seção 4: Liberação do Cofre
+// =============================================================================
+
+router.post('/:id/liberar-cofre', authMiddleware, async (req, res) => {
+  const reservaId = req.params.id;
+
+  try {
+    const resultado = await liberarCofre(reservaId);
+    res.status(200).json(resultado);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
