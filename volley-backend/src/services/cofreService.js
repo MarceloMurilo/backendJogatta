@@ -8,11 +8,11 @@ async function liberarCofre(reservaId) {
     try {
         // Buscar dados da reserva + empresa
         const reservaResult = await db.query(`
-            SELECT r.*, e.stripe_account_id, r.valor_total
+            SELECT r.*, e.stripe_account_id, r.valor_pago
             FROM reservas r
-            JOIN quadras q ON r.quadra_id = q.id
-            JOIN empresas e ON q.empresa_id = e.id
-            WHERE r.id = $1`, [reservaId]);
+            JOIN quadras q ON r.id_quadra = q.id_quadra
+            JOIN empresas e ON q.id_empresa = e.id_empresa
+            WHERE r.id_reserva = $1`, [reservaId]);
 
         if (reservaResult.rowCount === 0) {
             throw new Error("Reserva não encontrada.");
