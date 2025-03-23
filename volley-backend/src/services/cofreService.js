@@ -12,7 +12,8 @@ async function liberarCofre(reservaId) {
             FROM reservas r
             JOIN quadras q ON r.id_quadra = q.id_quadra
             JOIN empresas e ON q.id_empresa = e.id_empresa
-            WHERE r.id_reserva = $1`, [reservaId]);
+            WHERE r.id_reserva = $1
+        `, [reservaId]);
 
         if (reservaResult.rowCount === 0) {
             throw new Error("Reserva não encontrada.");
@@ -27,7 +28,7 @@ async function liberarCofre(reservaId) {
 
         // Realiza o repasse via Stripe Transfer
         await stripe.transfers.create({
-            amount: Math.floor(reserva.valor_total * 100), // valor em centavos
+            amount: Math.floor(reserva.valor_pago * 100), // valor já pago
             currency: "brl",
             destination: reserva.stripe_account_id,
             description: `Repasse Cofre - Reserva ${reservaId}`
@@ -35,14 +36,14 @@ async function liberarCofre(reservaId) {
 
         // Atualiza status_cofre
         await db.query(`
-            UPDATE reservas SET status_cofre = 'liberado' WHERE id = $1
+            UPDATE reservas SET status_cofre = 'liberado' WHERE id_reserva = $1
         `, [reservaId]);
 
         // Registra transação
         await db.query(`
             INSERT INTO transacoes_pagamento (reserva_id, valor, status, origem)
             VALUES ($1, $2, 'completo', 'cofre')
-        `, [reservaId, reserva.valor_total]);
+        `, [reservaId, reserva.valor_pago]);
 
         return { message: "Cofre liberado e repasse realizado com sucesso." };
 
