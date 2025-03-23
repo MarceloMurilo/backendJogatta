@@ -28,6 +28,16 @@ async function liberarCofre(reservaId) {
             throw new Error("Cofre já liberado para esta reserva.");
         }
 
+        // Validação se empresa está conectada ao Stripe
+        if (!reserva.stripe_account_id) {
+            throw new Error("A empresa ainda não está conectada ao Stripe.");
+        }
+
+        // Validação se valor foi pago
+        if (!reserva.valor_pago || reserva.valor_pago <= 0) {
+            throw new Error("Valor pago inválido ou não registrado. Cofre não pode ser liberado.");
+        }
+
         console.log(`💰 [CofreService] Iniciando transferência Stripe...`);
         console.log(`➡️ Valor: R$${reserva.valor_pago}`);
         console.log(`➡️ Conta destino: ${reserva.stripe_account_id}`);
@@ -40,7 +50,7 @@ async function liberarCofre(reservaId) {
             description: `Repasse Cofre - Reserva ${reservaId}`
         });
 
-        console.log(`✅ [CofreService] Transferência realizada:`, transfer.id);
+        console.log(`✅ [CofreService] Transferência realizada: ${transfer.id}`);
 
         // Atualiza status_cofre
         await db.query(`
@@ -58,7 +68,7 @@ async function liberarCofre(reservaId) {
         return { message: "Cofre liberado e repasse realizado com sucesso." };
 
     } catch (error) {
-        console.error("❌ Erro ao liberar Cofre:", error);
+        console.error("❌ Erro ao liberar Cofre:", error.message);
         throw error;
     }
 }
