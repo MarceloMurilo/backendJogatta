@@ -1,16 +1,13 @@
+// src/routes/empresasRoutes.js
+
 const express = require('express');
 const router = express.Router();
-const pool = require('../config/db'); // já usado para queries locais
+const pool = require('../config/db'); // usado para queries locais
 const ownerService = require('../services/ownerService'); // import do service
-const multer = require('multer'); // para upload de arquivo/documento
-
-// Configuração básica do multer para upload local
-// (pode personalizar destino, nome do arquivo etc.)
-const upload = multer({ dest: 'uploads/' });
 
 /**
  * [POST] /api/empresas
- * Exemplo antigo que insere empresa simples (sem senha, cnpj etc.)
+ * Exemplo antigo que insere empresa simples (sem senha, CNPJ, etc.)
  * Você pode manter se ainda precisar desse endpoint.
  */
 router.post('/', async (req, res) => {
@@ -35,13 +32,13 @@ router.post('/', async (req, res) => {
 
 /**
  * [POST] /api/empresas/cadastro
- * Novo endpoint para cadastro de empresa com senha, CNPJ, documento etc.
+ * Novo endpoint para cadastro de empresa com senha, CNPJ, etc.
+ * (documento removido por enquanto)
  */
-router.post('/cadastro', upload.single('documento'), async (req, res) => {
+router.post('/cadastro', async (req, res) => {
   try {
     const { nome, endereco, contato, email_empresa, cnpj, senha } = req.body;
-    const documento_url = req.file ? req.file.path : null;
-
+    // Como a parte de documento foi removida, document_url é null
     const novaEmpresa = await ownerService.createEmpresa({
       nome,
       endereco,
@@ -49,9 +46,8 @@ router.post('/cadastro', upload.single('documento'), async (req, res) => {
       email_empresa,
       cnpj,
       senha,
-      documento_url
+      documento_url: null
     });
-
     return res.status(201).json(novaEmpresa);
   } catch (error) {
     console.error('Erro ao cadastrar empresa:', error);
