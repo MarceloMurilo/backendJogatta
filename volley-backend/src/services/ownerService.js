@@ -1,6 +1,6 @@
 const db = require('../config/db'); // Configuração do banco de dados
-const bcrypt = require('bcrypt');   // Para fazer hash de senhas
-
+const bcrypt = require('bcryptjs'); // Hash senhas
+ 
 // Busca informações da empresa pelo ID
 async function getOwnerById(ownerId) {
   const result = await db.query('SELECT * FROM empresas WHERE id_empresa = $1', [ownerId]);
