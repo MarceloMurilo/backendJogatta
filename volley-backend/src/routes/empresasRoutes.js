@@ -1,8 +1,18 @@
 const express = require('express');
 const router = express.Router();
-const pool = require('../config/db');
+const pool = require('../config/db'); // já usado para queries locais
+const ownerService = require('../services/ownerService'); // import do service
+const multer = require('multer'); // para upload de arquivo/documento
 
-// [POST] /api/empresas
+// Configuração básica do multer para upload local
+// (pode personalizar destino, nome do arquivo etc.)
+const upload = multer({ dest: 'uploads/' });
+
+/**
+ * [POST] /api/empresas
+ * Exemplo antigo que insere empresa simples (sem senha, cnpj etc.)
+ * Você pode manter se ainda precisar desse endpoint.
+ */
 router.post('/', async (req, res) => {
   try {
     const { nome, localizacao, contato } = req.body;
@@ -23,8 +33,63 @@ router.post('/', async (req, res) => {
   }
 });
 
-// [GET] /api/empresas
-// Se passar ?includeQuadras=true, retorna cada empresa com um array "quadras".
+/**
+ * [POST] /api/empresas/cadastro
+ * Novo endpoint para cadastro de empresa com senha, CNPJ, documento etc.
+ */
+router.post('/cadastro', upload.single('documento'), async (req, res) => {
+  try {
+    const { nome, endereco, contato, email_empresa, cnpj, senha } = req.body;
+    const documento_url = req.file ? req.file.path : null;
+
+    const novaEmpresa = await ownerService.createEmpresa({
+      nome,
+      endereco,
+      contato,
+      email_empresa,
+      cnpj,
+      senha,
+      documento_url
+    });
+
+    return res.status(201).json(novaEmpresa);
+  } catch (error) {
+    console.error('Erro ao cadastrar empresa:', error);
+    return res.status(500).json({ 
+      message: 'Erro ao cadastrar empresa', 
+      details: error.message 
+    });
+  }
+});
+
+/**
+ * [PATCH] /api/empresas/:id/aprovar
+ * Aprovação manual da empresa (muda status para 'ativo')
+ */
+router.patch('/:id/aprovar', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const empresaAprovada = await ownerService.aprovarEmpresa(id);
+    if (!empresaAprovada) {
+      return res.status(404).json({ message: 'Empresa não encontrada' });
+    }
+    return res.json({ 
+      message: 'Empresa aprovada com sucesso', 
+      empresa: empresaAprovada 
+    });
+  } catch (error) {
+    console.error('Erro ao aprovar empresa:', error);
+    return res.status(500).json({ 
+      message: 'Erro ao aprovar empresa', 
+      details: error.message 
+    });
+  }
+});
+
+/**
+ * [GET] /api/empresas
+ * Retorna lista de empresas com quadras
+ */
 router.get('/', async (req, res) => {
   try {
     const result = await pool.query(`
@@ -53,12 +118,17 @@ router.get('/', async (req, res) => {
     })));
   } catch (error) {
     console.error('Erro ao listar empresas:', error);
-    return res.status(500).json({ message: 'Erro ao listar empresas', error: error.message });
+    return res.status(500).json({ 
+      message: 'Erro ao listar empresas', 
+      error: error.message 
+    });
   }
 });
 
-// [GET] /api/empresas/:id
-// Retorna uma empresa e suas quadras
+/**
+ * [GET] /api/empresas/:id
+ * Retorna dados de uma empresa e suas quadras
+ */
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -92,7 +162,10 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// [GET] /api/empresas/:id/quadras
+/**
+ * [GET] /api/empresas/:id/quadras
+ * Retorna apenas as quadras de uma empresa
+ */
 router.get('/:id/quadras', async (req, res) => {
   try {
     const { id } = req.params;
@@ -141,7 +214,10 @@ router.get('/:id/quadras', async (req, res) => {
   }
 });
 
-// [GET] /api/empresas/:id/stats
+/**
+ * [GET] /api/empresas/:id/stats
+ * Exemplo de estatísticas: reservas do dia, taxa de ocupação etc.
+ */
 router.get('/:id/stats', async (req, res) => {
   try {
     const { id } = req.params;
@@ -200,7 +276,10 @@ router.get('/:id/stats', async (req, res) => {
   }
 });
 
-// [GET] /api/empresas/:id/reservas/pendentes
+/**
+ * [GET] /api/empresas/:id/reservas/pendentes
+ * Exemplo de busca de reservas pendentes
+ */
 router.get('/:id/reservas/pendentes', async (req, res) => {
   try {
     const { id } = req.params;
