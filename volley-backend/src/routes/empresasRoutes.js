@@ -36,7 +36,7 @@ router.post('/', async (req, res) => {
  * Novo endpoint para cadastro completo de empresa com senha, CNPJ, documento etc.
  * Este endpoint é utilizado para empresas (gestores) que se registram com dados completos.
  */
-router.post('/cadastro', authMiddleware, upload.single('documento'), async (req, res) => {
+router.post('/cadastro', upload.single('documento'), async (req, res) => {
   try {
     const { nome, endereco, contato, email_empresa, cnpj, senha } = req.body;
     const documento_url = req.file ? req.file.path : null;
