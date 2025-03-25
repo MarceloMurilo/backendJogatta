@@ -87,6 +87,9 @@ const balanceamentoRoutes = require('./routes/jogador/balanceamentoRoutes');
 const temporariosRoutes = require('./routes/jogador/temporariosRoutes');
 const pdfRoutes = require('./routes/pdfRoutes');
 
+//Auth empresas
+const authEmpresaRoutes = require('./src/routes/owner/authEmpresaRoutes');
+
 // (1) Rotas para quadras de superadmin
 const quadrasAdminRoutes = require('./routes/quadras/quadrasAdminRoutes');
 // (2) Rotas públicas de quadras
@@ -159,6 +162,9 @@ app.use('/api/quadras', quadrasRoutes);
 
 // NOVA ROTA: Reservas por empresa
 app.use('/api/empresas/reservas', empresasReservasRoutes);
+
+// ROTA LOGIN : Empresas
+app.use('/api/empresas', authEmpresaRoutes);
 
 // ------------------------------------------------
 // CRON 1: Encerrar jogos cujo horário_fim < NOW()
