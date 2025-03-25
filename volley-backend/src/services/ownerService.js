@@ -20,18 +20,54 @@ async function updateOwnerStripeAccountId(ownerId, accountId) {
 
 /**
  * Cria uma nova empresa com senha, cnpj etc. (status inicial = 'pendente')
- * @param {*} param0 Objeto com { nome, endereco, contato, email_empresa, cnpj, senha, documento_url }
+ * @param {*} param0 Objeto com { nome, endereco, contato, email_empresa, cnpj, senha, documento_url, id_usuario }
  */
-async function createEmpresa({ nome, endereco, contato, email_empresa, cnpj, senha, documento_url }) {
-  const hashedSenha = await bcrypt.hash(senha, 10); // Gera hash seguro da senha
-  const result = await db.query(
-    `INSERT INTO empresas 
-       (nome, endereco, contato, email_empresa, cnpj, senha, documento_url, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'pendente')
-     RETURNING *`,
-    [nome, endereco, contato, email_empresa, cnpj, hashedSenha, documento_url]
-  );
-  return result.rows[0];
+async function createEmpresa({ nome, endereco, contato, email_empresa, cnpj, senha, documento_url, id_usuario }) {
+  const client = await db.connect();
+  
+  try {
+    await client.query('BEGIN');
+    
+    // Hash da senha
+    const hashedSenha = await bcrypt.hash(senha, 10);
+    
+    // Inserir a empresa
+    const result = await client.query(
+      `INSERT INTO empresas 
+         (nome, endereco, contato, email_empresa, cnpj, senha, documento_url, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pendente')
+       RETURNING *`,
+      [nome, endereco, contato, email_empresa, cnpj, hashedSenha, documento_url]
+    );
+    
+    const empresa = result.rows[0];
+    
+    // Se houver um ID de usuário, vincular ao usuário
+    if (id_usuario) {
+      await client.query(
+        `INSERT INTO usuario_empresa (id_usuario, id_empresa, data_criacao)
+         VALUES ($1, $2, NOW())`,
+        [id_usuario, empresa.id_empresa]
+      );
+      
+      // Atualizar o papel do usuário para "gestor"
+      await client.query(
+        `UPDATE usuario
+         SET papel_usuario = 'gestor'
+         WHERE id_usuario = $1`,
+        [id_usuario]
+      );
+    }
+    
+    await client.query('COMMIT');
+    return empresa;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Erro ao criar empresa:', error);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /**
@@ -49,11 +85,28 @@ async function aprovarEmpresa(id_empresa) {
   return result.rows[0];
 }
 
+/**
+ * Busca a empresa vinculada a um usuário
+ * @param {number} id_usuario
+ */
+async function getEmpresaByUsuario(id_usuario) {
+  const result = await db.query(
+    `SELECT e.*
+     FROM empresas e
+     JOIN usuario_empresa ue ON e.id_empresa = ue.id_empresa
+     WHERE ue.id_usuario = $1
+     LIMIT 1`,
+    [id_usuario]
+  );
+  return result.rows[0] || null;
+}
+
 // Exporta todas as funções do serviço
 module.exports = {
   getOwnerById,
   getOwnerStripeAccountId,
   updateOwnerStripeAccountId,
-  createEmpresa,      // novo
-  aprovarEmpresa      // novo
+  createEmpresa,
+  aprovarEmpresa,
+  getEmpresaByUsuario  // Nova função
 };

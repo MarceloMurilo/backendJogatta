@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../config/db'); // já usado para queries locais
 const ownerService = require('../services/ownerService'); // import do service
 const multer = require('multer'); // para upload de arquivo/documento
+const authMiddleware = require('../middlewares/authMiddleware');
 
 // Configuração básica do multer para upload local
 // (pode personalizar destino, nome do arquivo etc.)
@@ -37,10 +38,11 @@ router.post('/', async (req, res) => {
  * [POST] /api/empresas/cadastro
  * Novo endpoint para cadastro de empresa com senha, CNPJ, documento etc.
  */
-router.post('/cadastro', upload.single('documento'), async (req, res) => {
+router.post('/cadastro', authMiddleware, upload.single('documento'), async (req, res) => {
   try {
     const { nome, endereco, contato, email_empresa, cnpj, senha } = req.body;
     const documento_url = req.file ? req.file.path : null;
+    const id_usuario = req.user?.id;  // Pegando ID do usuário autenticado
 
     const novaEmpresa = await ownerService.createEmpresa({
       nome,
@@ -49,7 +51,8 @@ router.post('/cadastro', upload.single('documento'), async (req, res) => {
       email_empresa,
       cnpj,
       senha,
-      documento_url
+      documento_url,
+      id_usuario // Passando o ID do usuário para associação
     });
 
     return res.status(201).json(novaEmpresa);
@@ -58,6 +61,34 @@ router.post('/cadastro', upload.single('documento'), async (req, res) => {
     return res.status(500).json({ 
       message: 'Erro ao cadastrar empresa', 
       details: error.message 
+    });
+  }
+});
+
+/**
+ * [GET] /api/empresas/gestor
+ * Retorna a empresa vinculada ao usuário gestor atual
+ */
+router.get('/gestor', authMiddleware, async (req, res) => {
+  try {
+    // Obtém o ID do usuário logado
+    const userId = req.user.id;
+    
+    // Busca a empresa vinculada a este usuário
+    const empresa = await ownerService.getEmpresaByUsuario(userId);
+    
+    if (!empresa) {
+      return res.status(404).json({ 
+        message: 'Nenhuma empresa encontrada para este usuário.'
+      });
+    }
+    
+    return res.json(empresa);
+  } catch (error) {
+    console.error('Erro ao buscar empresa do gestor:', error);
+    return res.status(500).json({ 
+      message: 'Erro ao buscar empresa e quadras',
+      details: error.message
     });
   }
 });
@@ -197,7 +228,8 @@ router.get('/:id/quadras', async (req, res) => {
               observacoes,
               foto,
               hora_abertura,
-              hora_fechamento
+              hora_fechamento,
+              capacidade
          FROM quadras
         WHERE id_empresa = $1
         ORDER BY nome`,
