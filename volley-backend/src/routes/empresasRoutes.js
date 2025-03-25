@@ -220,8 +220,15 @@ router.get('/:id/quadras', async (req, res) => {
   }
 });
 
-// Get rota
-// [GET] /api/empresas/usuario/:id
+/**
+ * [GET] /api/empresas/usuario/:id
+ * Retorna a empresa vinculada a um usuário específico (gestor).
+ * Essa rota é utilizada para carregar automaticamente os dados da empresa
+ * após o login de um usuário com papel de gestor, com base no seu ID.
+ * 
+ * Requer que a tabela 'empresas' tenha uma coluna 'id_usuario' referenciando o usuário dono.
+ * Retorna 404 se não houver empresa vinculada ao usuário.
+ */
 router.get('/usuario/:id', async (req, res) => {
   try {
     const { id } = req.params;
