@@ -1,32 +1,34 @@
-// src/routes/owner/authEmpresaRoutes.js
 const express = require('express');
-const router = express.Router();
-const pool = require('../../config/db');
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const pool = require('../../config/db');
+const router = express.Router();
 
-// [POST] Login de Dono de Quadra
 router.post('/login', async (req, res) => {
   const { email, senha } = req.body;
 
-  if (!email || !senha) {
-    return res.status(400).json({ message: 'Email e senha são obrigatórios.' });
-  }
-
   try {
     const result = await pool.query(
-      'SELECT * FROM empresas WHERE email_empresa = $1 AND senha = $2',
-      [email, senha]
+      'SELECT * FROM empresas WHERE email_empresa = $1',
+      [email]
     );
 
     if (result.rows.length === 0) {
-      return res.status(401).json({ message: 'Usuário não encontrado.' });
+      return res.status(404).json({ message: 'Usuário não encontrado.' });
     }
 
     const empresa = result.rows[0];
+
+    const senhaCorreta = await bcrypt.compare(senha, empresa.senha);
+
+    if (!senhaCorreta) {
+      return res.status(401).json({ message: 'Senha incorreta.' });
+    }
+
     const token = jwt.sign(
-      { id: empresa.id_empresa, role: 'gestor' },
+      { id: empresa.id_empresa, papel_usuario: 'gestor' },
       process.env.JWT_SECRET,
-      { expiresIn: '12h' }
+      { expiresIn: '7d' }
     );
 
     return res.json({
@@ -36,11 +38,15 @@ router.post('/login', async (req, res) => {
         nome: empresa.nome,
         email: empresa.email_empresa,
         papel_usuario: 'gestor',
+        imagem_perfil: null, // ou empresa.logo se tiver
+        tt: null,
+        descricao: empresa.descricao || ''
       }
     });
+
   } catch (error) {
-    console.error('[authEmpresa] Erro ao fazer login:', error);
-    return res.status(500).json({ message: 'Erro ao fazer login.' });
+    console.error('Erro ao fazer login do dono de quadra:', error);
+    return res.status(500).json({ message: 'Erro interno no servidor.' });
   }
 });
 
