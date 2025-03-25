@@ -220,6 +220,28 @@ router.get('/:id/quadras', async (req, res) => {
   }
 });
 
+// Get rota
+// [GET] /api/empresas/usuario/:id
+router.get('/usuario/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      'SELECT * FROM empresas WHERE id_usuario = $1',
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Nenhuma empresa encontrada para este usuário' });
+    }
+
+    return res.status(200).json(result.rows[0]);
+  } catch (error) {
+    console.error('[Rota GET /usuario/:id] Erro ao buscar empresa por usuário:', error);
+    return res.status(500).json({ message: 'Erro ao buscar empresa por usuário', details: error.message });
+  }
+});
+
 /**
  * [GET] /api/empresas/:id/stats
  * Retorna estatísticas da empresa, como reservas do dia, taxa de ocupação e receita mensal.
