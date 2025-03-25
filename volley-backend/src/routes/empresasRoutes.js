@@ -5,7 +5,7 @@ const pool = require('../config/db');
 const ownerService = require('../services/ownerService');
 const multer = require('multer');
 const upload = multer({ dest: 'uploads/' }); // Configuração básica para upload
-
+const authMiddleware = require('../middlewares/authMiddleware'); // se 
 /**
  * [POST] /api/empresas
  * Endpoint antigo para criação simples de empresa (sem senha, CNPJ etc.)
@@ -36,12 +36,13 @@ router.post('/', async (req, res) => {
  * Novo endpoint para cadastro completo de empresa com senha, CNPJ, documento etc.
  * Este endpoint é utilizado para empresas (gestores) que se registram com dados completos.
  */
-router.post('/cadastro', upload.single('documento'), async (req, res) => {
+router.post('/cadastro', authMiddleware, upload.single('documento'), async (req, res) => {
   try {
     const { nome, endereco, contato, email_empresa, cnpj, senha } = req.body;
     const documento_url = req.file ? req.file.path : null;
+    const id_usuario = req.usuario.id; // ← vem do token JWT
 
-    const novaEmpresa = await ownerService.createEmpresa({
+    const novaEmpresa = await ownerService.createGestorEmpresa({
       nome,
       endereco,
       contato,
@@ -49,7 +50,7 @@ router.post('/cadastro', upload.single('documento'), async (req, res) => {
       cnpj,
       senha,
       documento_url
-    });
+    }, id_usuario);
 
     return res.status(201).json(novaEmpresa);
   } catch (error) {
