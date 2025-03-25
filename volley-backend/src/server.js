@@ -88,7 +88,7 @@ const temporariosRoutes = require('./routes/jogador/temporariosRoutes');
 const pdfRoutes = require('./routes/pdfRoutes');
 
 //Auth empresas
-const authEmpresaRoutes = require('./src/routes/owner/authEmpresaRoutes');
+const authEmpresaRoutes = require('./routes/owner/authEmpresaRoutes.js');
 
 // (1) Rotas para quadras de superadmin
 const quadrasAdminRoutes = require('./routes/quadras/quadrasAdminRoutes');
