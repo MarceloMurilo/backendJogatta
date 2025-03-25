@@ -18,7 +18,7 @@ async function getOwnerStripeAccountId(ownerId) {
 async function updateOwnerStripeAccountId(ownerId, accountId) {
   await db.query('UPDATE empresas SET stripe_account_id = $1 WHERE id_empresa = $2', [accountId, ownerId]);
 }
-
+ // teste dantas
 /**
  * Cria uma nova empresa com senha, CNPJ etc. (status inicial = 'pendente')
  * @param {*} param0 Objeto com { nome, endereco, contato, email_empresa, cnpj, senha, documento_url }
