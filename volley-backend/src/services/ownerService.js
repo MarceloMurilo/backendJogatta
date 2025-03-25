@@ -49,42 +49,11 @@ async function aprovarEmpresa(id_empresa) {
   return result.rows[0];
 }
 
-/**
- * Autentica uma empresa pelo email e senha
- * @param {string} email_empresa 
- * @param {string} senha 
- */
-async function authenticateEmpresa(email_empresa, senha) {
-  try {
-    const result = await db.query(
-      `SELECT * FROM empresas WHERE email_empresa = $1`,
-      [email_empresa]
-    );
-    
-    if (result.rows.length === 0) {
-      return null;
-    }
-    
-    const empresa = result.rows[0];
-    const passwordMatch = await bcrypt.compare(senha, empresa.senha);
-    
-    if (!passwordMatch) {
-      return null;
-    }
-    
-    return empresa;
-  } catch (error) {
-    console.error('Erro ao autenticar empresa:', error);
-    throw error;
-  }
-}
-
 // Exporta todas as funções do serviço
 module.exports = {
   getOwnerById,
   getOwnerStripeAccountId,
   updateOwnerStripeAccountId,
-  createEmpresa,
-  aprovarEmpresa,
-  authenticateEmpresa
+  createEmpresa,      // novo
+  aprovarEmpresa      // novo
 };
