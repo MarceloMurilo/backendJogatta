@@ -229,12 +229,18 @@ router.get('/:id/quadras', async (req, res) => {
  * Requer que a tabela 'empresas' tenha uma coluna 'id_usuario' referenciando o usuário dono.
  * Retorna 404 se não houver empresa vinculada ao usuário.
  */
+// [GET] /api/empresas/usuario/:id
 router.get('/usuario/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
     const result = await pool.query(
-      'SELECT * FROM empresas WHERE id_usuario = $1',
+      `
+      SELECT e.*
+      FROM usuario_empresa ue
+      JOIN empresas e ON ue.id_empresa = e.id_empresa
+      WHERE ue.id_usuario = $1
+      `,
       [id]
     );
 
@@ -245,7 +251,10 @@ router.get('/usuario/:id', async (req, res) => {
     return res.status(200).json(result.rows[0]);
   } catch (error) {
     console.error('[Rota GET /usuario/:id] Erro ao buscar empresa por usuário:', error);
-    return res.status(500).json({ message: 'Erro ao buscar empresa por usuário', details: error.message });
+    return res.status(500).json({ 
+      message: 'Erro ao buscar empresa por usuário', 
+      details: error.message 
+    });
   }
 });
 
