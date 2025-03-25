@@ -5,23 +5,15 @@ const authMiddleware = (req, res, next) => {
   console.log('[authMiddleware] Headers recebidos:', req.headers);
   
   const authHeader = req.headers['authorization'];
-
-  if (!authHeader) {
-    console.error(`[authMiddleware] Token de autorização não fornecido.`);
-    return res.status(401).json({ message: 'Token não fornecido' });
-  }
-
-  // Verificar se o header começa com "Bearer "
-  if (!authHeader.startsWith('Bearer ')) {
-    console.error(`[authMiddleware] Formato de token inválido. Deve começar com "Bearer "`);
-    return res.status(401).json({ message: 'Formato de token inválido' });
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.error('[authMiddleware] Token não fornecido ou formato inválido.');
+    return res.status(401).json({ message: 'Token não fornecido ou formato inválido.' });
   }
 
   const token = authHeader.split(' ')[1];
-
   if (!token) {
-    console.error(`[authMiddleware] Token não encontrado após "Bearer "`);
-    return res.status(401).json({ message: 'Token não fornecido' });
+    console.error('[authMiddleware] Token ausente.');
+    return res.status(401).json({ message: 'Token não fornecido.' });
   }
 
   console.log('[authMiddleware] Token recebido:', token);
@@ -30,15 +22,13 @@ const authMiddleware = (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     console.log('[authMiddleware] Token decodificado:', decoded);
 
-    // Verificar campos obrigatórios
+    // Verifica se os campos obrigatórios estão presentes
     if (!decoded.id || !decoded.papel_usuario || !decoded.email) {
       console.error('[authMiddleware] Campos obrigatórios ausentes no token:', decoded);
-      return res
-        .status(403)
-        .json({ message: 'Campos obrigatórios ausentes no token.' });
+      return res.status(403).json({ message: 'Campos obrigatórios ausentes no token.' });
     }
 
-    // Adicionar todos os campos do token ao objeto user
+    // Adiciona os dados do token ao objeto req.user
     req.user = {
       id: decoded.id,
       nome: decoded.nome,
@@ -50,12 +40,9 @@ const authMiddleware = (req, res, next) => {
     console.log(
       `[authMiddleware] Usuário autenticado: ID ${decoded.id}, Nome ${decoded.nome}, Email ${decoded.email}, Papel ${decoded.papel_usuario}`
     );
-    // Log adicional explícito
-    console.log(`[authMiddleware] Autenticado com sucesso -> ${decoded.nome}, Papel: ${decoded.papel_usuario}`);
-    
     next();
   } catch (err) {
-    console.error(`[authMiddleware] Erro ao verificar token:`, err.message);
+    console.error('[authMiddleware] Erro ao verificar token:', err.message);
     return res.status(401).json({ message: 'Token inválido' });
   }
 };
