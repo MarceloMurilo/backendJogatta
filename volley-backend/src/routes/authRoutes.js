@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const pool = require('../config/db');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const ownerService = require('../services/ownerService'); // Novo uso para criação da empresa
 
 const router = express.Router();
 
@@ -81,7 +82,7 @@ const verifyToken = (req, res, next) => {
 };
 
 // =============================
-//    ROTA DE REGISTER
+//    ROTA DE REGISTER (Jogador)
 // =============================
 router.post('/register', async (req, res) => {
   const {
@@ -140,6 +141,95 @@ router.post('/register', async (req, res) => {
   } catch (error) {
     console.error('Erro ao registrar usuário:', error);
     res.status(500).json({ error: 'Erro ao registrar o usuário' });
+  }
+});
+
+// =============================
+//    NOVO: ROTA DE REGISTER PARA GESTOR
+// =============================
+router.post('/register-gestor', async (req, res) => {
+  const {
+    // Dados do usuário
+    nome,
+    email,
+    senha,
+    tt,
+    altura,
+    imagem_perfil = null,
+    // Forçamos o papel para gestor
+    // Dados da empresa
+    empresa_nome,
+    cnpj,
+    endereco,
+    contato,
+    email_empresa,
+    documento_url = null
+  } = req.body;
+
+  try {
+    // Verificar se o email do usuário já está registrado
+    const userCheck = await pool.query(
+      'SELECT * FROM public.usuario WHERE email = $1',
+      [email]
+    );
+    if (userCheck.rows.length > 0) {
+      return res.status(400).json({ error: 'Email já registrado' });
+    }
+
+    // Verificar se o TT já está registrado (se fornecido)
+    if (tt) {
+      const ttCheck = await pool.query(
+        'SELECT * FROM public.usuario WHERE tt = $1',
+        [tt]
+      );
+      if (ttCheck.rows.length > 0) {
+        return res.status(400).json({ error: 'TT já registrado' });
+      }
+    }
+
+    // Criptografar senha para o usuário
+    const hashedPassword = await bcrypt.hash(senha, 10);
+
+    // Inserir novo usuário com papel 'gestor'
+    const userResult = await pool.query(
+      'INSERT INTO public.usuario (nome, email, senha, tt, altura, imagem_perfil, papel_usuario) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+      [nome, email, hashedPassword, tt, altura, imagem_perfil, 'gestor']
+    );
+    const novoUsuario = userResult.rows[0];
+
+    // Agora cria a empresa e vincula ao usuário usando o ownerService
+    // Note que o ownerService.createGestorEmpresa vai esperar o campo "senha" em formato plain-text para gerar o hash (se desejar armazenar a senha na empresa também)
+    const novaEmpresa = await ownerService.createGestorEmpresa({
+      nome: empresa_nome,
+      endereco,        // pode ser o mesmo que localizacao
+      contato,
+      email_empresa,
+      cnpj,
+      senha,           // senha em texto plano para criação (o service irá hash)
+      documento_url
+    }, novoUsuario.id_usuario);
+
+    // Gera token JWT para o usuário recém-criado
+    const token = jwt.sign(
+      {
+        id: novoUsuario.id_usuario,
+        papel_usuario: novoUsuario.papel_usuario,
+        nome: novoUsuario.nome,
+        email: novoUsuario.email,
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '1d' }
+    );
+
+    res.status(201).json({
+      message: 'Registro de Gestor realizado com sucesso! A empresa está pendente de aprovação.',
+      token,
+      user: { ...novoUsuario, senha: undefined },
+      empresa: novaEmpresa
+    });
+  } catch (error) {
+    console.error('Erro no registro de gestor:', error);
+    res.status(500).json({ error: 'Erro ao registrar gestor.' });
   }
 });
 

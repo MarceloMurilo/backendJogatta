@@ -1,17 +1,15 @@
+// src/routes/empresasRoutes.js
 const express = require('express');
 const router = express.Router();
-const pool = require('../config/db'); // já usado para queries locais
-const ownerService = require('../services/ownerService'); // import do service
-const multer = require('multer'); // para upload de arquivo/documento
-
-// Configuração básica do multer para upload local
-// (pode personalizar destino, nome do arquivo etc.)
-const upload = multer({ dest: 'uploads/' });
+const pool = require('../config/db');
+const ownerService = require('../services/ownerService');
+const multer = require('multer');
+const upload = multer({ dest: 'uploads/' }); // Configuração básica para upload
 
 /**
  * [POST] /api/empresas
- * Exemplo antigo que insere empresa simples (sem senha, cnpj etc.)
- * Você pode manter se ainda precisar desse endpoint.
+ * Endpoint antigo para criação simples de empresa (sem senha, CNPJ etc.)
+ * Pode ser mantido para compatibilidade se necessário.
  */
 router.post('/', async (req, res) => {
   try {
@@ -35,7 +33,8 @@ router.post('/', async (req, res) => {
 
 /**
  * [POST] /api/empresas/cadastro
- * Novo endpoint para cadastro de empresa com senha, CNPJ, documento etc.
+ * Novo endpoint para cadastro completo de empresa com senha, CNPJ, documento etc.
+ * Este endpoint é utilizado para empresas (gestores) que se registram com dados completos.
  */
 router.post('/cadastro', upload.single('documento'), async (req, res) => {
   try {
@@ -64,7 +63,8 @@ router.post('/cadastro', upload.single('documento'), async (req, res) => {
 
 /**
  * [PATCH] /api/empresas/:id/aprovar
- * Aprovação manual da empresa (muda status para 'ativo')
+ * Endpoint para aprovação manual de empresa (muda status de 'pendente' para 'ativo').
+ * Apenas o superadmin deverá ter acesso a essa rota.
  */
 router.patch('/:id/aprovar', async (req, res) => {
   try {
@@ -88,7 +88,7 @@ router.patch('/:id/aprovar', async (req, res) => {
 
 /**
  * [GET] /api/empresas
- * Retorna lista de empresas com quadras
+ * Retorna a lista de empresas, incluindo (por agregação) as quadras associadas.
  */
 router.get('/', async (req, res) => {
   try {
@@ -104,7 +104,9 @@ router.get('/', async (req, res) => {
                  'rede_disponivel', q.rede_disponivel,
                  'bola_disponivel', q.bola_disponivel,
                  'observacoes', q.observacoes,
-                 'foto', q.foto
+                 'foto', q.foto,
+                 'hora_abertura', q.hora_abertura,
+                 'hora_fechamento', q.hora_fechamento
                )
              ) FILTER (WHERE q.id_quadra IS NOT NULL), '[]') as quadras
         FROM empresas e
@@ -112,6 +114,7 @@ router.get('/', async (req, res) => {
        GROUP BY e.id_empresa
        ORDER BY e.nome
     `);
+    // Caso a agregação retorne a string '[]', converte para array vazio
     return res.json(result.rows.map(empresa => ({
       ...empresa,
       quadras: empresa.quadras === '[]' ? [] : empresa.quadras
@@ -127,7 +130,7 @@ router.get('/', async (req, res) => {
 
 /**
  * [GET] /api/empresas/:id
- * Retorna dados de uma empresa e suas quadras
+ * Retorna dados de uma empresa específica e suas quadras.
  */
 router.get('/:id', async (req, res) => {
   try {
@@ -150,7 +153,9 @@ router.get('/:id', async (req, res) => {
              rede_disponivel,
              bola_disponivel,
              observacoes,
-             foto
+             foto,
+             hora_abertura,
+             hora_fechamento
         FROM public.quadras
        WHERE id_empresa = $1
     `, [id]);
@@ -164,7 +169,8 @@ router.get('/:id', async (req, res) => {
 
 /**
  * [GET] /api/empresas/:id/quadras
- * Retorna apenas as quadras de uma empresa
+ * Retorna apenas as quadras de uma empresa.
+ * Valida se o id é numérico e se a empresa existe.
  */
 router.get('/:id/quadras', async (req, res) => {
   try {
@@ -216,7 +222,7 @@ router.get('/:id/quadras', async (req, res) => {
 
 /**
  * [GET] /api/empresas/:id/stats
- * Exemplo de estatísticas: reservas do dia, taxa de ocupação etc.
+ * Retorna estatísticas da empresa, como reservas do dia, taxa de ocupação e receita mensal.
  */
 router.get('/:id/stats', async (req, res) => {
   try {
@@ -278,7 +284,7 @@ router.get('/:id/stats', async (req, res) => {
 
 /**
  * [GET] /api/empresas/:id/reservas/pendentes
- * Exemplo de busca de reservas pendentes
+ * Retorna reservas pendentes para a empresa, formatando os dados conforme necessário.
  */
 router.get('/:id/reservas/pendentes', async (req, res) => {
   try {
