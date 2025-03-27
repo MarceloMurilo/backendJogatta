@@ -61,7 +61,7 @@ async function createGestorUser({ nome, email, senha }) {
   // Cria o usuário com papel 'owner'
   const result = await db.query(
     `INSERT INTO usuario 
-      (nome, email, senha, papel)
+      (nome, email, senha, papel_usuario)
      VALUES ($1, $2, $3, 'owner')
      RETURNING *`,
     [nome, email, hashedSenha]
