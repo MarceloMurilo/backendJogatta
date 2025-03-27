@@ -40,10 +40,8 @@ router.post('/cadastro', upload.single('documento'), async (req, res) => {
     const { nome, endereco, contato, email_empresa, cnpj, senha } = req.body;
     const documento_url = req.file ? req.file.path : null;
     
-    // Como não temos token, precisamos modificar a lógica para não depender de req.usuario.id
-    // Por exemplo, criar o usuário dentro desta chamada em vez de depender de um já existente
-    
-    const novaEmpresa = await ownerService.createGestorEmpresa({
+    // Modificado para funcionar sem id_usuario (criará um usuário automaticamente)
+    const resultado = await ownerService.createGestorEmpresa({
       nome,
       endereco,
       contato,
@@ -53,7 +51,15 @@ router.post('/cadastro', upload.single('documento'), async (req, res) => {
       documento_url
     });
 
-    return res.status(201).json(novaEmpresa);
+    return res.status(201).json({
+      message: 'Empresa cadastrada com sucesso. Aguarde aprovação.',
+      empresa: resultado.empresa,
+      // Opcional: retornar informações para login imediato
+      credenciais: {
+        email: email_empresa
+        // Não retornar a senha, obviamente
+      }
+    });
   } catch (error) {
     console.error('Erro ao cadastrar empresa:', error);
     return res.status(500).json({ 

@@ -18,7 +18,7 @@ async function getOwnerStripeAccountId(ownerId) {
 async function updateOwnerStripeAccountId(ownerId, accountId) {
   await db.query('UPDATE empresas SET stripe_account_id = $1 WHERE id_empresa = $2', [accountId, ownerId]);
 }
- // teste dantas
+
 /**
  * Cria uma nova empresa com senha, CNPJ etc. (status inicial = 'pendente')
  * @param {*} param0 Objeto com { nome, endereco, contato, email_empresa, cnpj, senha, documento_url }
@@ -51,24 +51,62 @@ async function aprovarEmpresa(id_empresa) {
 }
 
 /**
- * Cria a empresa para um gestor e associa o usuário (id_usuario) à empresa.
- * Insere os dados na tabela 'empresas' e cria a relação em 'usuario_empresa'.
- * @param {Object} empresaData - Dados da empresa (nome, endereco, contato, email_empresa, cnpj, senha, documento_url)
- * @param {number} userId - ID do usuário gestor
+ * Cria um novo usuário gestor com o papel de 'owner'
+ * @param {Object} userData - Dados do usuário (nome, email, senha)
+ * @returns {Object} O usuário criado
  */
-async function createGestorEmpresa(empresaData, userId) {
+async function createGestorUser({ nome, email, senha }) {
+  const hashedSenha = await bcrypt.hash(senha, 10);
+  
+  // Cria o usuário com papel 'owner'
+  const result = await db.query(
+    `INSERT INTO usuario 
+      (nome, email, senha, papel)
+     VALUES ($1, $2, $3, 'owner')
+     RETURNING *`,
+    [nome, email, hashedSenha]
+  );
+  
+  return result.rows[0];
+}
+
+/**
+ * Cria a empresa para um gestor e associa o usuário (id_usuario) à empresa.
+ * Se userId não for fornecido, cria automaticamente um usuário gestor.
+ * 
+ * @param {Object} empresaData - Dados da empresa (nome, endereco, contato, email_empresa, cnpj, senha, documento_url)
+ * @param {number} userId - ID do usuário gestor (opcional)
+ */
+async function createGestorEmpresa(empresaData, userId = null) {
+  let idUsuario = userId;
+  
+  // Se não tiver um userId, cria um novo usuário gestor
+  if (!idUsuario) {
+    // Usar o nome da empresa como nome do usuário e email_empresa como email
+    const userData = {
+      nome: empresaData.nome,
+      email: empresaData.email_empresa,
+      senha: empresaData.senha
+    };
+    
+    const novoUsuario = await createGestorUser(userData);
+    idUsuario = novoUsuario.id_usuario;
+  }
+  
   // Cria a empresa com status 'pendente'
   const novaEmpresa = await createEmpresa(empresaData);
 
   // Insere o relacionamento entre o usuário e a empresa
-  // Assumindo que existe uma tabela "usuario_empresa" com colunas (id_usuario, id_empresa)
   await db.query(
     'INSERT INTO usuario_empresa (id_usuario, id_empresa) VALUES ($1, $2)',
-    [userId, novaEmpresa.id_empresa]
+    [idUsuario, novaEmpresa.id_empresa]
   );
 
-  return novaEmpresa;
-}
+  return {
+    empresa: novaEmpresa,
+    id_usuario: idUsuario
+  };
+};
 
 // Exporta todas as funções do serviço
 module.exports = {
@@ -77,5 +115,6 @@ module.exports = {
   updateOwnerStripeAccountId,
   createEmpresa,
   aprovarEmpresa,
-  createGestorEmpresa   // Nova função para o fluxo de Gestor
+  createGestorEmpresa,
+  createGestorUser
 };
