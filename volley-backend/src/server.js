@@ -169,75 +169,75 @@ app.use('/api/empresas', authEmpresaRoutes);
 // ------------------------------------------------
 // CRON 1: Encerrar jogos cujo horário_fim < NOW()
 // ------------------------------------------------
-cron.schedule('*/5 * * * *', async () => {
-  console.log('Verificando jogos que precisam ser encerrados...');
-  try {
-    await db.query(`
-      UPDATE jogos
-         SET status = 'encerrada'
-       WHERE horario_fim < NOW()
-         AND status = 'ativa'
-    `);
-    console.log('Jogos encerrados automaticamente.');
-  } catch (error) {
-    console.error('Erro ao encerrar jogos:', error);
-  }
-});
+// cron.schedule('*/5 * * * *', async () => {
+//   console.log('Verificando jogos que precisam ser encerrados...');
+//   try {
+//     await db.query(`
+//       UPDATE jogos
+//          SET status = 'encerrada'
+//        WHERE horario_fim < NOW()
+//          AND status = 'ativa'
+//     `);
+//     console.log('Jogos encerrados automaticamente.');
+//   } catch (error) {
+//     console.error('Erro ao encerrar jogos:', error);
+//   }
+// });
 
 // ------------------------------------------------
 // CRON 2: Notificar automaticamente se habilitar_notificacao = true
 // Roda a cada 1 minuto
 // ------------------------------------------------
-cron.schedule('* * * * *', async () => {
-  console.log('Verificando jogos para notificações automáticas...');
-  try {
-    const agora = new Date();
+// cron.schedule('* * * * *', async () => {
+//   console.log('Verificando jogos para notificações automáticas...');
+//   try {
+//     const agora = new Date();
 
-    const jogos = await db.query(`
-      SELECT id_jogo, nome_jogo, data_jogo, horario_inicio,
-             tempo_notificacao, notificado_automatico
-        FROM jogos
-       WHERE habilitar_notificacao = true
-         AND status = 'aberto'
-         AND (notificado_automatico = false OR notificado_automatico IS NULL)
-    `);
+//     const jogos = await db.query(`
+//       SELECT id_jogo, nome_jogo, data_jogo, horario_inicio,
+//              tempo_notificacao, notificado_automatico
+//         FROM jogos
+//        WHERE habilitar_notificacao = true
+//          AND status = 'aberto'
+//          AND (notificado_automatico = false OR notificado_automatico IS NULL)
+//     `);
 
-    for (const row of jogos.rows) {
-      const { id_jogo, nome_jogo, data_jogo, horario_inicio, tempo_notificacao } = row;
-      const jogoDate = new Date(`${data_jogo}T${horario_inicio}`);
-      const diffMs = jogoDate - agora;
-      const diffMin = diffMs / 1000 / 60;
+//     for (const row of jogos.rows) {
+//       const { id_jogo, nome_jogo, data_jogo, horario_inicio, tempo_notificacao } = row;
+//       const jogoDate = new Date(`${data_jogo}T${horario_inicio}`);
+//       const diffMs = jogoDate - agora;
+//       const diffMin = diffMs / 1000 / 60;
 
-      if (diffMin <= tempo_notificacao && diffMin > 0) {
-        const naoConfirmados = await db.query(`
-          SELECT pj.id_usuario, u.device_token
-            FROM participacao_jogos pj
-            JOIN usuario u ON pj.id_usuario = u.id_usuario
-           WHERE pj.id_jogo = $1
-             AND pj.status = 'ativo'
-             AND pj.confirmado = false
-        `, [id_jogo]);
+//       if (diffMin <= tempo_notificacao && diffMin > 0) {
+//         const naoConfirmados = await db.query(`
+//           SELECT pj.id_usuario, u.device_token
+//             FROM participacao_jogos pj
+//             JOIN usuario u ON pj.id_usuario = u.id_usuario
+//            WHERE pj.id_jogo = $1
+//              AND pj.status = 'ativo'
+//              AND pj.confirmado = false
+//         `, [id_jogo]);
 
-        for (const row2 of naoConfirmados.rows) {
-          const { device_token } = row2;
-          if (device_token) {
-            console.log(`[NOTIF] Enviando push para token ${device_token} - Jogo: ${nome_jogo}`);
-          }
-        }
+//         for (const row2 of naoConfirmados.rows) {
+//           const { device_token } = row2;
+//           if (device_token) {
+//             console.log(`[NOTIF] Enviando push para token ${device_token} - Jogo: ${nome_jogo}`);
+//           }
+//         }
 
-        await db.query(`
-          UPDATE jogos
-             SET notificado_automatico = true
-           WHERE id_jogo = $1
-        `, [id_jogo]);
+//         await db.query(`
+//           UPDATE jogos
+//              SET notificado_automatico = true
+//            WHERE id_jogo = $1
+//         `, [id_jogo]);
 
-        console.log(`Notificação automática enviada para jogo ID: ${id_jogo}`);
-      }
-    }
-  } catch (error) {
-    console.error('Erro ao enviar notificações automáticas:', error);
-  }
-});
+//         console.log(`Notificação automática enviada para jogo ID: ${id_jogo}`);
+//       }
+//     }
+//   } catch (error) {
+//     console.error('Erro ao enviar notificações automáticas:', error);
+//   }
+// });
 
 // ------------------------------------------------
 // CRON 3: Verificar reservas expiradas e passar para o próximo organizador
