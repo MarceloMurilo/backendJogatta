@@ -34,15 +34,40 @@ router.post('/', async (req, res) => {
  * [POST] /api/empresas/cadastro
  * Novo endpoint para cadastro completo de empresa com senha, CNPJ, documento etc.
  * Este endpoint é utilizado para empresas (gestores) que se registram com dados completos.
+ * Cria automaticamente um usuário gestor associado à empresa.
  */
 router.post('/cadastro', upload.single('documento'), async (req, res) => {
   try {
     const { nome, endereco, contato, email_empresa, cnpj, senha } = req.body;
     const documento_url = req.file ? req.file.path : null;
     
-    // Como não temos token, precisamos modificar a lógica para não depender de req.usuario.id
-    // Por exemplo, criar o usuário dentro desta chamada em vez de depender de um já existente
+    // Verificar se o email da empresa já está cadastrado para algum usuário
+    const userCheck = await pool.query(
+      'SELECT * FROM usuario WHERE email = $1',
+      [email_empresa]
+    );
     
+    if (userCheck.rows.length > 0) {
+      return res.status(400).json({ 
+        message: 'Email já registrado para outro usuário',
+        details: 'Por favor, utilize um email diferente para a empresa.'
+      });
+    }
+    
+    // Primeiro criar um usuário gestor
+    // Usando o email da empresa como email do usuário gestor
+    const bcrypt = require('bcryptjs');
+    const hashedPassword = await bcrypt.hash(senha, 10);
+    
+    const userResult = await pool.query(
+      'INSERT INTO usuario (nome, email, senha, papel_usuario) VALUES ($1, $2, $3, $4) RETURNING *',
+      [nome, email_empresa, hashedPassword, 'gestor']
+    );
+    
+    const novoGestor = userResult.rows[0];
+    console.log('Novo usuário gestor criado:', novoGestor);
+    
+    // Agora criar a empresa associada ao gestor
     const novaEmpresa = await ownerService.createGestorEmpresa({
       nome,
       endereco,
@@ -51,9 +76,31 @@ router.post('/cadastro', upload.single('documento'), async (req, res) => {
       cnpj,
       senha,
       documento_url
-    });
+    }, novoGestor.id_usuario);
 
-    return res.status(201).json(novaEmpresa);
+    // Gerar token JWT para o usuário recém-criado
+    const jwt = require('jsonwebtoken');
+    const token = jwt.sign(
+      {
+        id: novoGestor.id_usuario,
+        papel_usuario: novoGestor.papel_usuario,
+        nome: novoGestor.nome,
+        email: novoGestor.email
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '1d' }
+    );
+
+    return res.status(201).json({
+      message: 'Empresa cadastrada com sucesso. Aguardando aprovação.',
+      empresa: novaEmpresa,
+      gestor: {
+        id: novoGestor.id_usuario,
+        nome: novoGestor.nome,
+        email: novoGestor.email
+      },
+      token // Token JWT para autenticação imediata
+    });
   } catch (error) {
     console.error('Erro ao cadastrar empresa:', error);
     return res.status(500).json({ 

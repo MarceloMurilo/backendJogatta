@@ -18,7 +18,7 @@ async function getOwnerStripeAccountId(ownerId) {
 async function updateOwnerStripeAccountId(ownerId, accountId) {
   await db.query('UPDATE empresas SET stripe_account_id = $1 WHERE id_empresa = $2', [accountId, ownerId]);
 }
- // teste dantas
+
 /**
  * Cria uma nova empresa com senha, CNPJ etc. (status inicial = 'pendente')
  * @param {*} param0 Objeto com { nome, endereco, contato, email_empresa, cnpj, senha, documento_url }
@@ -59,13 +59,38 @@ async function aprovarEmpresa(id_empresa) {
 async function createGestorEmpresa(empresaData, userId) {
   // Cria a empresa com status 'pendente'
   const novaEmpresa = await createEmpresa(empresaData);
+  
+  // Verificação para debug
+  console.log('Nova empresa criada:', novaEmpresa);
+  console.log('ID do usuário gestor:', userId);
+  
+  // Verificar se o userId é válido
+  if (!userId) {
+    throw new Error('ID do usuário não fornecido para associação com a empresa');
+  }
 
   // Insere o relacionamento entre o usuário e a empresa
-  // Assumindo que existe uma tabela "usuario_empresa" com colunas (id_usuario, id_empresa)
-  await db.query(
-    'INSERT INTO usuario_empresa (id_usuario, id_empresa) VALUES ($1, $2)',
+  const relationship = await db.query(
+    'INSERT INTO usuario_empresa (id_usuario, id_empresa) VALUES ($1, $2) RETURNING *',
     [userId, novaEmpresa.id_empresa]
   );
+  
+  console.log('Relação criada:', relationship.rows[0]);
+
+  // Verificar se o papel do usuário está correto
+  const userRole = await db.query(
+    'SELECT papel_usuario FROM usuario WHERE id_usuario = $1',
+    [userId]
+  );
+  
+  // Se o usuário não for gestor, atualiza o papel
+  if (userRole.rows.length > 0 && userRole.rows[0].papel_usuario !== 'gestor') {
+    await db.query(
+      'UPDATE usuario SET papel_usuario = $1 WHERE id_usuario = $2',
+      ['gestor', userId]
+    );
+    console.log('Papel do usuário atualizado para gestor');
+  }
 
   return novaEmpresa;
 }
@@ -77,5 +102,5 @@ module.exports = {
   updateOwnerStripeAccountId,
   createEmpresa,
   aprovarEmpresa,
-  createGestorEmpresa   // Nova função para o fluxo de Gestor
+  createGestorEmpresa   // Função corrigida para o fluxo de Gestor
 };
