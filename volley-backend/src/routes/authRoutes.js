@@ -197,6 +197,8 @@ router.post('/register-gestor', async (req, res) => {
     );
     const novoUsuario = userResult.rows[0];
 
+    console.log('Novo usuário gestor criado:', novoUsuario);
+
     // Agora cria a empresa e vincula ao usuário usando o ownerService
     // Note que o ownerService.createGestorEmpresa vai esperar o campo "senha" em formato plain-text para gerar o hash (se desejar armazenar a senha na empresa também)
     const novaEmpresa = await ownerService.createGestorEmpresa({
@@ -230,6 +232,89 @@ router.post('/register-gestor', async (req, res) => {
   } catch (error) {
     console.error('Erro no registro de gestor:', error);
     res.status(500).json({ error: 'Erro ao registrar gestor.' });
+  }
+});
+
+// =============================
+//    ROTA PARA ASSOCIAR USUÁRIO EXISTENTE A EMPRESA
+// =============================
+router.post('/associar-empresa', async (req, res) => {
+  const { id_usuario, id_empresa } = req.body;
+
+  if (!id_usuario || !id_empresa) {
+    return res.status(400).json({ 
+      error: 'IDs de usuário e empresa são obrigatórios.' 
+    });
+  }
+
+  try {
+    // Verificar se o usuário existe
+    const userCheck = await pool.query(
+      'SELECT * FROM public.usuario WHERE id_usuario = $1',
+      [id_usuario]
+    );
+    
+    if (userCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+
+    // Verificar se a empresa existe
+    const companyCheck = await pool.query(
+      'SELECT * FROM empresas WHERE id_empresa = $1',
+      [id_empresa]
+    );
+    
+    if (companyCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Empresa não encontrada' });
+    }
+
+    // Verificar se já existe associação
+    const relationCheck = await pool.query(
+      'SELECT * FROM usuario_empresa WHERE id_usuario = $1 AND id_empresa = $2',
+      [id_usuario, id_empresa]
+    );
+    
+    if (relationCheck.rows.length > 0) {
+      return res.status(400).json({ 
+        error: 'Usuário já está associado a esta empresa' 
+      });
+    }
+
+    // Criar associação
+    const relation = await pool.query(
+      'INSERT INTO usuario_empresa (id_usuario, id_empresa) VALUES ($1, $2) RETURNING *',
+      [id_usuario, id_empresa]
+    );
+
+    console.log('Relação criada:', relation.rows[0]);
+
+    // Atualizar papel do usuário para 'gestor' se ainda não for
+    await pool.query(
+      `UPDATE usuario 
+       SET papel_usuario = 'gestor' 
+       WHERE id_usuario = $1 
+       AND papel_usuario != 'gestor'`,
+      [id_usuario]
+    );
+
+    // Buscar dados da empresa para retornar
+    const empresaData = await pool.query(
+      'SELECT * FROM empresas WHERE id_empresa = $1',
+      [id_empresa]
+    );
+
+    res.status(201).json({
+      message: 'Usuário associado com sucesso à empresa!',
+      id_usuario,
+      id_empresa,
+      empresa: empresaData.rows[0]
+    });
+  } catch (error) {
+    console.error('Erro ao associar usuário à empresa:', error);
+    res.status(500).json({ 
+      error: 'Erro ao associar usuário à empresa',
+      details: error.message
+    });
   }
 });
 

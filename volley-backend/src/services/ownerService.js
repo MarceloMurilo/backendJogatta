@@ -51,62 +51,49 @@ async function aprovarEmpresa(id_empresa) {
 }
 
 /**
- * Cria um novo usuário gestor com o papel de 'owner'
- * @param {Object} userData - Dados do usuário (nome, email, senha)
- * @returns {Object} O usuário criado
- */
-async function createGestorUser({ nome, email, senha }) {
-  const hashedSenha = await bcrypt.hash(senha, 10);
-  
-  // Cria o usuário com papel 'owner'
-  const result = await db.query(
-    `INSERT INTO usuario 
-      (nome, email, senha, papel_usuario)
-     VALUES ($1, $2, $3, 'owner')
-     RETURNING *`,
-    [nome, email, hashedSenha]
-  );
-  
-  return result.rows[0];
-}
-
-/**
  * Cria a empresa para um gestor e associa o usuário (id_usuario) à empresa.
- * Se userId não for fornecido, cria automaticamente um usuário gestor.
- * 
+ * Insere os dados na tabela 'empresas' e cria a relação em 'usuario_empresa'.
  * @param {Object} empresaData - Dados da empresa (nome, endereco, contato, email_empresa, cnpj, senha, documento_url)
- * @param {number} userId - ID do usuário gestor (opcional)
+ * @param {number} userId - ID do usuário gestor
  */
-async function createGestorEmpresa(empresaData, userId = null) {
-  let idUsuario = userId;
-  
-  // Se não tiver um userId, cria um novo usuário gestor
-  if (!idUsuario) {
-    // Usar o nome da empresa como nome do usuário e email_empresa como email
-    const userData = {
-      nome: empresaData.nome,
-      email: empresaData.email_empresa,
-      senha: empresaData.senha
-    };
-    
-    const novoUsuario = await createGestorUser(userData);
-    idUsuario = novoUsuario.id_usuario;
-  }
-  
+async function createGestorEmpresa(empresaData, userId) {
   // Cria a empresa com status 'pendente'
   const novaEmpresa = await createEmpresa(empresaData);
+  
+  // Verificação para debug
+  console.log('Nova empresa criada:', novaEmpresa);
+  console.log('ID do usuário gestor:', userId);
+  
+  // Verificar se o userId é válido
+  if (!userId) {
+    throw new Error('ID do usuário não fornecido para associação com a empresa');
+  }
 
   // Insere o relacionamento entre o usuário e a empresa
-  await db.query(
-    'INSERT INTO usuario_empresa (id_usuario, id_empresa) VALUES ($1, $2)',
-    [idUsuario, novaEmpresa.id_empresa]
+  const relationship = await db.query(
+    'INSERT INTO usuario_empresa (id_usuario, id_empresa) VALUES ($1, $2) RETURNING *',
+    [userId, novaEmpresa.id_empresa]
   );
+  
+  console.log('Relação criada:', relationship.rows[0]);
 
-  return {
-    empresa: novaEmpresa,
-    id_usuario: idUsuario
-  };
-};
+  // Verificar se o papel do usuário está correto
+  const userRole = await db.query(
+    'SELECT papel_usuario FROM usuario WHERE id_usuario = $1',
+    [userId]
+  );
+  
+  // Se o usuário não for gestor, atualiza o papel
+  if (userRole.rows.length > 0 && userRole.rows[0].papel_usuario !== 'gestor') {
+    await db.query(
+      'UPDATE usuario SET papel_usuario = $1 WHERE id_usuario = $2',
+      ['gestor', userId]
+    );
+    console.log('Papel do usuário atualizado para gestor');
+  }
+
+  return novaEmpresa;
+}
 
 // Exporta todas as funções do serviço
 module.exports = {
@@ -115,6 +102,5 @@ module.exports = {
   updateOwnerStripeAccountId,
   createEmpresa,
   aprovarEmpresa,
-  createGestorEmpresa,
-  createGestorUser
+  createGestorEmpresa   // Função corrigida para o fluxo de Gestor
 };
