@@ -144,27 +144,28 @@ router.patch('/:id/aprovar', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT e.*,
-             COALESCE(json_agg(
-               json_build_object(
-                 'id', q.id_quadra,
-                 'nome', q.nome,
-                 'preco_hora', q.preco_hora,
-                 'promocao_ativa', q.promocao_ativa,
-                 'descricao_promocao', q.descricao_promocao,
-                 'rede_disponivel', q.rede_disponivel,
-                 'bola_disponivel', q.bola_disponivel,
-                 'observacoes', q.observacoes,
-                 'foto', q.foto,
-                 'hora_abertura', q.hora_abertura,
-                 'hora_fechamento', q.hora_fechamento
-               )
-             ) FILTER (WHERE q.id_quadra IS NOT NULL), '[]') as quadras
-        FROM empresas e
-        LEFT JOIN quadras q ON e.id_empresa = q.id_empresa
-       GROUP BY e.id_empresa
-       ORDER BY e.nome
-    `);
+            SELECT e.*,
+                   COALESCE(json_agg(
+                     json_build_object(
+                       'id', q.id_quadra,
+                       'nome', q.nome,
+                       'preco_hora', q.preco_hora,
+                       'promocao_ativa', q.promocao_ativa,
+                       'descricao_promocao', q.descricao_promocao,
+                       'rede_disponivel', q.rede_disponivel,
+                       'bola_disponivel', q.bola_disponivel,
+                       'observacoes', q.observacoes,
+                      'foto', q.foto,
+                       'hora_abertura', q.hora_abertura,
+                       'hora_fechamento', q.hora_fechamento
+                     )
+                   ) FILTER (WHERE q.id_quadra IS NOT NULL), '[]') as quadras
+              FROM empresas e
+              LEFT JOIN quadras q ON e.id_empresa = q.id_empresa
+              WHERE  e.status = 'aprovado'
+             GROUP BY e.id_empresa
+             ORDER BY e.nome
+          `);
     // Caso a agregação retorne a string '[]', converte para array vazio
     return res.json(result.rows.map(empresa => ({
       ...empresa,
