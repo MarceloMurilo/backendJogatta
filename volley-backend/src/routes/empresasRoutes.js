@@ -5,7 +5,8 @@ const pool = require('../config/db');
 const ownerService = require('../services/ownerService');
 const multer = require('multer');
 const upload = multer({ dest: 'uploads/' }); // Configuração básica para upload
-const authMiddleware = require('../middlewares/authMiddleware'); // se 
+const authMiddleware = require('../middlewares/authMiddleware');
+
 /**
  * [POST] /api/empresas
  * Endpoint antigo para criação simples de empresa (sem senha, CNPJ etc.)
@@ -30,6 +31,7 @@ router.post('/', async (req, res) => {
     });
   }
 });
+
 /**
  * [POST] /api/empresas/cadastro
  * Novo endpoint para cadastro completo de empresa com senha, CNPJ, documento etc.
@@ -109,6 +111,7 @@ router.post('/cadastro', upload.single('documento'), async (req, res) => {
     });
   }
 });
+
 /**
  * [PATCH] /api/empresas/:id/aprovar
  * Endpoint para aprovação manual de empresa (muda status de 'pendente' para 'ativo').
@@ -269,15 +272,54 @@ router.get('/:id/quadras', async (req, res) => {
 });
 
 /**
+ * [POST] /api/empresas/:id/quadras
+ * Cria uma nova quadra associada a uma empresa específica.
+ */
+router.post('/:id/quadras', async (req, res) => {
+  try {
+    const { id } = req.params; // id da empresa
+    const { nome, foto, preco_hora, promocao_ativa, descricao_promocao, rede_disponivel, bola_disponivel, observacoes, capacidade, hora_abertura, hora_fechamento } = req.body;
+
+    // Validações básicas
+    if (!nome || !preco_hora || !capacidade || !hora_abertura || !hora_fechamento) {
+      return res.status(400).json({ 
+        message: 'Campos obrigatórios (nome, preço por hora, capacidade, horários) não preenchidos.' 
+      });
+    }
+
+    // Criação da quadra associada à empresa com id = id
+    const result = await pool.query(
+      `INSERT INTO quadras (
+        nome, 
+        foto, 
+        preco_hora, 
+        promocao_ativa, 
+        descricao_promocao, 
+        rede_disponivel, 
+        bola_disponivel, 
+        observacoes, 
+        capacidade, 
+        hora_abertura, 
+        hora_fechamento, 
+        id_empresa
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      RETURNING *`,
+      [nome, foto, preco_hora, promocao_ativa, descricao_promocao, rede_disponivel, bola_disponivel, observacoes, capacidade, hora_abertura, hora_fechamento, id]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Erro ao criar quadra:', error);
+    res.status(500).json({ message: 'Erro ao criar quadra', details: error.message });
+  }
+});
+
+/**
  * [GET] /api/empresas/usuario/:id
  * Retorna a empresa vinculada a um usuário específico (gestor).
  * Essa rota é utilizada para carregar automaticamente os dados da empresa
  * após o login de um usuário com papel de gestor, com base no seu ID.
- * 
- * Requer que a tabela 'empresas' tenha uma coluna 'id_usuario' referenciando o usuário dono.
- * Retorna 404 se não houver empresa vinculada ao usuário.
  */
-// [GET] /api/empresas/usuario/:id
 router.get('/usuario/:id', async (req, res) => {
   try {
     const { id } = req.params;
