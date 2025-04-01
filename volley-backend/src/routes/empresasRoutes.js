@@ -162,7 +162,7 @@ router.get('/', async (req, res) => {
                    ) FILTER (WHERE q.id_quadra IS NOT NULL), '[]') as quadras
               FROM empresas e
               LEFT JOIN quadras q ON e.id_empresa = q.id_empresa
-              WHERE  e.status = 'ativo'
+              WHERE  e.status IN ('ativo', 'pendente')
              GROUP BY e.id_empresa
              ORDER BY e.nome
           `);
