@@ -163,7 +163,7 @@ app.use('/api/quadras', quadrasRoutes);
 app.use('/api/empresas/reservas', empresasReservasRoutes);
 
 // ROTA LOGIN : Empresas
-app.use('/api/empresas', authEmpresaRoutes);
+// app.use('/api/empresas', authEmpresaRoutes); // ✅ REMOVIDO
 
 // ------------------------------------------------
 // CRON 1: Encerrar jogos cujo horário_fim < NOW()
