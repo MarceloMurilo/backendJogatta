@@ -41,7 +41,16 @@ app.get('/termos-servico', (req, res) => {
 // Servir arquivos estáticos (ex.: google-site-verification.html)
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Middlewares globais
+// Stripe
+app.use('/api/payments', paymentRoutes);
+
+
+app.use('/api/owner/connect', stripeConnectOwnerRoutes);
+app.use('/api/connect', stripeConnectRoutes);
+// ⬅️ 1. Webhook primeiro (precisa do body RAW!)
+app.use('/api/stripe', stripeWebhook);
+
+// ⬅️ 2. Agora sim vem o parser JSON
 app.use(express.json());
 app.use(cors());
 app.use(passport.initialize());
@@ -56,12 +65,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Stripe
-app.use('/api/payments', paymentRoutes);
-app.use('/api/stripe', stripeWebhook);
 
-app.use('/api/owner/connect', stripeConnectOwnerRoutes);
-app.use('/api/connect', stripeConnectRoutes);
 
 // ------------------------------------------------
 // Importação de rotas

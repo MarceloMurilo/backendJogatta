@@ -5,6 +5,7 @@ const express = require('express');
 const router = express.Router();
 const stripe = require('../config/stripe');
 const { updatePaymentStatus } = require('../services/paymentService');
+const pool = require('../config/db');
 
 // Variável ambiente contendo o segredo do webhook configurado no painel do Stripe
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -35,6 +36,23 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         console.log(`Pagamento falhou. PaymentIntent ID: ${paymentFailedIntent.id}`);
         await updatePaymentStatus(paymentFailedIntent.id, 'failed');
         break;
+
+        case 'account.updated':
+  const account = event.data.object;
+
+  if (account.details_submitted) {
+    try {
+      await pool.query(
+        'UPDATE empresas SET stripe_onboarding_completo = TRUE WHERE stripe_account_id = $1',
+        [account.id]
+      );
+      console.log(`Stripe onboarding finalizado para a conta ${account.id}`);
+    } catch (err) {
+      console.error('Erro ao atualizar onboarding da empresa:', err.message);
+    }
+  }
+  break;
+
 
       default:
         console.log(`Evento não tratado: ${event.type}`);
