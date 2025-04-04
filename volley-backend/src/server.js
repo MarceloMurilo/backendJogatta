@@ -44,7 +44,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Stripe
 app.use('/api/payments', paymentRoutes);
 
-
 app.use('/api/owner/connect', stripeConnectOwnerRoutes);
 app.use('/api/connect', stripeConnectRoutes);
 // ⬅️ 1. Webhook primeiro (precisa do body RAW!)
@@ -64,7 +63,6 @@ app.use((req, res, next) => {
   console.log('==============================\n');
   next();
 });
-
 
 
 // ------------------------------------------------
@@ -168,7 +166,7 @@ app.use('/api/quadras', quadrasRoutes);
 app.use('/api/empresas/reservas', empresasReservasRoutes);
 
 // ROTA LOGIN : Empresas
-// app.use('/api/empresas', authEmpresaRoutes);
+app.use('/api/empresas', authEmpresaRoutes);
 
 // ------------------------------------------------
 // CRON 1: Encerrar jogos cujo horário_fim < NOW()
