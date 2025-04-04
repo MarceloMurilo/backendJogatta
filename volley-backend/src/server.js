@@ -20,6 +20,11 @@ const stripeConnectOwnerRoutes = require('./routes/owner/stripeConnectRoutes');
 
 const app = express();
 
+// ✅ Parser de JSON e CORS antes de qualquer rota
+app.use(express.json());
+app.use(cors());
+app.use(passport.initialize());
+
 app.get('/', (req, res) => {
   res.status(200).send('Backend do Jogatta está online! 🚀');
 });
@@ -43,16 +48,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Stripe
 app.use('/api/payments', paymentRoutes);
-
 app.use('/api/owner/connect', stripeConnectOwnerRoutes);
 app.use('/api/connect', stripeConnectRoutes);
-// ⬅️ 1. Webhook primeiro (precisa do body RAW!)
-app.use('/api/stripe', stripeWebhook);
-
-// ⬅️ 2. Agora sim vem o parser JSON
-app.use(express.json());
-app.use(cors());
-app.use(passport.initialize());
+app.use('/api/stripe', stripeWebhook); // se estiver usando express.raw, esse fica separado mesmo
 
 // Logging básico
 app.use((req, res, next) => {
@@ -63,7 +61,6 @@ app.use((req, res, next) => {
   console.log('==============================\n');
   next();
 });
-
 
 // ------------------------------------------------
 // Importação de rotas
