@@ -61,7 +61,8 @@ const accountLink = await stripe.accountLinks.create({
   return_url: `${process.env.FRONTEND_URL}/stripe/sucesso`,
   type: 'account_onboarding'
 });
-
+// 👇 AQUI:
+console.log('🔗 Link de onboarding gerado:', accountLink.url);
     res.json({ url: accountLink.url });
   } catch (error) {
     console.error('Erro ao gerar link de onboarding:', error.message);
