@@ -50,12 +50,17 @@ router.post('/create-account-link', async (req, res) => {
       return res.status(400).json({ error: 'Empresa não possui conta Stripe ainda.' });
     }
 
-    const accountLink = await stripe.accountLinks.create({
-      account: stripeId,
-      refresh_url: `${process.env.FRONTEND_URL}/stripe/erro`,
-      return_url: `${process.env.FRONTEND_URL}/stripe/sucesso`,
-      type: 'account_onboarding'
-    });
+    console.log('🔗 URLs que estão sendo usadas:');
+console.log('stripeId:', stripeId);
+console.log('refresh_url:', `${process.env.FRONTEND_URL}/stripe/erro`);
+console.log('return_url:', `${process.env.FRONTEND_URL}/stripe/sucesso`);
+
+const accountLink = await stripe.accountLinks.create({
+  account: stripeId,
+  refresh_url: `${process.env.FRONTEND_URL}/stripe/erro`,
+  return_url: `${process.env.FRONTEND_URL}/stripe/sucesso`,
+  type: 'account_onboarding'
+});
 
     res.json({ url: accountLink.url });
   } catch (error) {
