@@ -59,8 +59,8 @@ const accountLink = await stripe.accountLinks.create({
   account: stripeId,
   refresh_url: `${process.env.FRONTEND_URL}/stripe/erro`,
   return_url: `${process.env.FRONTEND_URL}/stripe/sucesso`,
-  type: 'account_onboarding',
-  locale: 'pt-BR' // 👈 define o idioma
+  type: 'account_onboarding'
+  
 });
 // 👇 AQUI:
 console.log('🔗 Link de onboarding gerado:', accountLink.url);
