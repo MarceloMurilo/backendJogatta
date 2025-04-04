@@ -69,16 +69,34 @@ router.post('/cadastro', upload.single('documento'), async (req, res) => {
     const novoGestor = userResult.rows[0];
     console.log('Novo usuário gestor criado:', novoGestor);
     
-    // Agora criar a empresa associada ao gestor
-    const novaEmpresa = await ownerService.createGestorEmpresa({
-      nome,
-      endereco,
-      contato,
-      email_empresa,
-      cnpj,
-      senha,
-      documento_url
-    }, novoGestor.id_usuario);
+    // Criar conta Stripe Connect (modo teste)
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const stripeAccount = await stripe.accounts.create({
+  type: 'standard',
+  country: 'BR',
+  email: email_empresa,
+  capabilities: {
+    card_payments: { requested: true },
+    transfers: { requested: true }
+  },
+  business_type: 'company',
+  company: {
+    name: nome,
+    tax_id: cnpj.replace(/\D/g, '')
+  }
+});
+
+// Agora criar a empresa associada ao gestor
+const novaEmpresa = await ownerService.createGestorEmpresa({
+  nome,
+  endereco,
+  contato,
+  email_empresa,
+  cnpj,
+  senha,
+  documento_url,
+  stripe_account_id: stripeAccount.id
+}, novoGestor.id_usuario);
 
     // Gerar token JWT para o usuário recém-criado
     const jwt = require('jsonwebtoken');

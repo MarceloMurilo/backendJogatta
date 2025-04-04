@@ -23,17 +23,18 @@ async function updateOwnerStripeAccountId(ownerId, accountId) {
  * Cria uma nova empresa com senha, CNPJ etc. (status inicial = 'pendente')
  * @param {*} param0 Objeto com { nome, endereco, contato, email_empresa, cnpj, senha, documento_url }
  */
-async function createEmpresa({ nome, endereco, contato, email_empresa, cnpj, senha, documento_url }) {
+async function createEmpresa({ nome, endereco, contato, email_empresa, cnpj, senha, documento_url, stripe_account_id }) {
   const hashedSenha = await bcrypt.hash(senha, 10); // Gera hash seguro da senha
   const result = await db.query(
     `INSERT INTO empresas 
-       (nome, endereco, contato, email_empresa, cnpj, senha, documento_url, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'pendente')
+       (nome, endereco, contato, email_empresa, cnpj, senha, documento_url, status, stripe_account_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'pendente', $8)
      RETURNING *`,
-    [nome, endereco, contato, email_empresa, cnpj, hashedSenha, documento_url]
+    [nome, endereco, contato, email_empresa, cnpj, hashedSenha, documento_url, stripe_account_id]
   );
   return result.rows[0];
 }
+
 
 /**
  * Aprova manualmente uma empresa, definindo status = 'ativo'
