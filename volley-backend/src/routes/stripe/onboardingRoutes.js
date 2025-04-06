@@ -35,6 +35,36 @@ router.post('/create-stripe-account', async (req, res) => {
   }
 });
 
+// ✅ [POST] Criar link de onboarding para completar o cadastro Stripe
+router.post('/create-account-link', async (req, res) => {
+  const { id_empresa } = req.body;
+
+  try {
+    const result = await db.query(
+      'SELECT stripe_account_id FROM empresas WHERE id_empresa = $1',
+      [id_empresa]
+    );
+
+    const stripe_account_id = result.rows[0]?.stripe_account_id;
+
+    if (!stripe_account_id) {
+      return res.status(404).json({ error: 'Conta Stripe não encontrada para esta empresa.' });
+    }
+
+    const accountLink = await stripe.accountLinks.create({
+      account: stripe_account_id,
+      refresh_url: 'https://jogatta.netlify.app/erro-conexao',
+      return_url: 'https://jogatta.netlify.app/sucesso-conexao',
+      type: 'account_onboarding'
+    });
+
+    res.status(200).json({ url: accountLink.url });
+  } catch (error) {
+    console.error('Erro ao criar link de onboarding Stripe:', error.message);
+    res.status(500).json({ error: 'Erro ao criar link de onboarding Stripe.' });
+  }
+});
+
 // ✅ [POST] Enviar dados do representante
 router.post('/update-account', async (req, res) => {
   const { stripe_account_id, nome_completo, cpf, nascimento, endereco } = req.body;
@@ -85,7 +115,7 @@ router.post('/add-bank-account', async (req, res) => {
         currency: 'BRL',
         account_holder_name: nome_titular,
         account_holder_type: 'individual',
-        routing_number: banco + agencia, // ex: 0010001
+        routing_number: banco + agencia,
         account_number: conta.replace(/\D/g, '')
       }
     });
