@@ -1,7 +1,7 @@
 // src/routes/stripe/paymentRoutes.js
 const express = require('express');
 const router = express.Router();
-const stripe = require('../../../config/stripe');
+const stripe = require('../../../src/config/stripe.js');
 const { getOwnerStripeAccountId } = require('../../services/ownerService');
 const { createTransaction } = require('../../services/paymentService');
 
