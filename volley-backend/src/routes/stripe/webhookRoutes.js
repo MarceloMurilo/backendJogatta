@@ -3,9 +3,9 @@
 
 const express = require('express');
 const router = express.Router();
-const stripe = require('../../../config/stripe');
+const stripe = require('../../../src/config/stripe');
 const { updatePaymentStatus } = require('../../services/paymentService');
-const pool = require('../../../config/db');
+const pool = require('../../../src/config/db');
 
 // Variável ambiente contendo o segredo do webhook configurado no painel do Stripe
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
