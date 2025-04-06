@@ -4,7 +4,7 @@
 const express = require('express');
 const router = express.Router();
 const stripe = require('../../../src/config/stripe');
-const { updatePaymentStatus } = require('../../services/paymentService');
+const { updatePaymentStatus } = require('../../services/stripe/paymentService.js');
 const pool = require('../../../src/config/db');
 
 // Variável ambiente contendo o segredo do webhook configurado no painel do Stripe
