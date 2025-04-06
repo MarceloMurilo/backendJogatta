@@ -108,21 +108,32 @@ router.post('/add-bank-account', async (req, res) => {
   const { stripe_account_id, nome_titular, tipo, banco, agencia, conta } = req.body;
 
   try {
+    const routing_number = banco + agencia;
+    console.log('📦 Adicionando conta bancária:', {
+      stripe_account_id,
+      nome_titular,
+      tipo,
+      banco,
+      agencia,
+      conta,
+      routing_number
+    });
+
     await stripe.accounts.createExternalAccount(stripe_account_id, {
       external_account: {
         object: 'bank_account',
         country: 'BR',
         currency: 'BRL',
         account_holder_name: nome_titular,
-        account_holder_type: 'individual',
-        routing_number: banco + agencia,
-        account_number: conta.replace(/\D/g, '')
+        account_holder_type: tipo,
+        routing_number: routing_number,
+        account_number: conta.replace(/\D/g, '') // remover hífen e tudo que não for número
       }
     });
 
     res.status(200).json({ message: 'Conta bancária adicionada com sucesso.' });
   } catch (error) {
-    console.error('Erro ao adicionar conta bancária:', error.message);
+    console.error('❌ Erro ao adicionar conta bancária:', error.message);
     res.status(500).json({ error: 'Erro ao adicionar conta bancária.' });
   }
 });
