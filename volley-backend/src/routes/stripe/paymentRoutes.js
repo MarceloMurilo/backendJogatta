@@ -1,8 +1,9 @@
+// src/routes/stripe/paymentRoutes.js
 const express = require('express');
 const router = express.Router();
-const stripe = require('../config/stripe');
-const { getOwnerStripeAccountId } = require('../services/ownerService');
-const { createTransaction } = require('../services/paymentService');
+const stripe = require('../../../config/stripe');
+const { getOwnerStripeAccountId } = require('../../services/ownerService');
+const { createTransaction } = require('../../services/paymentService');
 
 router.post('/create-payment-intent', async (req, res) => {
   const { amount, currency, ownerId, reservaId } = req.body;

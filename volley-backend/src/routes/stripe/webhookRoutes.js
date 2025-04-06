@@ -1,11 +1,11 @@
-// src/routes/stripeWebhook.js
+// src/routes/stripe/stripeWebhook.js
 // Rota para lidar com Webhooks recebidos do Stripe.
 
 const express = require('express');
 const router = express.Router();
-const stripe = require('../config/stripe');
-const { updatePaymentStatus } = require('../services/paymentService');
-const pool = require('../config/db');
+const stripe = require('../../../config/stripe');
+const { updatePaymentStatus } = require('../../services/paymentService');
+const pool = require('../../../config/db');
 
 // Variável ambiente contendo o segredo do webhook configurado no painel do Stripe
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
