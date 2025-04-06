@@ -13,10 +13,9 @@ const passport = require('./config/passport.js');
 const { verificarReservasExpiradas } = require('./cron/reservationCron.js');
 
 // Stripe rotas
-const paymentRoutes = require('./routes/paymentRoutes');
-const stripeWebhook = require('./routes/stripeWebhook.js');
-const stripeConnectRoutes = require('./routes/stripeConnectRoutes');
-const stripeConnectOwnerRoutes = require('./routes/owner/stripeConnectRoutes');
+const paymentRoutes = require('./routes/stripe/paymentRoutes.js');
+const stripeWebhook = require('./routes/stripe/webhookRoutes.js');
+const onboardingRoutes = require('./routes/stripe/onboardingRoutes.js');
 
 const app = express();
 
@@ -48,8 +47,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Stripe
 app.use('/api/payments', paymentRoutes);
-app.use('/api/owner/connect', stripeConnectOwnerRoutes);
-app.use('/api/connect', stripeConnectRoutes);
+app.use('/api/connect', onboardingRoutes);
 app.use('/api/stripe', stripeWebhook); // se estiver usando express.raw, esse fica separado mesmo
 
 // Logging básico
