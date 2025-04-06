@@ -1,10 +1,9 @@
-// 📁 src/routes/stripe/onboardingRoutes.js
 const express = require('express');
 const router = express.Router();
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const db = require('../../config/db');
 
-// ✅ [POST] Criação da conta Stripe Custom
+// ✅ Criação da conta Stripe
 router.post('/create-stripe-account', async (req, res) => {
   const { id_empresa, email } = req.body;
 
@@ -15,9 +14,9 @@ router.post('/create-stripe-account', async (req, res) => {
       email,
       capabilities: {
         transfers: { requested: true },
-        card_payments: { requested: true }
+        card_payments: { requested: true },
       },
-      business_type: 'individual' // ou 'company' se usar CNPJ
+      business_type: 'individual'
     });
 
     await db.query(
@@ -27,15 +26,15 @@ router.post('/create-stripe-account', async (req, res) => {
 
     res.status(200).json({
       message: 'Conta Stripe criada com sucesso.',
-      accountId: account.id
+      stripe_account_id: account.id
     });
   } catch (error) {
-    console.error('Erro ao criar conta Stripe:', error.message);
+    console.error('❌ Erro ao criar conta Stripe:', error.message);
     res.status(500).json({ error: 'Erro ao criar conta Stripe Connect.' });
   }
 });
 
-// ✅ [POST] Criar link de onboarding para completar o cadastro Stripe
+// ✅ Link de onboarding
 router.post('/create-account-link', async (req, res) => {
   const { id_empresa } = req.body;
 
@@ -60,34 +59,35 @@ router.post('/create-account-link', async (req, res) => {
 
     res.status(200).json({ url: accountLink.url });
   } catch (error) {
-    console.error('Erro ao criar link de onboarding Stripe:', error.message);
+    console.error('❌ Erro ao criar link de onboarding Stripe:', error.message);
     res.status(500).json({ error: 'Erro ao criar link de onboarding Stripe.' });
   }
 });
 
-// ✅ [POST] Enviar dados do representante
+// ✅ Atualizar dados pessoais
 router.post('/update-account', async (req, res) => {
   const { stripe_account_id, nome_completo, cpf, nascimento, endereco } = req.body;
 
   try {
-    const [first_name, ...sobrenome] = nome_completo.split(' ');
+    const [first_name, ...resto] = nome_completo.split(' ');
+    const last_name = resto.join(' ') || ' ';
 
     await stripe.accounts.update(stripe_account_id, {
       individual: {
         first_name,
-        last_name: sobrenome.join(' '),
+        last_name,
         id_number: cpf.replace(/\D/g, ''),
         dob: {
           day: parseInt(nascimento.split('-')[2]),
           month: parseInt(nascimento.split('-')[1]),
-          year: parseInt(nascimento.split('-')[0])
+          year: parseInt(nascimento.split('-')[0]),
         },
         address: {
           line1: endereco.rua,
           city: endereco.cidade,
           state: endereco.estado,
-          postal_code: endereco.cep,
-          country: 'BR'
+          postal_code: endereco.cep.replace(/\D/g, ''),
+          country: 'BR',
         }
       },
       tos_acceptance: {
@@ -96,30 +96,30 @@ router.post('/update-account', async (req, res) => {
       }
     });
 
-    res.status(200).json({ message: 'Dados enviados ao Stripe com sucesso.' });
+    res.status(200).json({ message: 'Dados pessoais enviados ao Stripe com sucesso.' });
   } catch (error) {
-    console.error('Erro ao atualizar conta Stripe:', error.message);
+    console.error('❌ Erro ao atualizar conta Stripe:', error.message);
     res.status(500).json({ error: 'Erro ao atualizar dados no Stripe.' });
   }
 });
 
-// ✅ [POST] Enviar dados bancários
+// ✅ Adicionar conta bancária
 router.post('/add-bank-account', async (req, res) => {
   const { stripe_account_id, nome_titular, tipo, banco, agencia, conta } = req.body;
 
   try {
-    const routing_number = banco + agencia;
-    console.log('📦 Adicionando conta bancária:', {
+    const routing_number = `${banco}${agencia}`;
+    const account_number = conta.replace(/\D/g, '');
+
+    console.log('📦 Enviando dados bancários:', {
       stripe_account_id,
+      routing_number,
+      account_number,
       nome_titular,
-      tipo,
-      banco,
-      agencia,
-      conta,
-      routing_number
+      tipo
     });
 
-    await stripe.accounts.createExternalAccount(stripe_account_id, {
+    const externalAccount = await stripe.accounts.createExternalAccount(stripe_account_id, {
       external_account: {
         object: 'bank_account',
         country: 'BR',
@@ -127,18 +127,18 @@ router.post('/add-bank-account', async (req, res) => {
         account_holder_name: nome_titular,
         account_holder_type: tipo,
         routing_number: routing_number,
-        account_number: conta.replace(/\D/g, '') // remover hífen e tudo que não for número
+        account_number: account_number
       }
     });
 
-    res.status(200).json({ message: 'Conta bancária adicionada com sucesso.' });
+    res.status(200).json({ message: 'Conta bancária adicionada com sucesso.', externalAccount });
   } catch (error) {
     console.error('❌ Erro ao adicionar conta bancária:', error.message);
-    res.status(500).json({ error: 'Erro ao adicionar conta bancária.' });
+    res.status(500).json({ error: 'Erro ao adicionar conta bancária no Stripe.' });
   }
 });
 
-// ✅ [GET] Verificar status da conta
+// ✅ Status da conta
 router.get('/status/:id_empresa', async (req, res) => {
   const { id_empresa } = req.params;
 
@@ -156,14 +156,14 @@ router.get('/status/:id_empresa', async (req, res) => {
 
     const account = await stripe.accounts.retrieve(stripeId);
 
-    res.json({
+    res.status(200).json({
       details_submitted: account.details_submitted,
       charges_enabled: account.charges_enabled,
       payouts_enabled: account.payouts_enabled,
       requirements: account.requirements
     });
   } catch (error) {
-    console.error('Erro ao verificar status da conta Stripe:', error.message);
+    console.error('❌ Erro ao verificar status da conta Stripe:', error.message);
     res.status(500).json({ error: 'Erro ao verificar status da conta Stripe.' });
   }
 });
