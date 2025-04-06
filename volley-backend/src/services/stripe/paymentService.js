@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const db = require('../../config/db');
 
 /**
  * Cria uma nova entrada na tabela transacoes_pagamento.
