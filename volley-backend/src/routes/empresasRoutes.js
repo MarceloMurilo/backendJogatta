@@ -205,14 +205,20 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    
+    // Buscar dados básicos da empresa
     const empRes = await pool.query(
       'SELECT * FROM public.empresas WHERE id_empresa = $1',
       [id]
     );
+    
     if (empRes.rows.length === 0) {
       return res.status(404).json({ message: 'Empresa não encontrada' });
     }
+    
     const empresa = empRes.rows[0];
+    
+    // Buscar quadras da empresa
     const quadRes = await pool.query(`
       SELECT id_quadra,
              id_empresa,
@@ -229,11 +235,50 @@ router.get('/:id', async (req, res) => {
         FROM public.quadras
        WHERE id_empresa = $1
     `, [id]);
-    empresa.quadras = quadRes.rows;
-    return res.json(empresa);
+    
+    // Buscar status do Stripe se houver stripe_account_id
+    let stripe_status = null;
+    if (empresa.stripe_account_id) {
+      const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+      try {
+        const stripeAccount = await stripe.accounts.retrieve(empresa.stripe_account_id);
+        stripe_status = {
+          charges_enabled: stripeAccount.charges_enabled,
+          payouts_enabled: stripeAccount.payouts_enabled,
+          details_submitted: stripeAccount.details_submitted,
+          requirements: stripeAccount.requirements
+        };
+      } catch (stripeError) {
+        console.error('Erro ao buscar dados do Stripe:', stripeError);
+      }
+    }
+
+    // Buscar contas bancárias vinculadas
+    let bank_accounts = [];
+    if (empresa.stripe_account_id) {
+      try {
+        const bankAccountsRes = await pool.query(
+          'SELECT * FROM bank_accounts WHERE id_empresa = $1',
+          [id]
+        );
+        bank_accounts = bankAccountsRes.rows;
+      } catch (bankError) {
+        console.error('Erro ao buscar contas bancárias:', bankError);
+      }
+    }
+
+    // Retornar todos os dados
+    return res.json({
+      empresa: {
+        ...empresa,
+        quadras: quadRes.rows
+      },
+      stripe_status,
+      bank_accounts
+    });
   } catch (error) {
-    console.error('Erro ao buscar empresa e quadras:', error);
-    return res.status(500).json({ message: 'Erro ao buscar empresa e quadras' });
+    console.error('Erro ao buscar empresa e detalhes:', error);
+    return res.status(500).json({ message: 'Erro ao buscar empresa e detalhes' });
   }
 });
 
