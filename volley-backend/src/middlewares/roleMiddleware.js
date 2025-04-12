@@ -44,7 +44,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
       // Caso especial: rotas de reserva com status
       if (req.path.includes('/reservas/') && req.path.includes('/status')) {
         console.log('[roleMiddleware] Rota de gerenciamento de reserva detectada');
-        if (['empresa', 'dono_quadra', 'admin'].includes(req.user?.papel_usuario)) {
+        if (['empresa', 'dono_quadra', 'admin', 'gestor'].includes(req.user?.papel_usuario)) {
           console.log(`[roleMiddleware] Usuário é ${req.user.papel_usuario}. Permitindo acesso.`);
           return next();
         }
