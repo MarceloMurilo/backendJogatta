@@ -121,7 +121,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
         UNION
         SELECT f.id_funcao, f.nome_funcao
           FROM jogos j
-          JOIN quadras q ON j.id_quadra = q.id_quadra
+          JOIN quadras q ON j.id_quadra_id = q.id_quadra
           JOIN funcao f ON f.nome_funcao = 'gestor'
          WHERE j.id_jogo = $2
            AND q.id_usuario = $1
