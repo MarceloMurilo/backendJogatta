@@ -21,7 +21,7 @@ router.get('/:id_jogo/reserva-status', async (req, res) => {
   try {
     const result = await db.query(
       `SELECT r.id_reserva, r.status, r.data_reserva, r.horario_inicio, r.horario_fim,
-       q.nome AS nome_quadra, q.preco AS preco_quadra,
+       q.nome AS nome_quadra, q.preco_hora AS preco_quadra,
        e.nome AS nome_empresa, e.endereco AS local, e.id_empresa AS ownerId
 
        FROM reservas r
@@ -317,7 +317,7 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
 
     const reservaResult = await db.query(
       `SELECT r.id_reserva, r.status, r.data_reserva, r.horario_inicio, r.horario_fim,
-       q.nome AS nome_quadra, q.preco AS preco_quadra,
+       q.nome AS nome_quadra, q.preco_hora AS preco_quadra,
        e.nome AS nome_empresa, e.endereco AS local, e.id_empresa AS ownerId
 
        FROM reservas r
