@@ -124,8 +124,7 @@ const roleMiddleware = (allowedRoles, options = {}) => {
   JOIN quadras q ON j.id_quadra = q.id_quadra
   JOIN empresas e ON q.id_empresa = e.id_empresa
   JOIN usuario_empresa ue ON ue.id_empresa = e.id_empresa
-  JOIN usuario_funcao uf ON uf.id_usuario = ue.id_usuario
-JOIN funcao f ON uf.id_funcao = f.id_funcao AND f.nome_funcao = 'gestor'
+  JOIN funcao f ON f.nome_funcao = 'gestor'
  WHERE j.id_jogo = $2
    AND ue.id_usuario = $1
       `;
