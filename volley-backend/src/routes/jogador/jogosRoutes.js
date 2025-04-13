@@ -337,8 +337,7 @@ router.get('/:id_jogo/detalhes', authMiddleware, async (req, res) => {
       `SELECT pj.id_usuario,
               u.nome,
               pj.status,
-              COALESCE(pj.pagamento_confirmado, false) AS pagamento_confirmado,
-              COALESCE(pj.pago, false) AS pago
+              COALESCE(pj.pagamento_confirmado, false) AS pagamento_confirmado
          FROM participacao_jogos pj
          JOIN usuario u ON pj.id_usuario = u.id_usuario
          WHERE pj.id_jogo = $1

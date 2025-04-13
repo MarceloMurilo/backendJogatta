@@ -269,8 +269,7 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
   try {
     const jogadoresParticipacao = await db.query(`
       SELECT pj.id_usuario, u.nome, pj.status,
-             COALESCE(pj.pagamento_confirmado, false) AS pagamento_confirmado,
-             COALESCE(pj.pago, false) AS pago
+             COALESCE(pj.pagamento_confirmado, false) AS pagamento_confirmado
         FROM participacao_jogos pj
         JOIN usuario u ON pj.id_usuario = u.id_usuario
        WHERE pj.id_jogo = $1
@@ -317,7 +316,7 @@ router.post('/confirmar-presenca', async (req, res) => {
 
     await db.query(
       `UPDATE participacao_jogos
-          SET confirmado = TRUE
+          SET pagamento_confirmado = TRUE
         WHERE id_jogo = $1
           AND id_usuario = $2`,
       [id_jogo, id_usuario]
