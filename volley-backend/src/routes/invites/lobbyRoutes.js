@@ -238,9 +238,9 @@ router.post('/entrar', async (req, res) => {
 
     await client.query(
       `INSERT INTO participacao_jogos (id_jogo, id_usuario, status, confirmado, pago)
-       VALUES ($1, $2, 'ativo', FALSE, FALSE)
+       VALUES ($1, $2, 'na_espera', FALSE, FALSE)
        ON CONFLICT (id_jogo, id_usuario)
-       DO UPDATE SET status = 'ativo'`,
+       DO UPDATE SET status = 'na_espera'`,
       [id_jogo, id_usuario]
     );
 
