@@ -21,15 +21,25 @@ const { createTransaction } = require('../../services/stripe/paymentService.js')
 router.post('/create-payment-intent', async (req, res) => {
   const { amount, currency, ownerId, reservaId, id_usuario } = req.body;
 
+  console.log('🧾 Criando pagamento com os dados recebidos:');
+  console.log('➡️ amount:', amount);
+  console.log('➡️ currency:', currency);
+  console.log('➡️ ownerId:', ownerId);
+  console.log('➡️ reservaId:', reservaId);
+  console.log('➡️ id_usuario:', id_usuario);
+
   try {
     // 1) Obtem a conta Stripe do dono da quadra
     const ownerStripeAccountId = await getOwnerStripeAccountId(ownerId);
+    console.log('🔁 Stripe Account ID retornado:', ownerStripeAccountId);
+
     if (!ownerStripeAccountId || ownerStripeAccountId === 'null') {
+      console.log('❌ Dono da quadra sem conta Stripe conectada');
       return res.status(400).json({ error: 'Dono da quadra não possui conta Stripe conectada.' });
     }
 
     // 2) Calcula taxa e repasse
-    const taxaJogatta = Math.round(amount * 0.10); // 10% taxa
+    const taxaJogatta = Math.round(amount * 0.10); // 10%
     const valorRepasse = amount - taxaJogatta;
 
     // 3) Cria PaymentIntent no Stripe
@@ -43,18 +53,20 @@ router.post('/create-payment-intent', async (req, res) => {
       description: 'Reserva de quadra Jogatta',
     });
 
+    console.log('✅ PaymentIntent criado:', paymentIntent.id);
+
     // 4) Salva transação no banco
     await createTransaction({
       id_reserva: reservaId,
-      id_usuario, // novo campo que registra qual jogador pagou
+      id_usuario,
       stripe_payment_intent_id: paymentIntent.id,
       valor_total: amount,
-      valor_repasse,
+      valor_repasse: valorRepasse,
       taxa_jogatta: taxaJogatta,
-      status: paymentIntent.status, // pode ser 'pending', 'requires_payment_method', etc.
+      status: paymentIntent.status,
     });
 
-    // 5) Retorna clientSecret para o front finalizar o pagamento (caso não esteja automático)
+    // 5) Retorna clientSecret
     res.send({
       clientSecret: paymentIntent.client_secret,
       status: paymentIntent.status,
@@ -62,9 +74,10 @@ router.post('/create-payment-intent', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('Erro ao criar Payment Intent:', err);
+    console.error('❌ Erro ao criar Payment Intent:', err);
     res.status(500).json({ error: 'Erro ao criar Payment Intent.' });
   }
 });
+
 
 module.exports = router;
