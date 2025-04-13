@@ -184,6 +184,12 @@ router.post('/criar', authMiddleware, async (req, res) => {
       );
       if (reservaResult.rows.length > 0) {
         idReserva = reservaResult.rows[0].id_reserva;
+      
+        // Atualizar o jogo com o id_quadra utilizado na reserva
+        await client.query(
+          `UPDATE jogos SET id_quadra = $1 WHERE id_jogo = $2`,
+          [id_quadra, newIdJogo]
+        );
       }
     }
 
