@@ -269,7 +269,8 @@ router.get('/:id_jogo/jogadores', async (req, res) => {
   try {
     const jogadoresParticipacao = await db.query(`
       SELECT pj.id_usuario, u.nome, pj.status,
-             COALESCE(pj.confirmado, false) AS confirmado,
+             COALESCE(pj.pagamento_confirmado, false) AS pagamento_confirmado
+
              COALESCE(pj.pago, false) AS pago
         FROM participacao_jogos pj
         JOIN usuario u ON pj.id_usuario = u.id_usuario
