@@ -78,6 +78,37 @@ router.get('/:id_reserva', async (req, res) => {
     res.status(500).json({ error: 'Erro ao buscar reserva' });
   }
 });
+// Obter informações financeiras da reserva (valor pago, total, status)
+router.get('/:id_reserva/cofre', async (req, res) => {
+  const { id_reserva } = req.params;
+
+  try {
+    const result = await db.query(
+      `SELECT r.valor_pago, q.preco_hora, q.percentual_antecipado
+         FROM reservas r
+         JOIN quadras q ON r.id_quadra = q.id_quadra
+        WHERE r.id_reserva = $1`,
+      [id_reserva]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Reserva não encontrada' });
+    }
+
+    const { valor_pago, preco_hora, percentual_antecipado } = result.rows[0];
+    const valor_minimo = (percentual_antecipado / 100) * preco_hora;
+
+    return res.json({
+      valor_pago,
+      valor_total: preco_hora,
+      valor_minimo,
+      confirmado: valor_pago >= valor_minimo
+    });
+  } catch (error) {
+    console.error('[reservationRoutes] Erro ao consultar cofre:', error);
+    res.status(500).json({ error: 'Erro ao consultar cofre' });
+  }
+});
 
 // Buscar reservas de uma quadra específica
 router.get('/quadra/:id_quadra', async (req, res) => {
