@@ -95,6 +95,12 @@ router.post('/update-account', async (req, res) => {
         ip: req.ip
       }
     });
+    
+    // Subs código - Atualiza stripe_onboarding_completo
+    await db.query(
+      'UPDATE empresas SET stripe_onboarding_completo = true WHERE stripe_account_id = $1',
+      [stripe_account_id]
+    );
 
     res.status(200).json({ message: 'Dados pessoais enviados ao Stripe com sucesso.' });
   } catch (error) {
