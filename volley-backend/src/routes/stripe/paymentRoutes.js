@@ -24,7 +24,7 @@ router.post('/create-payment-intent', async (req, res) => {
   try {
     // 1) Obtem a conta Stripe do dono da quadra
     const ownerStripeAccountId = await getOwnerStripeAccountId(ownerId);
-    if (!ownerStripeAccountId) {
+    if (!ownerStripeAccountId || ownerStripeAccountId === 'null') {
       return res.status(400).json({ error: 'Dono da quadra não possui conta Stripe conectada.' });
     }
 
