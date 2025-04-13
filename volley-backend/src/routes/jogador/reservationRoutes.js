@@ -269,43 +269,53 @@ router.post('/entrar-fila', roleMiddleware(['organizador']), async (req, res) =>
   }
 });
 
-// Participante paga valor parcial → organizador ou jogador
-router.post('/pagar', roleMiddleware(['organizador', 'jogador']), async (req, res) => {
+// Rota para registrar pagamento de jogador
+router.post('/pagar', authMiddleware, roleMiddleware(['organizador', 'jogador']), async (req, res) => {
   const { reserva_id, valor_pago } = req.body;
+
   try {
-    // Atualiza o valor acumulado da reserva
+    if (!reserva_id || !valor_pago) {
+      return res.status(400).json({ error: 'Campos obrigatórios não enviados.' });
+    }
+
+    // Atualiza o valor pago
     await db.query(
       `UPDATE reservas
          SET valor_pago = valor_pago + $1
        WHERE id_reserva = $2`,
       [valor_pago, reserva_id]
     );
-    // Busca total pago e configurações da quadra para cálculo do valor mínimo
-    const reservaResult = await db.query(
+
+    // Atualiza status_reserva se o total pago atingir o valor mínimo
+    const result = await db.query(
       `SELECT r.valor_pago, q.preco_hora, q.percentual_antecipado
          FROM reservas r
          JOIN quadras q ON q.id_quadra = r.id_quadra
         WHERE r.id_reserva = $1`,
       [reserva_id]
     );
-    if (reservaResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Reserva não encontrada' });
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Reserva não encontrada.' });
     }
-    const { valor_pago: totalPago, preco_hora, percentual_antecipado } = reservaResult.rows[0];
+
+    const { valor_pago: totalPago, preco_hora, percentual_antecipado } = result.rows[0];
     const valorMinimo = (percentual_antecipado / 100) * preco_hora;
-    // Se o total pago atingir o valor mínimo, atualiza o status para 'confirmada_parcial'
+
     if (totalPago >= valorMinimo) {
       await db.query(
         `UPDATE reservas SET status_reserva = 'confirmada_parcial' WHERE id_reserva = $1`,
         [reserva_id]
       );
     }
-    res.status(200).json({ message: 'Pagamento registrado com sucesso' });
-  } catch (error) {
-    console.error('[reservationRoutes] Erro ao registrar pagamento:', error);
-    res.status(500).json({ error: 'Erro ao registrar pagamento' });
+
+    res.status(200).json({ message: 'Pagamento registrado com sucesso.' });
+  } catch (err) {
+    console.error('[reservationRoutes] Erro no pagamento:', err);
+    res.status(500).json({ error: 'Erro ao registrar pagamento.' });
   }
 });
+
 
 // Dono envia ultimato para pressionar o organizador → somente dono
 router.post('/enviar-ultimato', roleMiddleware(['owner']), async (req, res) => {
