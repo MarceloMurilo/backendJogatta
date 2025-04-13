@@ -115,7 +115,7 @@ app.use(
 app.use(
   '/api/jogador/reservas',
   require('./middlewares/authMiddleware'),
-  require('./middlewares/roleMiddleware')(['jogador', 'organizador', 'owner']),
+  require('./middlewares/roleMiddleware')(['jogador', 'organizador', 'gestor']),
   reservationRoutes
 );
 app.use(
