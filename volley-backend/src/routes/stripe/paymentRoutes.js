@@ -2,21 +2,13 @@
 const express = require('express');
 const router = express.Router();
 const stripe = require('../../../src/config/stripe.js');
+const pool = require('../../config/db'); // ✅ IMPORTANTE
 const { getOwnerStripeAccountId } = require('../../services/ownerService');
 const { createTransaction } = require('../../services/stripe/paymentService.js');
 
 /**
  * Cria um PaymentIntent no Stripe, salva transação no banco
  * e retorna o client_secret para o front-end completar o pagamento.
- *
- * Exemplo de body esperado:
- * {
- *   "amount": 5000,         // em centavos
- *   "currency": "brl",
- *   "ownerId": 123,         // dono da quadra
- *   "reservaId": 456,       // reserva associada
- *   "id_usuario": 789       // jogador que está pagando
- * }
  */
 router.post('/create-payment-intent', async (req, res) => {
   const { amount, currency, ownerId, reservaId, id_usuario } = req.body;
@@ -29,8 +21,25 @@ router.post('/create-payment-intent', async (req, res) => {
   console.log('➡️ id_usuario:', id_usuario);
 
   try {
-    // 1) Obtem a conta Stripe do dono da quadra
-    const ownerStripeAccountId = await getOwnerStripeAccountId(ownerId);
+    // 👉 Consulta o id_empresa da reserva se ownerId não for passado
+    let idEmpresa = ownerId;
+    if (!idEmpresa) {
+      const result = await pool.query(`
+        SELECT q.id_empresa
+        FROM reservas r
+        JOIN quadras q ON r.id_quadra = q.id_quadra
+        WHERE r.id_reserva = $1
+      `, [reservaId]);
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'Reserva ou empresa não encontrada' });
+      }
+
+      idEmpresa = result.rows[0].id_empresa;
+    }
+
+    // 🔁 Busca o stripe_account_id com base no id_empresa
+    const ownerStripeAccountId = await getOwnerStripeAccountId(idEmpresa);
     console.log('🔁 Stripe Account ID retornado:', ownerStripeAccountId);
 
     if (!ownerStripeAccountId || ownerStripeAccountId === 'null') {
@@ -78,6 +87,5 @@ router.post('/create-payment-intent', async (req, res) => {
     res.status(500).json({ error: 'Erro ao criar Payment Intent.' });
   }
 });
-
 
 module.exports = router;
