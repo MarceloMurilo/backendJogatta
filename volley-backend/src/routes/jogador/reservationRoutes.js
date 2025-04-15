@@ -56,29 +56,8 @@ router.post('/criar', async (req, res) => {
 // Seção 2: Consultas e Atualizações Básicas
 // =============================================================================
 
-// Buscar detalhes de uma reserva específica
-router.get('/:id_reserva', async (req, res) => {
-  try {
-    const { id_reserva } = req.params;
-    const result = await db.query(
-      `SELECT r.*, q.nome as nome_quadra, e.nome as nome_empresa
-         FROM reservas r
-         JOIN quadras q ON r.id_quadra = q.id_quadra
-         JOIN empresas e ON q.id_empresa = e.id_empresa
-        WHERE r.id_reserva = $1`,
-      [id_reserva]
-    );
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: 'Reserva não encontrada' });
-    }
-    return res.json(result.rows[0]);
-  } catch (error) {
-    console.error('[reservationRoutes] Erro ao buscar reserva:', error);
-    res.status(500).json({ error: 'Erro ao buscar reserva' });
-  }
-});
 // Obter informações financeiras da reserva (valor pago, total, status)
+// OBS.: Essa rota DEVE vir antes da rota genérica para evitar conflito de paths!
 router.get('/:id_reserva/cofre', async (req, res) => {
   const { id_reserva } = req.params;
 
@@ -113,6 +92,29 @@ router.get('/:id_reserva/cofre', async (req, res) => {
   } catch (error) {
     console.error('[reservationRoutes] Erro ao consultar cofre:', error);
     res.status(500).json({ error: 'Erro ao consultar cofre' });
+  }
+});
+
+// Buscar detalhes de uma reserva específica
+router.get('/:id_reserva', async (req, res) => {
+  try {
+    const { id_reserva } = req.params;
+    const result = await db.query(
+      `SELECT r.*, q.nome as nome_quadra, e.nome as nome_empresa
+         FROM reservas r
+         JOIN quadras q ON r.id_quadra = q.id_quadra
+         JOIN empresas e ON q.id_empresa = e.id_empresa
+        WHERE r.id_reserva = $1`,
+      [id_reserva]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Reserva não encontrada' });
+    }
+    return res.json(result.rows[0]);
+  } catch (error) {
+    console.error('[reservationRoutes] Erro ao buscar reserva:', error);
+    res.status(500).json({ error: 'Erro ao buscar reserva' });
   }
 });
 
@@ -321,7 +323,6 @@ router.post('/pagar', authMiddleware, roleMiddleware(['organizador', 'jogador'])
     res.status(500).json({ error: 'Erro ao registrar pagamento.' });
   }
 });
-
 
 // Dono envia ultimato para pressionar o organizador → somente dono
 router.post('/enviar-ultimato', roleMiddleware(['owner']), async (req, res) => {
