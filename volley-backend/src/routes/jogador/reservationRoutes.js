@@ -92,7 +92,13 @@ router.get('/:id_reserva/cofre', async (req, res) => {
     );
 
     if (result.rowCount === 0) {
-      return res.status(404).json({ error: 'Reserva não encontrada' });
+      console.warn('[Cofre] Nenhum resultado para reserva', id_reserva);
+      return res.status(200).json({
+        valor_pago: 0,
+        valor_total: 0,
+        valor_minimo: 0,
+        confirmado: false
+      });
     }
 
     const { valor_pago, preco_hora, percentual_antecipado } = result.rows[0];
