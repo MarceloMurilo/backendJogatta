@@ -84,8 +84,7 @@ async function updatePaymentStatus(paymentIntentId, status) {
              FROM reservas r
              JOIN quadras q ON q.id_quadra = r.id_quadra
              JOIN jogos j   ON j.id_jogo = r.id_jogo
-            WHERE r.id_reserva = $1
-          `,
+            WHERE r.id_reserva = $1`,
           [id_reserva]
         );
 
@@ -97,7 +96,6 @@ async function updatePaymentStatus(paymentIntentId, status) {
             id_jogo
           } = reservaResult.rows[0];
 
-          // cálculo do valor mínimo
           const valorMinimo = (percentual_antecipado / 100) * preco_hora;
           if (valor_pago >= valorMinimo) {
             await client.query(
@@ -108,7 +106,7 @@ async function updatePaymentStatus(paymentIntentId, status) {
             );
           }
 
-          // d) Atualiza participacao_jogos -> status=ativo, pagamento_confirmado=true
+          // d) Atualiza participacao_jogos
           await client.query(
             `UPDATE participacao_jogos
                 SET status = 'ativo',
@@ -130,6 +128,7 @@ async function updatePaymentStatus(paymentIntentId, status) {
     client.release();
   }
 }
+
 
 module.exports = {
   createTransaction,
