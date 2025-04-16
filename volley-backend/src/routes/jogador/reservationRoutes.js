@@ -296,17 +296,33 @@ router.post('/pagar', authMiddleware, roleMiddleware(['organizador', 'jogador'])
       [valor_pago, reserva_id]
     );
 
-    // Marca o jogador como tendo pago no jogo correspondente
-    await db.query(
-      `UPDATE participacao_jogos
-         SET pagamento_confirmado = true,
-             data_pagamento = NOW(),
-             forma_pagamento = 'stripe' -- ou 'pix' futuramente
-       WHERE id_usuario = $1 AND id_jogo = (
-         SELECT id_jogo FROM reservas WHERE id_reserva = $2
-       )`,
-      [id_usuario, reserva_id]
-    );
+    // subs: garantir que reserva tem id_jogo antes de atualizar participação
+const jogoResult = await db.query(
+  'SELECT id_jogo FROM reservas WHERE id_reserva = $1',
+  [reserva_id]
+);
+
+if (jogoResult.rowCount === 0 || !jogoResult.rows[0].id_jogo) {
+  return res.status(400).json({ error: 'Reserva não vinculada a um jogo. Não é possível registrar o pagamento.' });
+}
+
+const id_jogo = jogoResult.rows[0].id_jogo;
+
+// Atualiza a participação do jogador no jogo
+const updateParticipacao = await db.query(
+  `UPDATE participacao_jogos
+     SET pagamento_confirmado = true,
+         data_pagamento = NOW(),
+         forma_pagamento = 'stripe'
+   WHERE id_usuario = $1 AND id_jogo = $2`,
+  [id_usuario, id_jogo]
+);
+
+// Se não atualizou nenhuma linha, jogador não estava vinculado
+if (updateParticipacao.rowCount === 0) {
+  return res.status(404).json({ error: 'Jogador não encontrado na participação do jogo.' });
+}
+
 
     // Verifica se valor mínimo já foi atingido para confirmar parcialmente a reserva
     const result = await db.query(
