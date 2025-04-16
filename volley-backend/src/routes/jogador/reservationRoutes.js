@@ -284,6 +284,7 @@ router.post('/pagar', authMiddleware, roleMiddleware(['organizador', 'jogador'])
   const { reserva_id, valor_pago, id_usuario, force_update = false } = req.body;
 
   try {
+    console.log('Pagamento recebido de usuário ID:', id_usuario, 'para reserva:', reserva_id);
     if (!reserva_id || !valor_pago || !id_usuario) {
       return res.status(400).json({ error: 'Campos obrigatórios não enviados.' });
     }
@@ -316,6 +317,7 @@ const updateParticipacao = await db.query(
          forma_pagamento = 'stripe'
    WHERE id_usuario = $1 AND id_jogo = $2`,
   [id_usuario, id_jogo]
+  
 );
 
 // Se não atualizou nenhuma linha, jogador não estava vinculado
