@@ -278,15 +278,17 @@ router.post('/entrar-fila', roleMiddleware(['organizador']), async (req, res) =>
 });
 
 // Rota para registrar pagamento de jogador
+// routes/jogador/reservationRoutes.js (ou onde estiver o /pagar)
+
 router.post('/pagar', authMiddleware, roleMiddleware(['organizador', 'jogador']), async (req, res) => {
-  const { reserva_id, valor_pago } = req.body;
+  const { reserva_id, valor_pago, id_usuario, force_update = false } = req.body;
 
   try {
-    if (!reserva_id || !valor_pago) {
+    if (!reserva_id || !valor_pago || !id_usuario) {
       return res.status(400).json({ error: 'Campos obrigatórios não enviados.' });
     }
 
-    // Atualiza o valor pago
+    // Atualiza o valor pago na tabela de reservas (cofre)
     await db.query(
       `UPDATE reservas
          SET valor_pago = valor_pago + $1
@@ -294,7 +296,19 @@ router.post('/pagar', authMiddleware, roleMiddleware(['organizador', 'jogador'])
       [valor_pago, reserva_id]
     );
 
-    // Atualiza status_reserva se o total pago atingir o valor mínimo
+    // Marca o jogador como tendo pago no jogo correspondente
+    await db.query(
+      `UPDATE participacao_jogos
+         SET pagamento_confirmado = true,
+             data_pagamento = NOW(),
+             forma_pagamento = 'stripe' -- ou 'pix' futuramente
+       WHERE id_usuario = $1 AND id_jogo = (
+         SELECT id_jogo FROM reservas WHERE id_reserva = $2
+       )`,
+      [id_usuario, reserva_id]
+    );
+
+    // Verifica se valor mínimo já foi atingido para confirmar parcialmente a reserva
     const result = await db.query(
       `SELECT r.valor_pago, q.preco_hora, q.percentual_antecipado
          FROM reservas r
@@ -303,16 +317,14 @@ router.post('/pagar', authMiddleware, roleMiddleware(['organizador', 'jogador'])
       [reserva_id]
     );
 
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: 'Reserva não encontrada.' });
-    }
-
     const { valor_pago: totalPago, preco_hora, percentual_antecipado } = result.rows[0];
     const valorMinimo = (percentual_antecipado / 100) * preco_hora;
 
     if (totalPago >= valorMinimo) {
       await db.query(
-        `UPDATE reservas SET status_reserva = 'confirmada_parcial' WHERE id_reserva = $1`,
+        `UPDATE reservas
+           SET status_reserva = 'confirmada_parcial'
+         WHERE id_reserva = $1`,
         [reserva_id]
       );
     }
@@ -323,6 +335,7 @@ router.post('/pagar', authMiddleware, roleMiddleware(['organizador', 'jogador'])
     res.status(500).json({ error: 'Erro ao registrar pagamento.' });
   }
 });
+
 
 // Dono envia ultimato para pressionar o organizador → somente dono
 router.post('/enviar-ultimato', roleMiddleware(['owner']), async (req, res) => {
