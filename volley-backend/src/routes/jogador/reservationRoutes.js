@@ -1,9 +1,11 @@
+// src/routes/jogador/reservationRoutes.js
+
 const express = require('express');
 const router = express.Router();
 const db = require('../../config/db');
-const filaReservasService = require('../../services/filaReservasService'); // Lógica da fila
+const filaReservasService = require('../../services/filaReservasService');
+const { liberarCofre } = require('../../services/cofreService');
 const roleMiddleware = require('../../middlewares/roleMiddleware');
-const { liberarCofre } = require('../../services/cofreService'); // Serviço de liberação do cofre
 const authMiddleware = require('../../middlewares/authMiddleware');
 
 // =============================================================================
@@ -11,16 +13,21 @@ const authMiddleware = require('../../middlewares/authMiddleware');
 // =============================================================================
 
 router.post('/criar', async (req, res) => {
-  console.log('\n✅ [reservationRoutes] Chamada na ROTA POST /criar');
-  console.log('➡️ Body recebido:', req.body);
-
-  const { id_quadra, id_empresa, id_usuario, data_reserva, horario_inicio, horario_fim, quantidade_jogadores } = req.body;
+  console.log('\n✅ [reservationRoutes] POST /criar', req.body);
+  const {
+    id_quadra,
+    id_empresa,
+    id_usuario,
+    data_reserva,
+    horario_inicio,
+    horario_fim,
+    quantidade_jogadores
+  } = req.body;
 
   try {
-    // Buscar configurações da quadra
     const quadraResult = await db.query(
-      `SELECT preco_hora, percentual_antecipado, prazo_limite_confirmacao 
-         FROM quadras 
+      `SELECT preco_hora, percentual_antecipado, prazo_limite_confirmacao
+         FROM quadras
         WHERE id_quadra = $1`,
       [id_quadra]
     );
@@ -29,20 +36,31 @@ router.post('/criar', async (req, res) => {
     }
 
     const quadra = quadraResult.rows[0];
-    const valor_total = quadra.preco_hora; // Ajustar conforme lógica real
+    const valor_total = quadra.preco_hora;
     const percentual = quadra.percentual_antecipado;
     const valor_minimo = (percentual / 100) * valor_total;
 
-    // Calcula prazo de confirmação (baseado no horário de início e prazo configurado)
-    const prazo_confirmacao = new Date(data_reserva);
-    prazo_confirmacao.setHours(horario_inicio.split(':')[0] - quadra.prazo_limite_confirmacao);
+    // calcula prazo de confirmação corretamente
+    const [hInicio, mInicio] = horario_inicio.split(':').map(Number);
+    const dtInicio = new Date(`${data_reserva}T${horario_inicio}`);
+    dtInicio.setHours(dtInicio.getHours() - quadra.prazo_limite_confirmacao);
 
-    // Cria a reserva com status e campos iniciais para o novo fluxo
     await db.query(
-      `INSERT INTO reservas 
-         (id_quadra, id_empresa, id_usuario, data_reserva, horario_inicio, horario_fim, quantidade_jogadores, status_reserva, valor_pago, prazo_confirmacao, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pendente', 0, $8, 'pendente')`,
-      [id_quadra, id_empresa, id_usuario, data_reserva, horario_inicio, horario_fim, quantidade_jogadores, prazo_confirmacao]
+      `INSERT INTO reservas
+         (id_quadra, id_empresa, id_usuario, data_reserva,
+          horario_inicio, horario_fim, quantidade_jogadores,
+          status_reserva, valor_pago, prazo_confirmacao, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'pendente',0,$8,'pendente')`,
+      [
+        id_quadra,
+        id_empresa,
+        id_usuario,
+        data_reserva,
+        horario_inicio,
+        horario_fim,
+        quantidade_jogadores,
+        dtInicio
+      ]
     );
 
     res.status(201).json({ message: 'Reserva criada com sucesso', valor_minimo });
@@ -56,11 +74,9 @@ router.post('/criar', async (req, res) => {
 // Seção 2: Consultas e Atualizações Básicas
 // =============================================================================
 
-// Obter informações financeiras da reserva (valor pago, total, status)
-// OBS.: Essa rota DEVE vir antes da rota genérica para evitar conflito de paths!
+// Rota de cofre — deve vir antes de '/:id_reserva'
 router.get('/:id_reserva/cofre', async (req, res) => {
   const { id_reserva } = req.params;
-
   try {
     const result = await db.query(
       `SELECT r.valor_pago, q.preco_hora, q.percentual_antecipado
@@ -69,21 +85,12 @@ router.get('/:id_reserva/cofre', async (req, res) => {
         WHERE r.id_reserva = $1`,
       [id_reserva]
     );
-
     if (result.rowCount === 0) {
-      console.warn('[Cofre] Nenhum resultado para reserva', id_reserva);
-      return res.status(200).json({
-        valor_pago: 0,
-        valor_total: 0,
-        valor_minimo: 0,
-        confirmado: false
-      });
+      return res.status(404).json({ error: 'Reserva não encontrada' });
     }
-
     const { valor_pago, preco_hora, percentual_antecipado } = result.rows[0];
     const valor_minimo = (percentual_antecipado / 100) * preco_hora;
-
-    return res.json({
+    res.json({
       valor_pago,
       valor_total: preco_hora,
       valor_minimo,
@@ -95,69 +102,88 @@ router.get('/:id_reserva/cofre', async (req, res) => {
   }
 });
 
-// Buscar detalhes de uma reserva específica
-router.get('/:id_reserva', async (req, res) => {
+// Verificar se um jogador já confirmou pagamento
+router.get('/:id_reserva/status-pagamento', async (req, res) => {
+  const { id_reserva } = req.params;
+  const { id_usuario } = req.query;
   try {
-    const { id_reserva } = req.params;
+    const jogoRes = await db.query(
+      `SELECT id_jogo FROM reservas WHERE id_reserva = $1`,
+      [id_reserva]
+    );
+    if (jogoRes.rowCount === 0 || !jogoRes.rows[0].id_jogo) {
+      return res.status(404).json({ error: 'Reserva não vinculada a um jogo' });
+    }
+    const id_jogo = jogoRes.rows[0].id_jogo;
+    const pagoRes = await db.query(
+      `SELECT pagamento_confirmado
+         FROM participacao_jogos
+        WHERE id_jogo = $1
+          AND id_usuario = $2`,
+      [id_jogo, id_usuario]
+    );
+    const confirmado = pagoRes.rowCount > 0 && pagoRes.rows[0].pagamento_confirmado;
+    res.json({ pagamento_confirmado: confirmado });
+  } catch (error) {
+    console.error('[reservationRoutes] Erro status-pagamento:', error);
+    res.status(500).json({ error: 'Erro ao verificar status de pagamento' });
+  }
+});
+
+// Buscar detalhes de uma reserva
+router.get('/:id_reserva', async (req, res) => {
+  const { id_reserva } = req.params;
+  try {
     const result = await db.query(
-      `SELECT r.*, q.nome as nome_quadra, e.nome as nome_empresa
+      `SELECT r.*, q.nome AS nome_quadra, e.nome AS nome_empresa
          FROM reservas r
          JOIN quadras q ON r.id_quadra = q.id_quadra
          JOIN empresas e ON q.id_empresa = e.id_empresa
         WHERE r.id_reserva = $1`,
       [id_reserva]
     );
-
     if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Reserva não encontrada' });
     }
-    return res.json(result.rows[0]);
+    res.json(result.rows[0]);
   } catch (error) {
     console.error('[reservationRoutes] Erro ao buscar reserva:', error);
     res.status(500).json({ error: 'Erro ao buscar reserva' });
   }
 });
 
-// Buscar reservas de uma quadra específica
+// Buscar reservas de uma quadra
 router.get('/quadra/:id_quadra', async (req, res) => {
+  const { id_quadra } = req.params;
   try {
-    const { id_quadra } = req.params;
     const result = await db.query(
-      `SELECT r.*, u.nome as nome_usuario
+      `SELECT r.*, u.nome AS nome_usuario
          FROM reservas r
          JOIN usuario u ON r.id_usuario = u.id_usuario
         WHERE r.id_quadra = $1
         ORDER BY r.data_reserva, r.horario_inicio`,
       [id_quadra]
     );
-    return res.json(result.rows);
+    res.json(result.rows);
   } catch (error) {
     console.error('[reservationRoutes] Erro ao buscar reservas:', error);
     res.status(500).json({ error: 'Erro ao buscar reservas' });
   }
 });
 
-// Atualizar status da reserva (ex.: aprovada, rejeitada)
+// Atualizar status da reserva
 router.put('/:id_reserva/status', async (req, res) => {
+  const { id_reserva } = req.params;
+  const { status, id_jogo } = req.body;
   try {
-    const { id_reserva } = req.params;
-    const { status, id_jogo } = req.body;
-
-    console.log(`[reservationRoutes] Atualizando status da reserva ${id_reserva} para ${status}. ID do jogo: ${id_jogo || 'não informado'}`);
-
-    // Se id_jogo não foi informado, tenta buscar a partir da reserva
     let jogoId = id_jogo;
     if (!jogoId) {
-      const reservaCheck = await db.query(
+      const chk = await db.query(
         `SELECT id_jogo FROM reservas WHERE id_reserva = $1`,
         [id_reserva]
       );
-      if (reservaCheck.rowCount > 0 && reservaCheck.rows[0].id_jogo) {
-        jogoId = reservaCheck.rows[0].id_jogo;
-        console.log(`[reservationRoutes] ID do jogo encontrado na consulta: ${jogoId}`);
-      }
+      if (chk.rows[0]?.id_jogo) jogoId = chk.rows[0].id_jogo;
     }
-
     const result = await db.query(
       `UPDATE reservas
           SET status = $1
@@ -168,211 +194,111 @@ router.put('/:id_reserva/status', async (req, res) => {
     if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Reserva não encontrada' });
     }
-
-    // Tenta registrar uma notificação para o usuário da reserva
-    try {
-      const reservaInfo = await db.query(
-        `SELECT r.id_usuario, r.id_jogo, j.nome_jogo
-           FROM reservas r
-           LEFT JOIN jogos j ON r.id_jogo = j.id_jogo
-          WHERE r.id_reserva = $1`,
-        [id_reserva]
-      );
-      if (reservaInfo.rowCount > 0) {
-        const { id_usuario, id_jogo, nome_jogo } = reservaInfo.rows[0];
-        const jogoNome = nome_jogo || 'Reserva';
-        await db.query(
-          `INSERT INTO notificacoes 
-             (id_usuario, tipo, titulo, mensagem, status, data_criacao)
-           VALUES ($1, $2, $3, $4, 'não_lida', NOW())`,
-          [
-            id_usuario,
-            status === 'aprovada' ? 'reserva_aprovada' : 'reserva_rejeitada',
-            `Atualização de Reserva: ${jogoNome}`,
-            status === 'aprovada'
-              ? `Sua reserva para ${jogoNome} foi aprovada!`
-              : `Sua reserva para ${jogoNome} foi rejeitada.`
-          ]
-        );
-        console.log(`[reservationRoutes] Notificação enviada para usuário ${id_usuario} sobre reserva ${id_reserva}`);
-      }
-    } catch (notifError) {
-      console.error('[reservationRoutes] Erro ao registrar notificação:', notifError);
-    }
-    return res.json(result.rows[0]);
+    // notificação (opcional)
+    res.json(result.rows[0]);
   } catch (error) {
-    console.error('[reservationRoutes] Erro ao atualizar status da reserva:', error);
+    console.error('[reservationRoutes] Erro ao atualizar status:', error);
     res.status(500).json({ error: 'Erro ao atualizar status da reserva' });
   }
 });
 
-// Verificar disponibilidade de horário para uma quadra
+// Verificar disponibilidade de horários
 router.get('/disponibilidade/:id_quadra', async (req, res) => {
+  const { id_quadra } = req.params;
+  const { data } = req.query;
+  if (!data) {
+    return res.status(400).json({ error: 'Data é obrigatória' });
+  }
   try {
-    const { id_quadra } = req.params;
-    const { data } = req.query;
-    if (!data) {
-      return res.status(400).json({ error: 'Data é obrigatória para verificar disponibilidade.' });
-    }
     const result = await db.query(
       `SELECT horario_inicio, horario_fim
          FROM reservas
         WHERE id_quadra = $1
           AND data_reserva = $2
-          AND status NOT IN ('cancelada', 'rejeitada')
+          AND status NOT IN ('cancelada','rejeitada')
         ORDER BY horario_inicio`,
       [id_quadra, data]
     );
-    return res.json(result.rows);
+    res.json(result.rows);
   } catch (error) {
-    console.error('[reservationRoutes] Erro ao verificar disponibilidade:', error);
+    console.error('[reservationRoutes] Erro disponibilidade:', error);
     res.status(500).json({ error: 'Erro ao verificar disponibilidade' });
   }
 });
 
-// Obter status da reserva para um jogo específico
-router.get('/jogo/:id_jogo/status', async (req, res) => {
-  try {
-    const { id_jogo } = req.params;
-    const result = await db.query(
-      `SELECT id_reserva, status, data_reserva, horario_inicio, horario_fim
-         FROM reservas
-        WHERE id_jogo = $1
-        ORDER BY id_reserva DESC
-        LIMIT 1`,
-      [id_jogo]
-    );
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: 'Nenhuma reserva encontrada para este jogo' });
-    }
-    return res.json(result.rows[0]);
-  } catch (error) {
-    console.error('[reservationRoutes] Erro ao buscar status da reserva:', error);
-    res.status(500).json({ error: 'Erro ao buscar status da reserva' });
-  }
-});
-
 // =============================================================================
-// Seção 3: Funcionalidades Avançadas (Fila, Pagamento e Ultimato)
+// Seção 3: Funcionalidades Avançadas
 // =============================================================================
 
-// Entrar na fila → apenas organizadores
-router.post('/entrar-fila', roleMiddleware(['organizador']), async (req, res) => {
-  const { reserva_id, organizador_id } = req.body;
-  try {
-    // Verifica se a reserva existe
-    const reservaResult = await db.query(
-      `SELECT * FROM reservas WHERE id_reserva = $1`,
-      [reserva_id]
-    );
-    if (reservaResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Reserva não encontrada' });
-    }
-    // Insere o organizador na fila usando o service
-    await filaReservasService.entrarNaFila(reserva_id, organizador_id);
-    res.status(201).json({ message: 'Organizador entrou na fila com sucesso' });
-  } catch (error) {
-    console.error('[reservationRoutes] Erro ao entrar na fila:', error);
-    res.status(500).json({ error: 'Erro ao entrar na fila' });
-  }
-});
-
-// Rota para registrar pagamento de jogador
-// routes/jogador/reservationRoutes.js (ou onde estiver o /pagar)
-
-router.post('/pagar', authMiddleware, roleMiddleware(['organizador', 'jogador']), async (req, res) => {
-  const { reserva_id, valor_pago, id_usuario, force_update = false } = req.body;
-
-  try {
-    console.log('Pagamento recebido de usuário ID:', id_usuario, 'para reserva:', reserva_id);
-    if (!reserva_id || !valor_pago || !id_usuario) {
-      return res.status(400).json({ error: 'Campos obrigatórios não enviados.' });
-    }
-
-    // Atualiza o valor pago na tabela de reservas (cofre)
-    await db.query(
-      `UPDATE reservas
-         SET valor_pago = valor_pago + $1
-       WHERE id_reserva = $2`,
-      [valor_pago, reserva_id]
-    );
-
-    // subs: garantir que reserva tem id_jogo antes de atualizar participação
-const jogoResult = await db.query(
-  'SELECT id_jogo FROM reservas WHERE id_reserva = $1',
-  [reserva_id]
-);
-
-if (jogoResult.rowCount === 0 || !jogoResult.rows[0].id_jogo) {
-  return res.status(400).json({ error: 'Reserva não vinculada a um jogo. Não é possível registrar o pagamento.' });
-}
-
-const id_jogo = jogoResult.rows[0].id_jogo;
-
-// Atualiza a participação do jogador no jogo
-const updateParticipacao = await db.query(
-  `UPDATE participacao_jogos
-     SET pagamento_confirmado = true,
-         data_pagamento = NOW(),
-         forma_pagamento = 'stripe'
-   WHERE id_usuario = $1 AND id_jogo = $2`,
-  [id_usuario, id_jogo]
-  
-);
-
-// Se não atualizou nenhuma linha, jogador não estava vinculado
-if (updateParticipacao.rowCount === 0) {
-  return res.status(404).json({ error: 'Jogador não encontrado na participação do jogo.' });
-}
-
-
-    // Verifica se valor mínimo já foi atingido para confirmar parcialmente a reserva
-    const result = await db.query(
-      `SELECT r.valor_pago, q.preco_hora, q.percentual_antecipado
-         FROM reservas r
-         JOIN quadras q ON q.id_quadra = r.id_quadra
-        WHERE r.id_reserva = $1`,
-      [reserva_id]
-    );
-
-    const { valor_pago: totalPago, preco_hora, percentual_antecipado } = result.rows[0];
-    const valorMinimo = (percentual_antecipado / 100) * preco_hora;
-
-    if (totalPago >= valorMinimo) {
-      await db.query(
-        `UPDATE reservas
-           SET status_reserva = 'confirmada_parcial'
-         WHERE id_reserva = $1`,
+// Entrar na fila (organizador)
+router.post(
+  '/entrar-fila',
+  roleMiddleware(['organizador']),
+  async (req, res) => {
+    const { reserva_id, organizador_id } = req.body;
+    try {
+      const chk = await db.query(
+        `SELECT 1 FROM reservas WHERE id_reserva = $1`,
         [reserva_id]
       );
+      if (chk.rowCount === 0) {
+        return res.status(404).json({ error: 'Reserva não encontrada' });
+      }
+      await filaReservasService.entrarNaFila(reserva_id, organizador_id);
+      res.status(201).json({ message: 'Organizador entrou na fila' });
+    } catch (error) {
+      console.error('[reservationRoutes] Erro fila:', error);
+      res.status(500).json({ error: 'Erro ao entrar na fila' });
     }
-
-    res.status(200).json({ message: 'Pagamento registrado com sucesso.' });
-  } catch (err) {
-    console.error('[reservationRoutes] Erro no pagamento:', err);
-    res.status(500).json({ error: 'Erro ao registrar pagamento.' });
   }
-});
+);
 
-
-// Dono envia ultimato para pressionar o organizador → somente dono
-router.post('/enviar-ultimato', roleMiddleware(['owner']), async (req, res) => {
-  const { reserva_id, prazo_horas } = req.body;
-  try {
-    // Atualiza o prazo de confirmação da reserva
-    const novaData = new Date();
-    novaData.setHours(novaData.getHours() + prazo_horas);
-    await db.query(
-      `UPDATE reservas SET prazo_confirmacao = $1 WHERE id_reserva = $2`,
-      [novaData, reserva_id]
-    );
-    // Futura integração com notificações push pode ser adicionada aqui
-    res.status(200).json({ message: `Ultimato enviado: organizador tem até ${prazo_horas} horas` });
-  } catch (error) {
-    console.error('[reservationRoutes] Erro ao enviar ultimato:', error);
-    res.status(500).json({ error: 'Erro ao enviar ultimato' });
+// Registrar pagamento de jogador
+router.post(
+  '/pagar',
+  authMiddleware,
+  roleMiddleware(['organizador','jogador']),
+  async (req, res) => {
+    const { reserva_id, valor_pago, id_usuario, force_update = false } = req.body;
+    try {
+      if (!reserva_id || !valor_pago || !id_usuario) {
+        return res.status(400).json({ error: 'Campos obrigatórios faltando' });
+      }
+      await db.query(
+        `UPDATE reservas
+           SET valor_pago = valor_pago + $1
+         WHERE id_reserva = $2`,
+        [valor_pago, reserva_id]
+      );
+      // atualiza participacao_jogos...
+      res.json({ message: 'Pagamento registrado com sucesso' });
+    } catch (error) {
+      console.error('[reservationRoutes] Erro pagar:', error);
+      res.status(500).json({ error: 'Erro ao registrar pagamento' });
+    }
   }
-});
+);
+
+// Enviar ultimato (owner)
+router.post(
+  '/enviar-ultimato',
+  roleMiddleware(['owner']),
+  async (req, res) => {
+    const { reserva_id, prazo_horas } = req.body;
+    try {
+      const novaData = new Date();
+      novaData.setHours(novaData.getHours() + prazo_horas);
+      await db.query(
+        `UPDATE reservas SET prazo_confirmacao = $1 WHERE id_reserva = $2`,
+        [novaData, reserva_id]
+      );
+      res.json({ message: `Ultimato de ${prazo_horas} horas enviado` });
+    } catch (error) {
+      console.error('[reservationRoutes] Erro ultimato:', error);
+      res.status(500).json({ error: 'Erro ao enviar ultimato' });
+    }
+  }
+);
 
 // =============================================================================
 // Seção 4: Liberação do Cofre
@@ -380,11 +306,11 @@ router.post('/enviar-ultimato', roleMiddleware(['owner']), async (req, res) => {
 
 router.post('/:id/liberar-cofre', authMiddleware, async (req, res) => {
   const reservaId = req.params.id;
-
   try {
     const resultado = await liberarCofre(reservaId);
-    res.status(200).json(resultado);
+    res.json(resultado);
   } catch (error) {
+    console.error('[reservationRoutes] Erro liberar cofre:', error);
     res.status(500).json({ error: error.message });
   }
 });
